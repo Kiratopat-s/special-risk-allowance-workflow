@@ -11,7 +11,6 @@ import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Card,
   CardContent,
@@ -31,31 +30,83 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { UserAvatar } from "@/components/user-avatar";
 import { Loader2, ArrowLeft, Save } from "lucide-react";
-import { updateProfile, type ProfileFormData } from "@/app/actions/user";
+import {
+  updateKeycloakProfile,
+  type ProfileFormData,
+} from "@/app/actions/user";
 
 // Form validation schema
 const profileFormSchema = z.object({
-  displayName: z
+  firstName: z
     .string()
-    .min(2, "Display name must be at least 2 characters")
-    .max(50, "Display name must be less than 50 characters"),
-  email: z.string().email("Invalid email address"),
-  bio: z.string().max(500, "Bio must be less than 500 characters"),
+    .min(1, "First name is required")
+    .max(50, "First name must be less than 50 characters"),
+  lastName: z
+    .string()
+    .min(1, "Last name is required")
+    .max(50, "Last name must be less than 50 characters"),
+  email: z
+    .string()
+    .email("Invalid email address")
+    .max(100, "Email must be less than 100 characters"),
+  peaEmail: z
+    .string()
+    .email("Invalid PEA email address")
+    .max(100, "PEA Email must be less than 100 characters")
+    .optional()
+    .or(z.literal("")),
+  phoneNumber: z
+    .string()
+    .max(20, "Phone number must be less than 20 characters")
+    .optional()
+    .or(z.literal("")),
+  position: z
+    .string()
+    .max(100, "Position must be less than 100 characters")
+    .optional()
+    .or(z.literal("")),
+  positionShort: z
+    .string()
+    .max(20, "Position short must be less than 20 characters")
+    .optional()
+    .or(z.literal("")),
+  positionLevel: z
+    .string()
+    .max(50, "Position level must be less than 50 characters")
+    .optional()
+    .or(z.literal("")),
+  department: z
+    .string()
+    .max(100, "Department must be less than 100 characters")
+    .optional()
+    .or(z.literal("")),
+  departmentShort: z
+    .string()
+    .max(20, "Department short must be less than 20 characters")
+    .optional()
+    .or(z.literal("")),
 });
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
 export default function EditProfilePage() {
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { data: session, status, update: updateSession } = useSession();
   const [isPending, startTransition] = useTransition();
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
     defaultValues: {
-      displayName: "",
+      firstName: "",
+      lastName: "",
       email: "",
-      bio: "",
+      peaEmail: "",
+      phoneNumber: "",
+      position: "",
+      positionShort: "",
+      positionLevel: "",
+      department: "",
+      departmentShort: "",
     },
   });
 
@@ -63,9 +114,16 @@ export default function EditProfilePage() {
   useEffect(() => {
     if (session?.user) {
       form.reset({
-        displayName: session.user.name ?? "",
+        firstName: session.user.firstName ?? "",
+        lastName: session.user.lastName ?? "",
         email: session.user.email ?? "",
-        bio: "",
+        peaEmail: session.user.peaEmail ?? "",
+        phoneNumber: session.user.phoneNumber ?? "",
+        position: session.user.position ?? "",
+        positionShort: session.user.positionShort ?? "",
+        positionLevel: session.user.positionLevel ?? "",
+        department: session.user.department ?? "",
+        departmentShort: session.user.departmentShort ?? "",
       });
     }
   }, [session, form]);
@@ -80,14 +138,26 @@ export default function EditProfilePage() {
   const onSubmit = (data: ProfileFormValues) => {
     startTransition(async () => {
       const formData: ProfileFormData = {
-        displayName: data.displayName,
-        bio: data.bio ?? "",
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        peaEmail: data.peaEmail ?? "",
+        phoneNumber: data.phoneNumber ?? "",
+        position: data.position ?? "",
+        positionShort: data.positionShort ?? "",
+        positionLevel: data.positionLevel ?? "",
+        department: data.department ?? "",
+        departmentShort: data.departmentShort ?? "",
       };
 
-      const result = await updateProfile(formData);
+      const result = await updateKeycloakProfile(formData);
 
       if (result.success) {
         toast.success(result.message);
+        // Trigger session update with new user data
+        if (result.updatedUser) {
+          await updateSession({ user: result.updatedUser });
+        }
         router.push("/profile");
       } else {
         toast.error(result.message);
@@ -168,74 +238,219 @@ export default function EditProfilePage() {
                 onSubmit={form.handleSubmit(onSubmit)}
                 className="space-y-6"
               >
-                {/* Display Name Field */}
-                <FormField
-                  control={form.control}
-                  name="displayName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Display Name</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Enter your display name"
-                          {...field}
-                          disabled={isPending}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        This is your public display name. It can be your real
-                        name or a pseudonym.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {/* Personal Information Section */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                    Personal Information
+                  </h3>
 
-                {/* Email Field (Read-only) */}
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email Address</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          disabled
-                          className="bg-muted text-muted-foreground"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Your email is managed by Keycloak and cannot be changed
-                        here.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* First Name Field */}
+                    <FormField
+                      control={form.control}
+                      name="firstName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>First Name</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="Enter your first name"
+                              {...field}
+                              disabled={isPending}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                {/* Bio Field */}
-                <FormField
-                  control={form.control}
-                  name="bio"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bio</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="Tell us a little bit about yourself"
-                          className="min-h-30 resize-none"
-                          {...field}
-                          disabled={isPending}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        A brief description about yourself. Max 500 characters.
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                    {/* Last Name Field */}
+                    <FormField
+                      control={form.control}
+                      name="lastName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Last Name</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="Enter your last name"
+                              {...field}
+                              disabled={isPending}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  {/* Email Field */}
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email Address</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Enter your email address"
+                            {...field}
+                            // disabled={isPending}
+                            disabled
+                            className="bg-muted text-muted-foreground"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* PEA Email Field */}
+                  <FormField
+                    control={form.control}
+                    name="peaEmail"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>PEA Email</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Enter your PEA email address"
+                            {...field}
+                            disabled={isPending}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* Phone Number Field */}
+                  <FormField
+                    control={form.control}
+                    name="phoneNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone Number</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Enter your phone number"
+                            {...field}
+                            disabled={isPending}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <Separator />
+
+                {/* Work Information Section */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                    Work Information
+                  </h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Position Field */}
+                    <FormField
+                      control={form.control}
+                      name="position"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Position</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="Enter your position"
+                              {...field}
+                              disabled={isPending}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Position Short Field */}
+                    <FormField
+                      control={form.control}
+                      name="positionShort"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Position (Short)</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="e.g., PM, Dev"
+                              {...field}
+                              disabled={isPending}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  {/* Position Level Field */}
+                  <FormField
+                    control={form.control}
+                    name="positionLevel"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Position Level</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Enter your position level"
+                            {...field}
+                            disabled={isPending}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Department Field */}
+                    <FormField
+                      control={form.control}
+                      name="department"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Department</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="Enter your department"
+                              {...field}
+                              disabled={isPending}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Department Short Field */}
+                    <FormField
+                      control={form.control}
+                      name="departmentShort"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Department (Short)</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="e.g., IT, HR"
+                              {...field}
+                              disabled={isPending}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
 
                 <Separator />
 
@@ -272,10 +487,10 @@ export default function EditProfilePage() {
         <Card className="border-muted bg-muted/30">
           <CardContent className="py-4">
             <p className="text-sm text-muted-foreground">
-              <strong>Note:</strong> Some profile fields like email and username
-              are managed by your organization&apos;s identity provider
-              (Keycloak). To change those fields, please contact your system
-              administrator.
+              <strong>Note:</strong> Your email address is managed by your
+              organization&apos;s identity provider (Keycloak). To change your
+              email, please contact your system administrator. Other profile
+              fields will be updated directly in Keycloak.
             </p>
           </CardContent>
         </Card>

@@ -12,6 +12,15 @@ declare module "next-auth" {
             email?: string | null;
             image?: string | null;
             keycloakId?: string;
+            firstName?: string;
+            lastName?: string;
+            peaEmail?: string;
+            position?: string;
+            positionShort?: string;
+            positionLevel?: string;
+            department?: string;
+            departmentShort?: string;
+            phoneNumber?: string;
         };
         accessToken?: string;
         error?: string;
@@ -25,6 +34,16 @@ declare module "@auth/core/jwt" {
         expiresAt?: number;
         error?: string;
         keycloakId?: string;
+        email?: string;
+        firstName?: string;
+        lastName?: string;
+        peaEmail?: string;
+        position?: string;
+        positionShort?: string;
+        positionLevel?: string;
+        department?: string;
+        departmentShort?: string;
+        phoneNumber?: string;
     }
 }
 
@@ -40,13 +59,41 @@ const config: NextAuthConfig = {
         signIn: "/auth/signin",
     },
     callbacks: {
-        async jwt({ token, account, profile }) {
+        async jwt({ token, account, profile, trigger, session }) {
+            // Handle session update (when user updates their profile)
+            if (trigger === "update" && session?.user) {
+                // Update token with new user data from the session update
+                token.firstName = session.user.firstName ?? token.firstName;
+                token.lastName = session.user.lastName ?? token.lastName;
+                token.email = session.user.email ?? token.email;
+                token.peaEmail = session.user.peaEmail ?? token.peaEmail;
+                token.phoneNumber = session.user.phoneNumber ?? token.phoneNumber;
+                token.position = session.user.position ?? token.position;
+                token.positionShort = session.user.positionShort ?? token.positionShort;
+                token.positionLevel = session.user.positionLevel ?? token.positionLevel;
+                token.department = session.user.department ?? token.department;
+                token.departmentShort = session.user.departmentShort ?? token.departmentShort;
+                return token;
+            }
+
             // Initial sign in
             if (account && profile) {
                 token.accessToken = account.access_token;
                 token.refreshToken = account.refresh_token;
                 token.expiresAt = account.expires_at;
                 token.keycloakId = profile.sub ?? undefined;
+                // Standard Keycloak claims
+                token.email = profile.email as string | undefined;
+                token.firstName = profile.given_name as string | undefined;
+                token.lastName = profile.family_name as string | undefined;
+                // Custom Keycloak claims
+                token.peaEmail = profile.pea_email as string | undefined;
+                token.position = profile.position as string | undefined;
+                token.positionShort = profile.position_short as string | undefined;
+                token.positionLevel = profile.position_level as string | undefined;
+                token.department = profile.department as string | undefined;
+                token.departmentShort = profile.department_short as string | undefined;
+                token.phoneNumber = profile.phone as string | undefined;
             }
 
             // Return previous token if the access token has not expired yet
@@ -97,6 +144,16 @@ const config: NextAuthConfig = {
                     ...session.user,
                     id: token.sub!,
                     keycloakId: token.keycloakId,
+                    email: token.email,
+                    firstName: token.firstName,
+                    lastName: token.lastName,
+                    peaEmail: token.peaEmail,
+                    position: token.position,
+                    positionShort: token.positionShort,
+                    positionLevel: token.positionLevel,
+                    department: token.department,
+                    departmentShort: token.departmentShort,
+                    phoneNumber: token.phoneNumber,
                 },
                 accessToken: token.accessToken,
                 error: token.error,

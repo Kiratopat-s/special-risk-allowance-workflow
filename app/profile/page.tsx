@@ -11,7 +11,45 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { UserAvatar } from "@/components/user-avatar";
-import { Mail, User, Key, Edit, Shield } from "lucide-react";
+import {
+  Mail,
+  User,
+  Key,
+  Edit,
+  Shield,
+  Building2,
+  Briefcase,
+  Phone,
+} from "lucide-react";
+
+// Helper component for info rows
+function InfoRow({
+  icon: Icon,
+  label,
+  value,
+  mono = false,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string | null | undefined;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-start gap-4 p-4 rounded-lg bg-muted/50">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-background border border-border">
+        <Icon className="h-5 w-5 text-muted-foreground" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-muted-foreground">{label}</p>
+        <p
+          className={`font-medium ${mono ? "font-mono text-sm break-all" : ""}`}
+        >
+          {value ?? "Not provided"}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export default async function ProfilePage() {
   const session = await auth();
@@ -63,58 +101,84 @@ export default async function ProfilePage() {
             <CardDescription className="flex items-center gap-2">
               <Shield className="h-4 w-4" />
               Authenticated via Keycloak SSO
+              {user.positionShort && (
+                <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-primary/10 text-primary">
+                  {user.positionShort}
+                </span>
+              )}
             </CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-6">
             <Separator />
 
-            {/* User Details */}
+            {/* Personal Information */}
             <div className="space-y-4">
               <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                Account Information
+                Personal Information
               </h3>
 
-              {/* Email */}
-              <div className="flex items-start gap-4 p-4 rounded-lg bg-muted/50">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-background border border-border">
-                  <Mail className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Email Address
-                  </p>
-                  <p className="font-medium">{user.email ?? "Not provided"}</p>
-                </div>
-              </div>
+              <InfoRow icon={User} label="Full Name" value={user.name} />
+              <InfoRow icon={Mail} label="Email Address" value={user.email} />
+              <InfoRow icon={Mail} label="PEA Email" value={user.peaEmail} />
+              <InfoRow
+                icon={Phone}
+                label="Phone Number"
+                value={user.phoneNumber}
+              />
+            </div>
 
-              {/* Full Name */}
-              <div className="flex items-start gap-4 p-4 rounded-lg bg-muted/50">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-background border border-border">
-                  <User className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Full Name
-                  </p>
-                  <p className="font-medium">{user.name ?? "Not provided"}</p>
-                </div>
-              </div>
+            <Separator />
 
-              {/* Keycloak ID */}
-              <div className="flex items-start gap-4 p-4 rounded-lg bg-muted/50">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-background border border-border">
-                  <Key className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">
-                    Keycloak User ID
-                  </p>
-                  <p className="font-mono text-sm break-all">
-                    {user.keycloakId ?? user.id ?? "Not available"}
-                  </p>
-                </div>
-              </div>
+            {/* Work Information */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                Work Information
+              </h3>
+
+              <InfoRow
+                icon={Briefcase}
+                label="Position"
+                value={
+                  user.position
+                    ? `${user.position}${
+                        user.positionShort ? ` (${user.positionShort})` : ""
+                      }`
+                    : null
+                }
+              />
+              <InfoRow
+                icon={Briefcase}
+                label="Position Level"
+                value={user.positionLevel}
+              />
+              <InfoRow
+                icon={Building2}
+                label="Department"
+                value={
+                  user.department
+                    ? `${user.department}${
+                        user.departmentShort ? ` (${user.departmentShort})` : ""
+                      }`
+                    : null
+                }
+              />
+            </div>
+
+            <Separator />
+
+            {/* System Information */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                System Information
+              </h3>
+
+              <InfoRow
+                icon={Key}
+                label="Keycloak User ID"
+                value={user.keycloakId ?? user.id}
+                mono
+              />
             </div>
 
             <Separator />
