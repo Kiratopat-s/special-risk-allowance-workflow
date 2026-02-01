@@ -3,6 +3,12 @@
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
+import { userService } from "@/lib/domains/user/service";
+import { actionLogService } from "@/lib/domains/action-log/service";
+import { userRepository } from "@/lib/domains/user/repository";
+import { ActionType } from "@/lib/shared/types";
+import type { Prisma } from "@/lib/generated/prisma/client";
 
 // Profile update schema
 const profileSchema = z.object({
@@ -272,6 +278,84 @@ export async function updateKeycloakProfile(
         }
 
         console.log("Profile updated for user:", session.user.keycloakId);
+
+        // Get request context for logging
+        const headersList = await headers();
+        const requestContext = {
+            ipAddress:
+                headersList.get("x-forwarded-for")?.split(",")[0] ||
+                headersList.get("x-real-ip") ||
+                undefined,
+            userAgent: headersList.get("user-agent") || undefined,
+            requestPath: "/profile/edit",
+            requestMethod: "POST",
+        };
+
+        // Get existing user data for comparison logging
+        const existingUser = await userRepository.findByKeycloakIdWithDepartment(
+            session.user.keycloakId
+        );
+        const previousData = existingUser
+            ? {
+                email: existingUser.email,
+                firstName: existingUser.firstName,
+                lastName: existingUser.lastName,
+                peaEmail: existingUser.peaEmail,
+                phoneNumber: existingUser.phoneNumber,
+                position: existingUser.position,
+                positionShort: existingUser.positionShort,
+                positionLevel: existingUser.positionLevel,
+                department: existingUser.department?.name,
+            }
+            : null;
+
+        // Immediately sync to database
+        const syncResult = await userService.syncFromKeycloak(
+            {
+                id: session.user.keycloakId,
+                keycloakId: session.user.keycloakId,
+                email,
+                firstName,
+                lastName,
+                peaEmail: peaEmail || undefined,
+                phoneNumber: phoneNumber || undefined,
+                position: position || undefined,
+                positionShort: positionShort || undefined,
+                positionLevel: positionLevel || undefined,
+                department: department || undefined,
+                departmentShort: departmentShort || undefined,
+            },
+            requestContext
+        );
+
+        if (!syncResult.success) {
+            console.error("Failed to sync profile to database:", syncResult.error);
+            // Still return success since Keycloak was updated
+            // But log the sync failure
+        } else {
+            // Log the profile edit action
+            await actionLogService.log({
+                userId: syncResult.data.id,
+                actionType: ActionType.PROFILE_UPDATED,
+                actionDescription: "User updated their profile",
+                previousData: previousData as unknown as Prisma.JsonValue,
+                newData: {
+                    email,
+                    firstName,
+                    lastName,
+                    peaEmail: peaEmail || null,
+                    phoneNumber: phoneNumber || null,
+                    position: position || null,
+                    positionShort: positionShort || null,
+                    positionLevel: positionLevel || null,
+                    department: department || null,
+                } as unknown as Prisma.JsonValue,
+                ipAddress: requestContext.ipAddress,
+                userAgent: requestContext.userAgent,
+            });
+
+            console.log("Profile synced to database for user:", session.user.keycloakId);
+        }
 
         // Revalidate the profile page to show updated data
         revalidatePath("/profile");

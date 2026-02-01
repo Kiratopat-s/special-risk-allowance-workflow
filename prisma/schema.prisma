@@ -1,0 +1,184 @@
+// Prisma Schema - Clean Architecture Domain Models
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum ActionType {
+  // Authentication
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  SESSION_REFRESH
+  
+  // User Management
+  USER_CREATED
+  USER_UPDATED
+  USER_DELETED
+  USER_STATUS_CHANGED
+  
+  // Profile Management
+  PROFILE_VIEWED
+  PROFILE_UPDATED
+  PASSWORD_CHANGED
+  
+  // Department Management
+  DEPARTMENT_CREATED
+  DEPARTMENT_UPDATED
+  DEPARTMENT_DELETED
+  
+  // System Actions
+  SYSTEM_ACCESS
+  PERMISSION_GRANTED
+  PERMISSION_REVOKED
+  
+  // Data Operations
+  DATA_EXPORTED
+  DATA_IMPORTED
+  
+  // Other
+  OTHER
+}
+
+// =============================================================================
+// DOMAIN: USER
+// =============================================================================
+
+model User {
+  id                String     @id @default(uuid())
+  keycloakId        String     @unique @map("keycloak_id")
+  
+  // Personal Information
+  email             String     @unique
+  peaEmail          String?    @map("pea_email")
+  firstName         String     @map("first_name")
+  lastName          String     @map("last_name")
+  phoneNumber       String?    @map("phone_number")
+  
+  // Position Information
+  position          String?
+  positionShort     String?    @map("position_short")
+  positionLevel     String?    @map("position_level")
+  
+  // Department Relation
+  departmentId      String?    @map("department_id")
+  department        Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  
+  // Status & Metadata
+  status            UserStatus @default(ACTIVE)
+  lastLoginAt       DateTime?  @map("last_login_at")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+  
+  // Relations
+  actionLogs        UserActionLog[] @relation("UserActions")
+  targetedActions   UserActionLog[] @relation("TargetUserActions")
+  
+  @@map("users")
+  @@index([keycloakId])
+  @@index([email])
+  @@index([departmentId])
+  @@index([status])
+}
+
+// =============================================================================
+// DOMAIN: DEPARTMENT
+// =============================================================================
+
+model Department {
+  id                String     @id @default(uuid())
+  
+  // Department Information
+  name              String     @unique
+  shortName         String?    @unique @map("short_name")
+  description       String?
+  
+  // Hierarchy (self-referencing for organizational structure)
+  parentId          String?    @map("parent_id")
+  parent            Department? @relation("DepartmentHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children          Department[] @relation("DepartmentHierarchy")
+  
+  // Status & Metadata
+  isActive          Boolean    @default(true) @map("is_active")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+  
+  // Relations
+  users             User[]
+  actionLogs        UserActionLog[]
+  
+  @@map("departments")
+  @@index([name])
+  @@index([shortName])
+  @@index([parentId])
+}
+
+// =============================================================================
+// DOMAIN: USER ACTION LOG (Audit Trail)
+// =============================================================================
+
+model UserActionLog {
+  id                String     @id @default(uuid())
+  
+  // Actor Information
+  userId            String     @map("user_id")
+  user              User       @relation("UserActions", fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Action Details
+  actionType        ActionType @map("action_type")
+  actionDescription String?    @map("action_description")
+  
+  // Target Entity (optional - for actions on other entities)
+  targetUserId      String?    @map("target_user_id")
+  targetUser        User?      @relation("TargetUserActions", fields: [targetUserId], references: [id], onDelete: SetNull)
+  
+  targetDepartmentId String?   @map("target_department_id")
+  targetDepartment  Department? @relation(fields: [targetDepartmentId], references: [id], onDelete: SetNull)
+  
+  // Generic target for other entities
+  targetEntityType  String?    @map("target_entity_type")
+  targetEntityId    String?    @map("target_entity_id")
+  
+  // Request Context
+  ipAddress         String?    @map("ip_address")
+  userAgent         String?    @map("user_agent")
+  requestPath       String?    @map("request_path")
+  requestMethod     String?    @map("request_method")
+  
+  // Additional Data (JSON for flexibility)
+  metadata          Json?
+  previousData      Json?      @map("previous_data")
+  newData           Json?      @map("new_data")
+  
+  // Status
+  isSuccess         Boolean    @default(true) @map("is_success")
+  errorMessage      String?    @map("error_message")
+  
+  // Timestamp
+  createdAt         DateTime   @default(now()) @map("created_at")
+  
+  @@map("user_action_logs")
+  @@index([userId])
+  @@index([actionType])
+  @@index([targetUserId])
+  @@index([targetDepartmentId])
+  @@index([createdAt])
+  @@index([isSuccess])
+}

@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Keycloak from "next-auth/providers/keycloak";
 import type { NextAuthConfig } from "next-auth";
 import type { JWT } from "@auth/core/jwt";
+import { authEvents } from "@/lib/auth/events";
 
 // Extend the default session and JWT types
 declare module "next-auth" {
@@ -12,6 +13,7 @@ declare module "next-auth" {
             email?: string | null;
             image?: string | null;
             keycloakId?: string;
+            dbUserId?: string; // Database user ID
             firstName?: string;
             lastName?: string;
             peaEmail?: string;
@@ -34,6 +36,7 @@ declare module "@auth/core/jwt" {
         expiresAt?: number;
         error?: string;
         keycloakId?: string;
+        dbUserId?: string; // Database user ID
         email?: string;
         firstName?: string;
         lastName?: string;
@@ -94,6 +97,18 @@ const config: NextAuthConfig = {
                 token.department = profile.department as string | undefined;
                 token.departmentShort = profile.department_short as string | undefined;
                 token.phoneNumber = profile.phone as string | undefined;
+
+                // Sync user to database and log authentication event
+                try {
+                    const result = await authEvents.onSignIn(
+                        profile as Parameters<typeof authEvents.onSignIn>[0]
+                    );
+                    if (result?.userId) {
+                        token.dbUserId = result.userId;
+                    }
+                } catch (err) {
+                    console.error("Error syncing user on sign in:", err);
+                }
             }
 
             // Return previous token if the access token has not expired yet
@@ -129,6 +144,51 @@ const config: NextAuthConfig = {
                     token.accessToken = tokens.access_token;
                     token.refreshToken = tokens.refresh_token ?? token.refreshToken;
                     token.expiresAt = Math.floor(Date.now() / 1000 + tokens.expires_in);
+
+                    // Sync profile changes from Keycloak (when user updates their account in Keycloak)
+                    // This also logs the session refresh event
+                    if (token.keycloakId && typeof token.keycloakId === "string") {
+                        try {
+                            const profileSync = await authEvents.onProfileSync(
+                                tokens.access_token,
+                                {
+                                    keycloakId: token.keycloakId,
+                                    dbUserId: token.dbUserId as string | undefined,
+                                    email: token.email as string | undefined,
+                                    firstName: token.firstName as string | undefined,
+                                    lastName: token.lastName as string | undefined,
+                                    peaEmail: token.peaEmail as string | undefined,
+                                    position: token.position as string | undefined,
+                                    positionShort: token.positionShort as string | undefined,
+                                    positionLevel: token.positionLevel as string | undefined,
+                                    department: token.department as string | undefined,
+                                    departmentShort: token.departmentShort as string | undefined,
+                                    phoneNumber: token.phoneNumber as string | undefined,
+                                }
+                            );
+
+                            // Update token with profile changes from Keycloak
+                            if (profileSync.updated && profileSync.tokenUpdates) {
+                                token.email = profileSync.tokenUpdates.email ?? token.email;
+                                token.firstName = profileSync.tokenUpdates.firstName ?? token.firstName;
+                                token.lastName = profileSync.tokenUpdates.lastName ?? token.lastName;
+                                token.peaEmail = profileSync.tokenUpdates.peaEmail ?? token.peaEmail;
+                                token.position = profileSync.tokenUpdates.position ?? token.position;
+                                token.positionShort = profileSync.tokenUpdates.positionShort ?? token.positionShort;
+                                token.positionLevel = profileSync.tokenUpdates.positionLevel ?? token.positionLevel;
+                                token.department = profileSync.tokenUpdates.department ?? token.department;
+                                token.departmentShort = profileSync.tokenUpdates.departmentShort ?? token.departmentShort;
+                                token.phoneNumber = profileSync.tokenUpdates.phoneNumber ?? token.phoneNumber;
+                            }
+
+                            // Log session refresh (fire and forget)
+                            authEvents.onSessionRefresh(token.keycloakId).catch(() => { });
+                        } catch (syncError) {
+                            console.error("Error syncing profile on token refresh:", syncError);
+                            // Still log session refresh even if sync fails
+                            authEvents.onSessionRefresh(token.keycloakId).catch(() => { });
+                        }
+                    }
                 } catch (error) {
                     console.error("Error refreshing access token", error);
                     token.error = "RefreshAccessTokenError";
@@ -144,6 +204,7 @@ const config: NextAuthConfig = {
                     ...session.user,
                     id: token.sub!,
                     keycloakId: token.keycloakId,
+                    dbUserId: token.dbUserId,
                     email: token.email,
                     firstName: token.firstName,
                     lastName: token.lastName,
@@ -169,6 +230,18 @@ const config: NextAuthConfig = {
             }
 
             return true;
+        },
+    },
+    events: {
+        /**
+         * Handle sign out event - log the logout activity
+         */
+        async signOut(message) {
+            // message contains either session or token depending on strategy
+            const token = "token" in message ? message.token : null;
+            if (token?.keycloakId) {
+                await authEvents.onSignOut(token.keycloakId as string);
+            }
         },
     },
     session: {
