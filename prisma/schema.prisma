@@ -234,7 +234,7 @@ enum ClaimDocumentStatus {
 }
 model ExpenseClaim {
   id                     String     @id @default(uuid())
-  expenseMonth           DateTime    @map("for_month")
+  expenseMonth           DateTime    @map("expense_month") // Represents the month for which expenses are claimed (e.g. 2024-01-01 for January 2024)
   userId                 String      @map("user_id")
   claimant               User        @relation("ExpenseClaimUser", fields: [userId], references: [id], onDelete: Cascade)
   claimantPositionAtSubmission String     @map("claimant_position_at_submission")
