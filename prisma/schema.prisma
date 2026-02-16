@@ -205,10 +205,8 @@ model OffSiteWork {
 
   originalFile          Files?      @relation(fields: [originalFileId], references: [id], onDelete: SetNull)
   
-  // Many-to-many relation with ExpenseClaim
-  expenseClaims         ExpenseClaim[]
-  
   @@map("off_site_works")
+  expenseClaimOffSiteWorks ExpenseClaimOffSiteWork[]
 }
 
 model Files {
@@ -251,9 +249,22 @@ model ExpenseClaim {
   updatedAt              DateTime?  @map("updated_at") @updatedAt
   cancelledAt            DateTime?  @map("cancelled_at")
   
-  // Many-to-many relation with OffSiteWork
-  offSiteWorks           OffSiteWork[]
   
   @@map("expense_claims")
+  expenseClaimOffSiteWorks ExpenseClaimOffSiteWork[]
 }
+
+model ExpenseClaimOffSiteWork {
+  expenseClaimId String @map("expense_claim_id")
+  offSiteWorkId  String @map("off_site_work_id")
+
+  expenseClaim   ExpenseClaim @relation(fields: [expenseClaimId], references: [id], onDelete: Cascade)
+  offSiteWork    OffSiteWork  @relation(fields: [offSiteWorkId], references: [id], onDelete: Cascade)
+
+  @@id([expenseClaimId, offSiteWorkId])
+  @@map("expense_claim_off_site_work")
+}
+
+
+
 
