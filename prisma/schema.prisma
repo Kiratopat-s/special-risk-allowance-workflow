@@ -101,6 +101,7 @@ model User {
   expenseClaims          ExpenseClaim[] @relation("ExpenseClaimUser")
   createdExpenseClaims   ExpenseClaim[] @relation("ExpenseClaimCreator")
   
+  monthlyRequestsCollection MonthlyRequestCollection[]
 }
 
 // =============================================================================
@@ -221,11 +222,12 @@ model Files {
   deletedAt             DateTime?   @map("deleted_at")
   
   offSiteWorks OffSiteWork[]
+  @@map("files")
 }
 
 enum ClaimDocumentStatus {
   DRAFT // Initial status when a claim is being prepared but not yet submitted for review
-  PENDING // Default status when a claim is created and awaiting review
+  PENDING // Status when a claim is created and awaiting review
   APPROVED // Status when a claim has been reviewed and approved by the relevant authority
   REJECTED // Status when a claim has been reviewed and rejected, often with feedback for the claimant
   CANCELLED // Status when a claim has been cancelled by the claimant or due to other reasons
@@ -240,6 +242,8 @@ model ExpenseClaim {
   /// Expected structure: JSON array of ISO-8601 date strings (e.g. "2024-01-15"),
   /// listing the specific calendar days within `forMonth` for which expenses are claimed.
   selectedDates          Json?      @map("selected_dates")
+  countDates             Decimal?    @map("count_dates") // Represents the number of specific dates selected for the month, if applicable
+  amount                 Decimal?    @map("amount")
   remark                 String?     @map("remark")
 
   createdById            String     @map("created_by_id")
@@ -248,6 +252,11 @@ model ExpenseClaim {
   status                 ClaimDocumentStatus @default(DRAFT)
   updatedAt              DateTime?  @map("updated_at") @updatedAt
   cancelledAt            DateTime?  @map("cancelled_at")
+
+  monthlyRequestCollectionId       String?    @map("monthly_request_collection_id")
+  monthlyRequestCollection         MonthlyRequestCollection? @relation(fields: [monthlyRequestCollectionId], references: [id], onDelete: SetNull)
+  collectedAt            DateTime?   @map("collected_at")
+  
   
   
   @@map("expense_claims")
@@ -265,6 +274,19 @@ model ExpenseClaimOffSiteWork {
   @@map("expense_claim_off_site_work")
 }
 
+model MonthlyRequestCollection {
+  id                 String     @id @default(uuid())
+  collectorId        String     @map("collector_id")
+  collector          User       @relation(fields: [collectorId], references: [id], onDelete: Cascade)
+  collectForMonth       DateTime   @map("collect_for_month") // Represents the month for which data is being collected (e.g. 2024-01-01 for January 2024)
+  countDates         Decimal?   @map("count_dates") // Represents the number of specific dates selected for the month, if applicable
+  amount              Decimal?   @map("amount")
 
-
-
+  status            ClaimDocumentStatus @default(DRAFT)
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime?  @map("updated_at") @updatedAt
+  cancelledAt       DateTime?  @map("cancelled_at")
+  
+  expenseClaims ExpenseClaim[]
+  @@map("monthly_request_collections")
+}
