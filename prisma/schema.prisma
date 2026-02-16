@@ -98,6 +98,9 @@ model User {
   @@index([status])
   files Files[]
   offSiteWorks OffSiteWork[]
+  expenseClaims          ExpenseClaim[] @relation("ExpenseClaimUser")
+  createdExpenseClaims   ExpenseClaim[] @relation("ExpenseClaimCreator")
+  
 }
 
 // =============================================================================
@@ -201,6 +204,11 @@ model OffSiteWork {
   originalFileId        String?     @map("original_file_id")
 
   originalFile          Files?      @relation(fields: [originalFileId], references: [id], onDelete: SetNull)
+  
+  // Many-to-many relation with ExpenseClaim
+  expenseClaims         ExpenseClaim[]
+  
+  @@map("off_site_works")
 }
 
 model Files {
@@ -215,5 +223,37 @@ model Files {
   deletedAt             DateTime?   @map("deleted_at")
   
   offSiteWorks OffSiteWork[]
+}
+
+enum ClaimDocumentStatus {
+  DRAFT // Initial status when a claim is being prepared but not yet submitted for review
+  PENDING // Default status when a claim is created and awaiting review
+  APPROVED // Status when a claim has been reviewed and approved by the relevant authority
+  REJECTED // Status when a claim has been reviewed and rejected, often with feedback for the claimant
+  CANCELLED // Status when a claim has been cancelled by the claimant or due to other reasons
+}
+model ExpenseClaim {
+  id                     String     @id @default(uuid())
+  expenseMonth           DateTime    @map("for_month")
+  userId                 String      @map("user_id")
+  claimant               User        @relation("ExpenseClaimUser", fields: [userId], references: [id], onDelete: Cascade)
+  claimantPositionAtSubmission String     @map("claimant_position_at_submission")
+
+  /// Expected structure: JSON array of ISO-8601 date strings (e.g. "2024-01-15"),
+  /// listing the specific calendar days within `forMonth` for which expenses are claimed.
+  selectedDates          Json?      @map("selected_dates")
+  remark                 String?     @map("remark")
+
+  createdById            String     @map("created_by_id")
+  createdBy              User       @relation("ExpenseClaimCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt              DateTime   @default(now()) @map("created_at")
+  status                 ClaimDocumentStatus @default(DRAFT)
+  updatedAt              DateTime?  @map("updated_at") @updatedAt
+  cancelledAt            DateTime?  @map("cancelled_at")
+  
+  // Many-to-many relation with OffSiteWork
+  offSiteWorks           OffSiteWork[]
+  
+  @@map("expense_claims")
 }
 
