@@ -102,6 +102,7 @@ model User {
   createdExpenseClaims   ExpenseClaim[] @relation("ExpenseClaimCreator")
   
   monthlyRequestsCollection MonthlyRequestCollection[]
+  signatures Signature[]
 }
 
 // =============================================================================
@@ -315,3 +316,20 @@ model MonthlyRequestCollection {
   @@index([createdAt])
   @@index([collectorId, collectForMonth])
 }
+
+model Signature {
+  id                String     @id @default(uuid())
+  userId            String     @map("user_id")
+  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  signatureData     Bytes      @map("signature_data") // Binary data for the signature (e.g. image bytes)
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime?  @map("updated_at") @updatedAt
+  deletedAt         DateTime?  @map("deleted_at")
+  
+  @@map("signatures")
+
+  @@index([deletedAt])
+  @@index([userId, deletedAt])
+}
+
+
