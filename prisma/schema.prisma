@@ -198,16 +198,23 @@ model OffSiteWork {
   location              String?     @map("location")
   employeeList          Json?       @map("employee_list")
   posted_at             DateTime    @map("posted_at") @default(now())
-  posted_by_user_id     String      @map("posted_by_user_id")
-  posted_by_user        User        @relation(fields: [posted_by_user_id], references: [id], onDelete: Cascade)
+  postedByUserId     String      @map("posted_by_user_id")
+  postedByUser        User        @relation(fields: [postedByUserId], references: [id], onDelete: Cascade)
   updated_at            DateTime?   @map("updated_at") @updatedAt
   deleted_at            DateTime?   @map("deleted_at")
   originalFileId        String?     @map("original_file_id")
 
   originalFile          Files?      @relation(fields: [originalFileId], references: [id], onDelete: SetNull)
   
-  @@map("off_site_works")
   expenseClaimOffSiteWorks ExpenseClaimOffSiteWork[]
+  
+  @@map("off_site_works")
+  @@index([postedByUserId])
+  @@index([originalFileId])
+  @@index([startDate])
+  @@index([endDate])
+  @@index([deleted_at])
+  @@index([posted_at])
 }
 
 model Files {
@@ -222,7 +229,11 @@ model Files {
   deletedAt             DateTime?   @map("deleted_at")
   
   offSiteWorks OffSiteWork[]
+  
   @@map("files")
+  @@index([uploadedById])
+  @@index([deletedAt])
+  @@index([uploadedAt])
 }
 
 enum ClaimDocumentStatus {
@@ -257,10 +268,17 @@ model ExpenseClaim {
   monthlyRequestCollection         MonthlyRequestCollection? @relation(fields: [monthlyRequestCollectionId], references: [id], onDelete: SetNull)
   collectedAt            DateTime?   @map("collected_at")
   
-  
+  expenseClaimOffSiteWorks ExpenseClaimOffSiteWork[]
   
   @@map("expense_claims")
-  expenseClaimOffSiteWorks ExpenseClaimOffSiteWork[]
+  @@index([userId])
+  @@index([createdById])
+  @@index([monthlyRequestCollectionId])
+  @@index([expenseMonth])
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId, expenseMonth])
+  @@index([status, expenseMonth])
 }
 
 model ExpenseClaimOffSiteWork {
@@ -272,6 +290,7 @@ model ExpenseClaimOffSiteWork {
 
   @@id([expenseClaimId, offSiteWorkId])
   @@map("expense_claim_off_site_work")
+  @@index([offSiteWorkId])
 }
 
 model MonthlyRequestCollection {
@@ -288,5 +307,11 @@ model MonthlyRequestCollection {
   cancelledAt       DateTime?  @map("cancelled_at")
   
   expenseClaims ExpenseClaim[]
+  
   @@map("monthly_request_collections")
+  @@index([collectorId])
+  @@index([collectForMonth])
+  @@index([status])
+  @@index([createdAt])
+  @@index([collectorId, collectForMonth])
 }
