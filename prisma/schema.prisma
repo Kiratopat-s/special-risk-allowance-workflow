@@ -96,6 +96,8 @@ model User {
   @@index([email])
   @@index([departmentId])
   @@index([status])
+  files Files[]
+  offSiteWorks OffSiteWork[]
 }
 
 // =============================================================================
@@ -192,6 +194,8 @@ model OffSiteWork {
   location              String?     @map("location")
   employeeList          Json?       @map("employee_list")
   posted_at             DateTime    @map("posted_at") @default(now())
+  posted_by_user_id     String      @map("posted_by_user_id")
+  posted_by_user        User        @relation(fields: [posted_by_user_id], references: [id], onDelete: Cascade)
   updated_at            DateTime?   @map("updated_at") @updatedAt
   deleted_at            DateTime?   @map("deleted_at")
   originalFileId        String?     @map("original_file_id")
@@ -205,9 +209,11 @@ model Files {
   fileType               String?     @map("file_type")
   fileSize               Int?        @map("file_size")
   fileContent            Bytes?      @map("file_content")
-  uploadedBy            String?     @map("uploaded_by")
+  uploadedById          String      @map("uploaded_by_id")
+  uploadedBy            User        @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
   uploadedAt            DateTime?   @map("uploaded_at") @default(now())
   deletedAt             DateTime?   @map("deleted_at")
   
   offSiteWorks OffSiteWork[]
 }
+
