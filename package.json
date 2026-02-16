@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "devh": "next dev --hostname local.sraw.space",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

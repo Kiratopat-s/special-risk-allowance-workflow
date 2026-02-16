@@ -182,3 +182,32 @@ model UserActionLog {
   @@index([createdAt])
   @@index([isSuccess])
 }
+
+model OffSiteWork {
+  id                    String      @id
+  innerRefDocumentId    String?     @map("inner_ref_document_id")
+  startDate             DateTime    @map("start_date")
+  endDate               DateTime    @map("end_date")
+  objective             String?     @map("objective")
+  location              String?     @map("location")
+  employeeList          Json?       @map("employee_list")
+  posted_at             DateTime    @map("posted_at") @default(now())
+  updated_at            DateTime?   @map("updated_at") @updatedAt
+  deleted_at            DateTime?   @map("deleted_at")
+  originalFileId        String?     @map("original_file_id")
+
+  originalFile          Files?      @relation(fields: [originalFileId], references: [id], onDelete: SetNull)
+}
+
+model Files {
+  id                    String     @id @default(uuid())
+  fileName               String      @map("file_name")
+  fileType               String?     @map("file_type")
+  fileSize               Int?        @map("file_size")
+  fileContent            Bytes?      @map("file_content")
+  uploadedBy            String?     @map("uploaded_by")
+  uploadedAt            DateTime?   @map("uploaded_at") @default(now())
+  deletedAt             DateTime?   @map("deleted_at")
+  
+  offSiteWorks OffSiteWork[]
+}
