@@ -10,6 +10,7 @@
 import { userRepository } from "./repository";
 import { actionLogService } from "@/lib/domains/action-log/service";
 import { departmentRepository } from "@/lib/domains/department/repository";
+import { userRoleRepository, roleRepository } from "@/lib/domains/permission/repository";
 import { ActionType, UserStatus } from "@/lib/shared/types";
 import { success, error, type Result } from "@/lib/shared/types";
 import type { Prisma } from "@/lib/generated/prisma/client";
@@ -137,6 +138,20 @@ export const userService = {
             newData: { email: newUser.email, keycloakId: newUser.keycloakId } as unknown as JsonValue,
             ...context,
         });
+
+        // Auto-assign default "employee" role
+        try {
+            const employeeRole = await roleRepository.findByCode("employee");
+            if (employeeRole) {
+                await userRoleRepository.assign({
+                    userId: newUser.id,
+                    roleId: employeeRole.id,
+                });
+            }
+        } catch {
+            // Non-critical: log but don't fail user creation
+            console.warn(`Failed to assign default employee role to user ${newUser.id}`);
+        }
 
         return success(newUser, "User created successfully");
     },

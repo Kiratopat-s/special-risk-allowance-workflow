@@ -12,12 +12,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { User, LogOut, Settings } from "lucide-react";
+import { User, LogOut, Settings, ShieldCheck } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { usePermissions } from "@/lib/hooks/use-permissions";
 
 export function Navbar() {
   const { data: session, status } = useSession();
   const isLoading = status === "loading";
+  const { canAny, hasRole } = usePermissions();
 
   const getInitials = (name?: string | null) => {
     if (!name) return "U";
@@ -28,6 +30,17 @@ export function Navbar() {
       .toUpperCase()
       .slice(0, 2);
   };
+
+  // Check if user has admin access
+  const hasAdminAccess =
+    hasRole("super-admin") ||
+    hasRole("admin") ||
+    canAny([
+      { resource: "ROLE", action: "LIST" },
+      { resource: "ROLE", action: "MANAGE" },
+      { resource: "USER", action: "MANAGE" },
+      { resource: "PERMISSION", action: "LIST" },
+    ]);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
@@ -89,6 +102,14 @@ export function Navbar() {
                     <span>Settings</span>
                   </Link>
                 </DropdownMenuItem>
+                {hasAdminAccess && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/admin" className="flex items-center">
+                      <ShieldCheck className="mr-2 h-4 w-4" />
+                      <span>Admin</span>
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"

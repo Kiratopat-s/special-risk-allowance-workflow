@@ -8,4 +8,11 @@
  */
 
 // Re-export from Prisma generated types
-export { UserStatus, ActionType } from "@/lib/generated/prisma/client";
+export {
+    UserStatus,
+    ActionType,
+    ClaimDocumentStatus,
+    PermissionResource,
+    PermissionAction,
+    PermissionScope,
+} from "@/lib/generated/prisma/client";
