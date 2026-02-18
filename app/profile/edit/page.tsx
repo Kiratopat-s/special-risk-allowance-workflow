@@ -55,6 +55,11 @@ const profileFormSchema = z.object({
     .max(100, "PEA Email must be less than 100 characters")
     .optional()
     .or(z.literal("")),
+  employeeId: z
+    .string()
+    .max(50, "Employee ID must be less than 50 characters")
+    .optional()
+    .or(z.literal("")),
   phoneNumber: z
     .string()
     .max(20, "Phone number must be less than 20 characters")
@@ -101,6 +106,7 @@ export default function EditProfilePage() {
       lastName: "",
       email: "",
       peaEmail: "",
+      employeeId: "",
       phoneNumber: "",
       position: "",
       positionShort: "",
@@ -118,6 +124,7 @@ export default function EditProfilePage() {
         lastName: session.user.lastName ?? "",
         email: session.user.email ?? "",
         peaEmail: session.user.peaEmail ?? "",
+        employeeId: session.user.employeeId ?? "",
         phoneNumber: session.user.phoneNumber ?? "",
         position: session.user.position ?? "",
         positionShort: session.user.positionShort ?? "",
@@ -142,6 +149,7 @@ export default function EditProfilePage() {
         lastName: data.lastName,
         email: data.email,
         peaEmail: data.peaEmail ?? "",
+        employeeId: data.employeeId ?? "",
         phoneNumber: data.phoneNumber ?? "",
         position: data.position ?? "",
         positionShort: data.positionShort ?? "",
@@ -315,6 +323,25 @@ export default function EditProfilePage() {
                         <FormControl>
                           <Input
                             placeholder="Enter your PEA email address"
+                            {...field}
+                            disabled={isPending}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* Employee ID Field */}
+                  <FormField
+                    control={form.control}
+                    name="employeeId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Employee ID</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Enter your employee ID"
                             {...field}
                             disabled={isPending}
                           />

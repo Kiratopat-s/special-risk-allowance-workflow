@@ -81,6 +81,7 @@ export function useProfileSync(options: UseProfileSyncOptions = {}) {
                                 firstName: result.profile.firstName,
                                 lastName: result.profile.lastName,
                                 peaEmail: result.profile.peaEmail,
+                                employeeId: result.profile.employeeId,
                                 position: result.profile.position,
                                 positionShort: result.profile.positionShort,
                                 positionLevel: result.profile.positionLevel,

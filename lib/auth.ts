@@ -17,6 +17,7 @@ declare module "next-auth" {
             firstName?: string;
             lastName?: string;
             peaEmail?: string;
+            employeeId?: string;
             position?: string;
             positionShort?: string;
             positionLevel?: string;
@@ -41,6 +42,7 @@ declare module "@auth/core/jwt" {
         firstName?: string;
         lastName?: string;
         peaEmail?: string;
+        employeeId?: string;
         position?: string;
         positionShort?: string;
         positionLevel?: string;
@@ -53,9 +55,9 @@ declare module "@auth/core/jwt" {
 const config: NextAuthConfig = {
     providers: [
         Keycloak({
-            clientId: process.env.KEYCLOAK_CLIENT_ID!,
-            clientSecret: process.env.KEYCLOAK_CLIENT_SECRET!,
-            issuer: process.env.KEYCLOAK_ISSUER,
+            clientId: process.env.AUTH_KEYCLOAK_ID!,
+            clientSecret: process.env.AUTH_KEYCLOAK_SECRET!,
+            issuer: process.env.AUTH_KEYCLOAK_ISSUER,
         }),
     ],
     pages: {
@@ -70,6 +72,7 @@ const config: NextAuthConfig = {
                 token.lastName = session.user.lastName ?? token.lastName;
                 token.email = session.user.email ?? token.email;
                 token.peaEmail = session.user.peaEmail ?? token.peaEmail;
+                token.employeeId = session.user.employeeId ?? token.employeeId;
                 token.phoneNumber = session.user.phoneNumber ?? token.phoneNumber;
                 token.position = session.user.position ?? token.position;
                 token.positionShort = session.user.positionShort ?? token.positionShort;
@@ -91,6 +94,7 @@ const config: NextAuthConfig = {
                 token.lastName = profile.family_name as string | undefined;
                 // Custom Keycloak claims
                 token.peaEmail = profile.pea_email as string | undefined;
+                token.employeeId = profile.employee_id as string | undefined;
                 token.position = profile.position as string | undefined;
                 token.positionShort = profile.position_short as string | undefined;
                 token.positionLevel = profile.position_level as string | undefined;
@@ -122,15 +126,15 @@ const config: NextAuthConfig = {
             if (refreshToken) {
                 try {
                     const response = await fetch(
-                        `${process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/token`,
+                        `${process.env.AUTH_KEYCLOAK_ISSUER}/protocol/openid-connect/token`,
                         {
                             method: "POST",
                             headers: {
                                 "Content-Type": "application/x-www-form-urlencoded",
                             },
                             body: new URLSearchParams({
-                                client_id: process.env.KEYCLOAK_CLIENT_ID!,
-                                client_secret: process.env.KEYCLOAK_CLIENT_SECRET!,
+                                client_id: process.env.AUTH_KEYCLOAK_ID!,
+                                client_secret: process.env.AUTH_KEYCLOAK_SECRET!,
                                 grant_type: "refresh_token",
                                 refresh_token: refreshToken,
                             }),
@@ -158,6 +162,7 @@ const config: NextAuthConfig = {
                                     firstName: token.firstName as string | undefined,
                                     lastName: token.lastName as string | undefined,
                                     peaEmail: token.peaEmail as string | undefined,
+                                    employeeId: token.employeeId as string | undefined,
                                     position: token.position as string | undefined,
                                     positionShort: token.positionShort as string | undefined,
                                     positionLevel: token.positionLevel as string | undefined,
@@ -173,6 +178,7 @@ const config: NextAuthConfig = {
                                 token.firstName = profileSync.tokenUpdates.firstName ?? token.firstName;
                                 token.lastName = profileSync.tokenUpdates.lastName ?? token.lastName;
                                 token.peaEmail = profileSync.tokenUpdates.peaEmail ?? token.peaEmail;
+                                token.employeeId = profileSync.tokenUpdates.employeeId ?? token.employeeId;
                                 token.position = profileSync.tokenUpdates.position ?? token.position;
                                 token.positionShort = profileSync.tokenUpdates.positionShort ?? token.positionShort;
                                 token.positionLevel = profileSync.tokenUpdates.positionLevel ?? token.positionLevel;
@@ -209,6 +215,7 @@ const config: NextAuthConfig = {
                     firstName: token.firstName,
                     lastName: token.lastName,
                     peaEmail: token.peaEmail,
+                    employeeId: token.employeeId,
                     position: token.position,
                     positionShort: token.positionShort,
                     positionLevel: token.positionLevel,

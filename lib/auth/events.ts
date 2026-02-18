@@ -22,6 +22,7 @@ interface KeycloakJwtClaims {
     given_name?: string;
     family_name?: string;
     pea_email?: string;
+    employee_id?: string;
     position?: string;
     position_short?: string;
     position_level?: string;
@@ -67,6 +68,7 @@ interface KeycloakProfile {
     given_name?: string;
     family_name?: string;
     pea_email?: string;
+    employee_id?: string;
     position?: string;
     position_short?: string;
     position_level?: string;
@@ -90,6 +92,7 @@ const toKeycloakUserProfile = (profile: KeycloakProfile): KeycloakUserProfile | 
         firstName: profile.given_name,
         lastName: profile.family_name,
         peaEmail: profile.pea_email,
+        employeeId: profile.employee_id,
         position: profile.position,
         positionShort: profile.position_short,
         positionLevel: profile.position_level,
@@ -255,6 +258,7 @@ export const authEvents = {
             firstName?: string;
             lastName?: string;
             peaEmail?: string;
+            employeeId?: string;
             position?: string;
             positionShort?: string;
             positionLevel?: string;
@@ -281,6 +285,7 @@ export const authEvents = {
                 firstName: claims.given_name,
                 lastName: claims.family_name,
                 peaEmail: claims.pea_email,
+                employeeId: claims.employee_id,
                 position: claims.position,
                 positionShort: claims.position_short,
                 positionLevel: claims.position_level,
@@ -295,6 +300,7 @@ export const authEvents = {
                 profileFromToken.firstName !== currentToken.firstName ||
                 profileFromToken.lastName !== currentToken.lastName ||
                 profileFromToken.peaEmail !== currentToken.peaEmail ||
+                profileFromToken.employeeId !== currentToken.employeeId ||
                 profileFromToken.position !== currentToken.position ||
                 profileFromToken.positionShort !== currentToken.positionShort ||
                 profileFromToken.positionLevel !== currentToken.positionLevel ||
@@ -314,6 +320,7 @@ export const authEvents = {
                 firstName: claims.given_name || currentToken.firstName || "",
                 lastName: claims.family_name || currentToken.lastName || "",
                 peaEmail: claims.pea_email,
+                employeeId: claims.employee_id,
                 position: claims.position,
                 positionShort: claims.position_short,
                 positionLevel: claims.position_level,
@@ -344,6 +351,7 @@ export const authEvents = {
                     firstName: currentToken.firstName,
                     lastName: currentToken.lastName,
                     peaEmail: currentToken.peaEmail,
+                    employeeId: currentToken.employeeId,
                     position: currentToken.position,
                     department: currentToken.department,
                 } as unknown as import("@/lib/generated/prisma/client").Prisma.JsonValue,
@@ -352,6 +360,7 @@ export const authEvents = {
                     firstName: profileFromToken.firstName,
                     lastName: profileFromToken.lastName,
                     peaEmail: profileFromToken.peaEmail,
+                    employeeId: profileFromToken.employeeId,
                     position: profileFromToken.position,
                     department: profileFromToken.department,
                 } as unknown as import("@/lib/generated/prisma/client").Prisma.JsonValue,
@@ -390,6 +399,7 @@ export const authEvents = {
             firstName?: string;
             lastName?: string;
             peaEmail?: string;
+            employeeId?: string;
             position?: string;
             positionShort?: string;
             positionLevel?: string;
@@ -401,7 +411,7 @@ export const authEvents = {
     }> {
         try {
             // Fetch latest user info from Keycloak userinfo endpoint
-            const userinfoUrl = `${process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/userinfo`;
+            const userinfoUrl = `${process.env.AUTH_KEYCLOAK_ISSUER}/protocol/openid-connect/userinfo`;
 
             const response = await fetch(userinfoUrl, {
                 headers: {
@@ -436,6 +446,7 @@ export const authEvents = {
                 firstName: userinfo.given_name || "",
                 lastName: userinfo.family_name || "",
                 peaEmail: userinfo.pea_email,
+                employeeId: userinfo.employee_id,
                 position: userinfo.position,
                 positionShort: userinfo.position_short,
                 positionLevel: userinfo.position_level,
@@ -451,6 +462,7 @@ export const authEvents = {
                 firstName: existingUser.firstName,
                 lastName: existingUser.lastName,
                 peaEmail: existingUser.peaEmail,
+                employeeId: existingUser.employeeId,
                 position: existingUser.position,
                 department: existingUser.department?.name,
             } : null;
@@ -481,6 +493,7 @@ export const authEvents = {
                     firstName: userProfile.firstName,
                     lastName: userProfile.lastName,
                     peaEmail: userProfile.peaEmail,
+                    employeeId: userProfile.employeeId,
                     position: userProfile.position,
                     department: userProfile.department,
                 } as unknown as import("@/lib/generated/prisma/client").Prisma.JsonValue,
@@ -497,6 +510,7 @@ export const authEvents = {
                     firstName: userProfile.firstName,
                     lastName: userProfile.lastName,
                     peaEmail: userProfile.peaEmail,
+                    employeeId: userProfile.employeeId,
                     position: userProfile.position,
                     positionShort: userProfile.positionShort,
                     positionLevel: userProfile.positionLevel,

@@ -20,6 +20,7 @@ import {
   Building2,
   Briefcase,
   Phone,
+  IdCard,
 } from "lucide-react";
 
 // Helper component for info rows
@@ -121,6 +122,11 @@ export default async function ProfilePage() {
               <InfoRow icon={User} label="Full Name" value={user.name} />
               <InfoRow icon={Mail} label="Email Address" value={user.email} />
               <InfoRow icon={Mail} label="PEA Email" value={user.peaEmail} />
+              <InfoRow
+                icon={IdCard}
+                label="Employee ID"
+                value={user.employeeId}
+              />
               <InfoRow
                 icon={Phone}
                 label="Phone Number"

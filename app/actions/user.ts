@@ -30,6 +30,11 @@ const profileSchema = z.object({
         .max(100, "PEA Email must be less than 100 characters")
         .optional()
         .or(z.literal("")),
+    employeeId: z
+        .string()
+        .max(50, "Employee ID must be less than 50 characters")
+        .optional()
+        .default(""),
     phoneNumber: z
         .string()
         .max(20, "Phone number must be less than 20 characters")
@@ -69,6 +74,7 @@ export type UpdatedUserData = {
     lastName: string;
     email: string;
     peaEmail?: string;
+    employeeId?: string;
     phoneNumber?: string;
     position?: string;
     positionShort?: string;
@@ -86,6 +92,7 @@ export type ProfileActionResult = {
         lastName?: string[];
         email?: string[];
         peaEmail?: string[];
+        employeeId?: string[];
         phoneNumber?: string[];
         position?: string[];
         positionShort?: string[];
@@ -179,6 +186,7 @@ export async function updateKeycloakProfile(
             lastName,
             email,
             peaEmail,
+            employeeId,
             phoneNumber,
             position,
             positionShort,
@@ -241,6 +249,7 @@ export async function updateKeycloakProfile(
             attributes: {
                 ...currentUser.attributes, // Preserve all existing attributes
                 pea_email: peaEmail ? [peaEmail] : currentUser.attributes?.pea_email ?? [],
+                employee_id: employeeId ? [employeeId] : currentUser.attributes?.employee_id ?? [],
                 phone: phoneNumber ? [phoneNumber] : [],
                 position: position ? [position] : [],
                 position_short: positionShort ? [positionShort] : [],
@@ -301,6 +310,7 @@ export async function updateKeycloakProfile(
                 firstName: existingUser.firstName,
                 lastName: existingUser.lastName,
                 peaEmail: existingUser.peaEmail,
+                employeeId: existingUser.employeeId,
                 phoneNumber: existingUser.phoneNumber,
                 position: existingUser.position,
                 positionShort: existingUser.positionShort,
@@ -318,6 +328,7 @@ export async function updateKeycloakProfile(
                 firstName,
                 lastName,
                 peaEmail: peaEmail || undefined,
+                employeeId: employeeId || undefined,
                 phoneNumber: phoneNumber || undefined,
                 position: position || undefined,
                 positionShort: positionShort || undefined,
@@ -344,6 +355,7 @@ export async function updateKeycloakProfile(
                     firstName,
                     lastName,
                     peaEmail: peaEmail || null,
+                    employeeId: employeeId || null,
                     phoneNumber: phoneNumber || null,
                     position: position || null,
                     positionShort: positionShort || null,
@@ -368,6 +380,7 @@ export async function updateKeycloakProfile(
                 lastName,
                 email,
                 peaEmail: peaEmail || undefined,
+                employeeId: employeeId || undefined,
                 phoneNumber: phoneNumber || undefined,
                 position: position || undefined,
                 positionShort: positionShort || undefined,

@@ -71,6 +71,7 @@ model User {
   firstName         String     @map("first_name")
   lastName          String     @map("last_name")
   phoneNumber       String?    @map("phone_number")
+  employeeId        String?    @map("employee_id") @unique
   
   // Position Information
   position          String?
@@ -97,6 +98,8 @@ model User {
   @@index([email])
   @@index([departmentId])
   @@index([status])
+  @@index([lastLoginAt])
+  @@index([employeeId])
   files Files[]
   offSiteWorks OffSiteWork[]
   expenseClaims          ExpenseClaim[] @relation("ExpenseClaimUser")

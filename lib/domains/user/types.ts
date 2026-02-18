@@ -17,6 +17,7 @@ export interface UserEntity {
     keycloakId: string;
     email: string;
     peaEmail: string | null;
+    employeeId: string | null;
     firstName: string;
     lastName: string;
     phoneNumber: string | null;
@@ -52,6 +53,7 @@ export interface KeycloakUserProfile {
     firstName: string;
     lastName: string;
     peaEmail?: string;
+    employeeId?: string;
     position?: string;
     positionShort?: string;
     positionLevel?: string;
@@ -69,6 +71,7 @@ export interface CreateUserInput {
     firstName: string;
     lastName: string;
     peaEmail?: string;
+    employeeId?: string;
     phoneNumber?: string;
     position?: string;
     positionShort?: string;
@@ -82,6 +85,7 @@ export interface CreateUserInput {
 export interface UpdateUserInput {
     email?: string;
     peaEmail?: string;
+    employeeId?: string;
     firstName?: string;
     lastName?: string;
     phoneNumber?: string;

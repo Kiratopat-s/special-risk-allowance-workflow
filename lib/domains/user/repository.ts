@@ -98,6 +98,7 @@ export const userRepository = {
                 firstName: data.firstName,
                 lastName: data.lastName,
                 peaEmail: data.peaEmail,
+                employeeId: data.employeeId,
                 phoneNumber: data.phoneNumber,
                 position: data.position,
                 positionShort: data.positionShort,

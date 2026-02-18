@@ -21,6 +21,7 @@ export interface SyncProfileResult {
         firstName?: string;
         lastName?: string;
         peaEmail?: string;
+        employeeId?: string;
         position?: string;
         positionShort?: string;
         positionLevel?: string;
@@ -99,7 +100,7 @@ export async function checkProfileSync(): Promise<{
         }
 
         // Fetch latest from Keycloak userinfo
-        const userinfoUrl = `${process.env.KEYCLOAK_ISSUER}/protocol/openid-connect/userinfo`;
+        const userinfoUrl = `${process.env.AUTH_KEYCLOAK_ISSUER}/protocol/openid-connect/userinfo`;
 
         const response = await fetch(userinfoUrl, {
             headers: {
@@ -117,6 +118,7 @@ export async function checkProfileSync(): Promise<{
             given_name?: string;
             family_name?: string;
             pea_email?: string;
+            employee_id?: string;
             position?: string;
             position_short?: string;
             position_level?: string;
@@ -130,6 +132,7 @@ export async function checkProfileSync(): Promise<{
             firstName: userinfo.given_name,
             lastName: userinfo.family_name,
             peaEmail: userinfo.pea_email,
+            employeeId: userinfo.employee_id,
             position: userinfo.position,
             positionShort: userinfo.position_short,
             positionLevel: userinfo.position_level,
@@ -144,6 +147,7 @@ export async function checkProfileSync(): Promise<{
             keycloakProfile.firstName !== session.user.firstName ||
             keycloakProfile.lastName !== session.user.lastName ||
             keycloakProfile.peaEmail !== session.user.peaEmail ||
+            keycloakProfile.employeeId !== session.user.employeeId ||
             keycloakProfile.position !== session.user.position ||
             keycloakProfile.department !== session.user.department ||
             keycloakProfile.phoneNumber !== session.user.phoneNumber;
