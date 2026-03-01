@@ -15,5 +15,8 @@ export * from "./department";
 // Action Log Domain
 export * from "./action-log";
 
+// OffSiteWork Domain
+export * from "./off-site-work";
+
 // Permission Domain
 export * from "./permission";

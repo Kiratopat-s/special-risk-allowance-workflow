@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { User, LogOut, Settings, ShieldCheck } from "lucide-react";
+import { User, LogOut, Settings, ShieldCheck, MapPin } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { usePermissions } from "@/lib/hooks/use-permissions";
 
@@ -41,6 +41,14 @@ export function Navbar() {
       { resource: "USER", action: "MANAGE" },
       { resource: "PERMISSION", action: "LIST" },
     ]);
+
+  // Check if user has off-site work access
+  const hasOffSiteWorkAccess = canAny([
+    { resource: "OFF_SITE_WORK", action: "READ" },
+    { resource: "OFF_SITE_WORK", action: "LIST" },
+    { resource: "OFF_SITE_WORK", action: "CREATE" },
+    { resource: "OFF_SITE_WORK", action: "MANAGE" },
+  ]);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
@@ -102,6 +110,14 @@ export function Navbar() {
                     <span>Settings</span>
                   </Link>
                 </DropdownMenuItem>
+                {hasOffSiteWorkAccess && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/off-site-work" className="flex items-center">
+                      <MapPin className="mr-2 h-4 w-4" />
+                      <span>คำสั่งออกนอกสถานที่</span>
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 {hasAdminAccess && (
                   <DropdownMenuItem asChild>
                     <Link href="/admin" className="flex items-center">

@@ -203,11 +203,11 @@ model OffSiteWork {
   objective             String?     @map("objective")
   location              String?     @map("location")
   employeeList          Json?       @map("employee_list")
-  posted_at             DateTime    @map("posted_at") @default(now())
-  postedByUserId     String      @map("posted_by_user_id")
-  postedByUser        User        @relation(fields: [postedByUserId], references: [id], onDelete: Cascade)
-  updated_at            DateTime?   @map("updated_at") @updatedAt
-  deleted_at            DateTime?   @map("deleted_at")
+  postedAt              DateTime    @map("posted_at") @default(now())
+  postedByUserId        String      @map("posted_by_user_id")
+  postedByUser          User        @relation(fields: [postedByUserId], references: [id], onDelete: Cascade)
+  updatedAt             DateTime?   @map("updated_at") @updatedAt
+  deletedAt             DateTime?   @map("deleted_at")
   originalFileId        String?     @map("original_file_id")
 
   originalFile          Files?      @relation(fields: [originalFileId], references: [id], onDelete: SetNull)
@@ -219,8 +219,8 @@ model OffSiteWork {
   @@index([originalFileId])
   @@index([startDate])
   @@index([endDate])
-  @@index([deleted_at])
-  @@index([posted_at])
+  @@index([deletedAt])
+  @@index([postedAt])
 }
 
 model Files {
