@@ -41,7 +41,7 @@ function Dialog({ open, onClose, children, className }: DialogProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:items-center sm:p-6">
       {/* Overlay */}
       <div
         className="fixed inset-0 bg-black/50 backdrop-blur-sm"
@@ -50,7 +50,8 @@ function Dialog({ open, onClose, children, className }: DialogProps) {
       {/* Content */}
       <div
         className={cn(
-          "relative z-50 w-full max-w-lg mx-4 bg-background rounded-xl border shadow-lg",
+          "relative z-50 flex w-full max-w-lg flex-col overflow-hidden rounded-xl border bg-background shadow-lg",
+          "max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)]",
           "animate-in fade-in-0 zoom-in-95",
           className,
         )}
@@ -64,7 +65,10 @@ function Dialog({ open, onClose, children, className }: DialogProps) {
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("flex flex-col gap-1.5 p-6 pb-0", className)}
+      className={cn(
+        "flex flex-col gap-1.5 p-4 pb-0 pr-12 sm:p-6 sm:pb-0",
+        className,
+      )}
       {...props}
     />
   );
@@ -86,13 +90,21 @@ function DialogDescription({ className, ...props }: React.ComponentProps<"p">) {
 }
 
 function DialogBody({ className, ...props }: React.ComponentProps<"div">) {
-  return <div className={cn("p-6", className)} {...props} />;
+  return (
+    <div
+      className={cn("flex-1 overflow-y-auto p-4 sm:p-6", className)}
+      {...props}
+    />
+  );
 }
 
 function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("flex items-center justify-end gap-2 p-6 pt-0", className)}
+      className={cn(
+        "flex flex-col-reverse gap-2 p-4 pt-0 sm:flex-row sm:items-center sm:justify-end sm:p-6 sm:pt-0",
+        className,
+      )}
       {...props}
     />
   );

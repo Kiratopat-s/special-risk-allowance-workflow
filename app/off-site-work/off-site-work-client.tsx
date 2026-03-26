@@ -1,55 +1,43 @@
 "use client";
 
-import { useState, useTransition, useCallback, useEffect } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import {
+  CalendarDays,
+  Eye,
+  FileText,
+  Loader2,
+  MapPin,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  User,
+  ChevronLeft,
+  ChevronRight,
+  AlertTriangle,
+} from "lucide-react";
 import {
   Dialog,
+  DialogBody,
+  DialogClose,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
-  DialogBody,
-  DialogFooter,
-  DialogClose,
 } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Search,
-  Plus,
-  Pencil,
-  Trash2,
-  Loader2,
-  MapPin,
-  Calendar,
-  FileText,
-  User,
-  AlertTriangle,
-  ClipboardList,
-  Eye,
-  ChevronLeft,
-  ChevronRight,
-  X,
-  Users,
-  UserPlus,
-} from "lucide-react";
-import {
-  listOffSiteWorks,
   createOffSiteWork,
-  updateOffSiteWork,
   deleteOffSiteWork,
+  listOffSiteWorks,
+  updateOffSiteWork,
 } from "@/app/actions/off-site-work";
-import { listActiveUsers } from "@/app/actions/user";
-import type {
-  OffSiteWorkWithRelations,
-  EmployeeListItem,
-} from "@/lib/domains/off-site-work";
-
-// =============================================================================
-// TYPES
-// =============================================================================
+import type { OffSiteWorkWithRelations } from "@/lib/domains/off-site-work";
 
 interface Pagination {
   page: number;
@@ -65,44 +53,35 @@ interface OffSiteWorkClientProps {
   initialPagination: Pagination | null;
 }
 
-type DialogMode = "create" | "edit" | "delete" | "view" | null;
+type Mode = "create" | "edit" | "view" | "delete" | null;
 
-interface FormData {
+interface FormState {
   id: string;
   innerRefDocumentId: string;
   startDate: string;
   endDate: string;
-  objective: string;
   location: string;
-  employeeList: EmployeeListItem[];
+  objective: string;
 }
 
-// =============================================================================
-// HELPERS
-// =============================================================================
+const DEFAULT_PAGE_SIZE = 24;
 
-function formatDate(date: Date | string): string {
-  return new Date(date).toLocaleDateString("th-TH", {
+function formatDate(value: Date | string): string {
+  return new Date(value).toLocaleDateString("th-TH", {
     year: "numeric",
     month: "short",
     day: "numeric",
   });
 }
 
-function formatDateInput(date: Date | string): string {
-  const d = new Date(date);
-  return d.toISOString().split("T")[0];
+function toDateInputValue(value: Date | string): string {
+  return new Date(value).toISOString().split("T")[0];
 }
 
-function generateId(): string {
-  const now = new Date();
-  const y = now.getFullYear().toString().slice(-2);
-  return `TZ${y}`;
+function nextPrefixId(): string {
+  const yy = new Date().getFullYear().toString().slice(-2);
+  return `TZ${yy}`;
 }
-
-// =============================================================================
-// MAIN COMPONENT
-// =============================================================================
 
 export function OffSiteWorkClient({
   initialItems,
@@ -111,1034 +90,507 @@ export function OffSiteWorkClient({
   const [items, setItems] = useState(initialItems);
   const [pagination, setPagination] = useState(initialPagination);
   const [search, setSearch] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [dialogMode, setDialogMode] = useState<DialogMode>(null);
-  const [selectedItem, setSelectedItem] =
-    useState<OffSiteWorkWithRelations | null>(null);
-  const [formData, setFormData] = useState<FormData>({
+  const [page, setPage] = useState(initialPagination?.page ?? 1);
+  const [mode, setMode] = useState<Mode>(null);
+  const [selected, setSelected] = useState<OffSiteWorkWithRelations | null>(
+    null,
+  );
+  const [form, setForm] = useState<FormState>({
     id: "",
     innerRefDocumentId: "",
     startDate: "",
     endDate: "",
-    objective: "",
     location: "",
-    employeeList: [],
+    objective: "",
   });
   const [isPending, startTransition] = useTransition();
-  const [availableUsers, setAvailableUsers] = useState<EmployeeListItem[]>([]);
-  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
-  const [employeeSearch, setEmployeeSearch] = useState("");
 
-  // Load users when dialog opens
-  useEffect(() => {
-    if (dialogMode === "create" || dialogMode === "edit") {
-      let didCancel = false;
+  const validForm = useMemo(() => {
+    if (!form.id.trim()) return false;
+    if (!form.startDate || !form.endDate) return false;
+    return new Date(form.endDate) >= new Date(form.startDate);
+  }, [form]);
 
-      const fetchUsers = async () => {
-        setIsLoadingUsers(true);
-        const result = await listActiveUsers();
-        if (!didCancel) {
-          if (result.success) {
-            setAvailableUsers(result.data);
-          }
-          setIsLoadingUsers(false);
-        }
-      };
-
-      fetchUsers();
-
-      return () => {
-        didCancel = true;
-      };
-    }
-  }, [dialogMode]);
-
-  // ---------------------------------------------------------------------------
-  // Data fetching
-  // ---------------------------------------------------------------------------
-  const refreshData = useCallback(
-    async (page = currentPage) => {
+  const refresh = useCallback(
+    async (nextPage = page, nextSearch = search) => {
       const result = await listOffSiteWorks({
-        search: search || undefined,
-        page,
-        pageSize: 50,
+        page: nextPage,
+        pageSize: DEFAULT_PAGE_SIZE,
+        search: nextSearch || undefined,
       });
-      if (result.success) {
-        setItems(result.data.data);
-        setPagination(result.data.pagination);
+
+      if (!result.success) {
+        toast.error("ไม่สามารถโหลดข้อมูลได้", { description: result.error });
+        return;
       }
+
+      setItems(result.data.data);
+      setPagination(result.data.pagination);
+      setPage(result.data.pagination.page);
     },
-    [search, currentPage],
+    [page, search],
   );
 
-  const handleSearch = () => {
-    setCurrentPage(1);
-    startTransition(async () => {
-      await refreshData(1);
-    });
-  };
-
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
-    startTransition(async () => {
-      await refreshData(page);
-    });
-  };
-
-  // ---------------------------------------------------------------------------
-  // Dialog management
-  // ---------------------------------------------------------------------------
-  const openCreateDialog = () => {
-    setFormData({
-      id: generateId(),
+  const openCreate = () => {
+    const today = toDateInputValue(new Date());
+    setSelected(null);
+    setForm({
+      id: nextPrefixId(),
       innerRefDocumentId: "",
-      startDate: formatDateInput(new Date()),
-      endDate: formatDateInput(new Date()),
-      objective: "",
+      startDate: today,
+      endDate: today,
       location: "",
-      employeeList: [],
+      objective: "",
     });
-    setSelectedItem(null);
-    setEmployeeSearch("");
-    setDialogMode("create");
+    setMode("create");
   };
 
-  const openEditDialog = (item: OffSiteWorkWithRelations) => {
-    const employees = item.employeeList
-      ? Array.isArray(item.employeeList)
-        ? item.employeeList
-        : []
-      : [];
-    setFormData({
+  const openEdit = (item: OffSiteWorkWithRelations) => {
+    setSelected(item);
+    setForm({
       id: item.id,
       innerRefDocumentId: item.innerRefDocumentId || "",
-      startDate: formatDateInput(item.startDate),
-      endDate: formatDateInput(item.endDate),
-      objective: item.objective || "",
+      startDate: toDateInputValue(item.startDate),
+      endDate: toDateInputValue(item.endDate),
       location: item.location || "",
-      employeeList: employees as EmployeeListItem[],
+      objective: item.objective || "",
     });
-    setSelectedItem(item);
-    setEmployeeSearch("");
-    setDialogMode("edit");
+    setMode("edit");
   };
 
-  const openDeleteDialog = (item: OffSiteWorkWithRelations) => {
-    setSelectedItem(item);
-    setDialogMode("delete");
-  };
-
-  const openViewDialog = (item: OffSiteWorkWithRelations) => {
-    setSelectedItem(item);
-    setDialogMode("view");
-  };
-
-  const closeDialog = () => {
-    setDialogMode(null);
-    setSelectedItem(null);
-  };
-
-  // ---------------------------------------------------------------------------
-  // CRUD handlers
-  // ---------------------------------------------------------------------------
-  const handleCreate = () => {
+  const submitCreate = () => {
     startTransition(async () => {
       const result = await createOffSiteWork({
-        id: formData.id,
-        innerRefDocumentId: formData.innerRefDocumentId || undefined,
-        startDate: formData.startDate,
-        endDate: formData.endDate,
-        objective: formData.objective || undefined,
-        location: formData.location || undefined,
-        employeeList:
-          formData.employeeList.length > 0 ? formData.employeeList : undefined,
+        id: form.id.trim(),
+        innerRefDocumentId: form.innerRefDocumentId.trim() || undefined,
+        startDate: form.startDate,
+        endDate: form.endDate,
+        location: form.location.trim() || undefined,
+        objective: form.objective.trim() || undefined,
       });
 
-      if (result.success) {
-        toast.success("บันทึกสำเร็จ", {
-          description: `หนังสือเดินทาง ${formData.id} ถูกสร้างเรียบร้อย`,
-        });
-        await refreshData(1);
-        closeDialog();
-      } else {
-        toast.error("ไม่สามารถสร้างได้", { description: result.error });
+      if (!result.success) {
+        toast.error("สร้างรายการไม่สำเร็จ", { description: result.error });
+        return;
       }
+
+      toast.success("สร้างรายการสำเร็จ");
+      await refresh(1, search);
+      setMode(null);
     });
   };
 
-  const handleUpdate = () => {
-    if (!selectedItem) return;
-
-    const existingEmployees = selectedItem.employeeList
-      ? Array.isArray(selectedItem.employeeList)
-        ? selectedItem.employeeList
-        : []
-      : [];
-    const employeesChanged =
-      JSON.stringify(formData.employeeList) !==
-      JSON.stringify(existingEmployees);
+  const submitEdit = () => {
+    if (!selected) return;
 
     startTransition(async () => {
-      const result = await updateOffSiteWork(selectedItem.id, {
+      const result = await updateOffSiteWork(selected.id, {
         innerRefDocumentId:
-          formData.innerRefDocumentId !==
-          (selectedItem.innerRefDocumentId || "")
-            ? formData.innerRefDocumentId || null
+          form.innerRefDocumentId !== (selected.innerRefDocumentId || "")
+            ? form.innerRefDocumentId || null
             : undefined,
         startDate:
-          formData.startDate !== formatDateInput(selectedItem.startDate)
-            ? formData.startDate
+          form.startDate !== toDateInputValue(selected.startDate)
+            ? form.startDate
             : undefined,
         endDate:
-          formData.endDate !== formatDateInput(selectedItem.endDate)
-            ? formData.endDate
-            : undefined,
-        objective:
-          formData.objective !== (selectedItem.objective || "")
-            ? formData.objective || null
+          form.endDate !== toDateInputValue(selected.endDate)
+            ? form.endDate
             : undefined,
         location:
-          formData.location !== (selectedItem.location || "")
-            ? formData.location || null
+          form.location !== (selected.location || "")
+            ? form.location || null
             : undefined,
-        employeeList: employeesChanged
-          ? formData.employeeList.length > 0
-            ? formData.employeeList
-            : null
-          : undefined,
+        objective:
+          form.objective !== (selected.objective || "")
+            ? form.objective || null
+            : undefined,
       });
 
-      if (result.success) {
-        toast.success("แก้ไขสำเร็จ", {
-          description: `หนังสือเดินทาง ${selectedItem.id} ถูกอัปเดตเรียบร้อย`,
-        });
-        await refreshData();
-        closeDialog();
-      } else {
-        toast.error("ไม่สามารถแก้ไขได้", { description: result.error });
+      if (!result.success) {
+        toast.error("อัปเดตรายการไม่สำเร็จ", { description: result.error });
+        return;
       }
+
+      toast.success("อัปเดตรายการสำเร็จ");
+      await refresh();
+      setMode(null);
     });
   };
 
-  const handleDelete = () => {
-    if (!selectedItem) return;
+  const submitDelete = () => {
+    if (!selected) return;
 
     startTransition(async () => {
-      const result = await deleteOffSiteWork(selectedItem.id);
-
-      if (result.success) {
-        toast.success("ลบสำเร็จ", {
-          description: `หนังสือเดินทาง ${selectedItem.id} ถูกลบเรียบร้อย`,
-        });
-        await refreshData();
-        closeDialog();
-      } else {
-        toast.error("ไม่สามารถลบได้", { description: result.error });
+      const result = await deleteOffSiteWork(selected.id);
+      if (!result.success) {
+        toast.error("ลบรายการไม่สำเร็จ", { description: result.error });
+        return;
       }
+
+      toast.success("ลบรายการสำเร็จ");
+      await refresh();
+      setMode(null);
     });
   };
 
-  const isFormValid =
-    formData.id.trim().length > 0 &&
-    formData.startDate.length > 0 &&
-    formData.endDate.length > 0;
+  const onSearch = () => {
+    startTransition(async () => {
+      await refresh(1, search);
+    });
+  };
+
+  const changePage = (nextPage: number) => {
+    startTransition(async () => {
+      await refresh(nextPage, search);
+    });
+  };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            คำสั่งออกปฏิบัติงานนอกสถานที่
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            จัดการหนังสือคำสั่งเดินทางไปราชการ
-          </p>
+      <section className="relative overflow-hidden rounded-2xl border bg-linear-to-br from-sky-50 via-white to-cyan-50 p-6 shadow-sm">
+        <div className="absolute -right-12 -top-16 h-40 w-40 rounded-full bg-cyan-100/70 blur-2xl" />
+        <div className="absolute -left-10 -bottom-16 h-32 w-32 rounded-full bg-blue-100/70 blur-2xl" />
+        <div className="relative flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+              Off-site Work Actions
+            </h1>
+            <p className="mt-1 text-sm text-slate-600">
+              จัดการคำสั่งปฏิบัติงานนอกสถานที่แบบเรียบง่าย อ่านง่าย
+              และใช้งานบนมือถือได้ดี
+            </p>
+          </div>
+          <Button onClick={openCreate} className="w-full md:w-auto">
+            <Plus className="mr-2 h-4 w-4" />
+            เพิ่มคำสั่ง
+          </Button>
         </div>
-        <Button onClick={openCreateDialog} className="shrink-0">
-          <Plus className="h-4 w-4 mr-2" />
-          เพิ่มรายการ
-        </Button>
-      </div>
+      </section>
 
-      {/* Toolbar */}
-      <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-50 max-w-sm">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="ค้นหาเลขที่, สถานที่, วัตถุประสงค์..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            className="pl-9"
-          />
+      <section className="rounded-2xl border bg-card p-4 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={search}
+              placeholder="ค้นหาเลขที่เอกสาร, สถานที่ หรือวัตถุประสงค์"
+              className="pl-9"
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onSearch();
+              }}
+            />
+          </div>
+          <Button variant="outline" onClick={onSearch} disabled={isPending}>
+            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "ค้นหา"}
+          </Button>
         </div>
-        <Button variant="outline" onClick={handleSearch} disabled={isPending}>
-          {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "ค้นหา"}
-        </Button>
-      </div>
+      </section>
 
-      {/* Cards Grid (mobile) / Table (desktop) */}
-      {/* ---- MOBILE CARDS ---- */}
-      <div className="grid gap-3 md:hidden">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {items.map((item) => (
-          <div
+          <article
             key={item.id}
-            className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-sm"
+            className="group rounded-2xl border bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
           >
-            {/* Top row: ID + badge */}
-            <div className="flex items-start justify-between gap-2">
-              <div className="space-y-1">
-                <p className="font-semibold text-sm leading-tight">{item.id}</p>
-                {item.innerRefDocumentId && (
+            <div className="mb-3 flex items-start justify-between gap-2">
+              <div>
+                <p className="font-semibold text-foreground">{item.id}</p>
+                {item.innerRefDocumentId ? (
                   <p className="text-xs text-muted-foreground">
-                    เลขอ้างอิง: {item.innerRefDocumentId}
+                    Ref: {item.innerRefDocumentId}
                   </p>
-                )}
+                ) : null}
               </div>
-              <Badge variant="default" className="shrink-0 text-[10px]">
-                <Calendar className="h-3 w-3 mr-1" />
+              <Badge variant="outline" className="text-[11px]">
+                <CalendarDays className="mr-1 h-3 w-3" />
                 {formatDate(item.startDate)}
               </Badge>
             </div>
 
-            {/* Details */}
-            <div className="space-y-1.5 text-sm text-muted-foreground">
-              {item.location && (
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{item.location}</span>
-                </div>
-              )}
-              {item.objective && (
-                <div className="flex items-start gap-2">
-                  <ClipboardList className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                  <span className="line-clamp-2">{item.objective}</span>
-                </div>
-              )}
-              <div className="flex items-center gap-2">
-                <User className="h-3.5 w-3.5 shrink-0" />
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p className="flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                <span className="truncate">{item.location || "-"}</span>
+              </p>
+              <p className="line-clamp-2">{item.objective || "-"}</p>
+              <p className="flex items-center gap-2">
+                <User className="h-4 w-4" />
                 <span>
                   {item.postedByUser.firstName} {item.postedByUser.lastName}
                 </span>
-              </div>
-              {item.employeeList &&
-              Array.isArray(item.employeeList) &&
-              (item.employeeList as EmployeeListItem[]).length > 0 ? (
-                <div className="flex items-center gap-2">
-                  <Users className="h-3.5 w-3.5 shrink-0" />
-                  <span>
-                    {(item.employeeList as EmployeeListItem[]).length} คน
-                  </span>
-                </div>
-              ) : null}
+              </p>
             </div>
 
-            {/* Date range */}
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Calendar className="h-3 w-3" />
-              <span>
-                {formatDate(item.startDate)} — {formatDate(item.endDate)}
-              </span>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center gap-1 pt-1 border-t border-border/50">
+            <div className="mt-4 flex items-center justify-between border-t pt-3">
               <Button
                 variant="ghost"
                 size="sm"
-                className="flex-1 text-xs"
-                onClick={() => openViewDialog(item)}
+                onClick={() => {
+                  setSelected(item);
+                  setMode("view");
+                }}
               >
-                <Eye className="h-3.5 w-3.5 mr-1" />
+                <Eye className="mr-1 h-4 w-4" />
                 ดู
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex-1 text-xs"
-                onClick={() => openEditDialog(item)}
-              >
-                <Pencil className="h-3.5 w-3.5 mr-1" />
-                แก้ไข
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="flex-1 text-xs text-destructive hover:text-destructive"
-                onClick={() => openDeleteDialog(item)}
-              >
-                <Trash2 className="h-3.5 w-3.5 mr-1" />
-                ลบ
-              </Button>
-            </div>
-          </div>
-        ))}
-        {items.length === 0 && (
-          <div className="text-center py-16 text-muted-foreground">
-            <ClipboardList className="h-10 w-10 mx-auto mb-3 opacity-40" />
-            <p className="text-sm">ไม่พบข้อมูลคำสั่งออกปฏิบัติงาน</p>
-          </div>
-        )}
-      </div>
-
-      {/* ---- DESKTOP TABLE ---- */}
-      <div className="hidden md:block rounded-xl border border-border overflow-hidden shadow-sm">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b bg-muted/50">
-              <th className="text-left font-medium p-3">เลขที่เอกสาร</th>
-              <th className="text-left font-medium p-3">วัตถุประสงค์</th>
-              <th className="text-left font-medium p-3">สถานที่</th>
-              <th className="text-center font-medium p-3">ช่วงวันที่</th>
-              <th className="text-center font-medium p-3 hidden lg:table-cell">
-                ผู้ปฏิบัติงาน
-              </th>
-              <th className="text-left font-medium p-3 hidden lg:table-cell">
-                ผู้บันทึก
-              </th>
-              <th className="text-left font-medium p-3 hidden xl:table-cell">
-                ไฟล์แนบ
-              </th>
-              <th className="text-right font-medium p-3">การดำเนินการ</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr
-                key={item.id}
-                className="border-b last:border-0 hover:bg-muted/30 transition-colors"
-              >
-                {/* ID */}
-                <td className="p-3">
-                  <div>
-                    <p className="font-medium">{item.id}</p>
-                    {item.innerRefDocumentId && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        อ้างอิง: {item.innerRefDocumentId}
-                      </p>
-                    )}
-                  </div>
-                </td>
-
-                {/* Objective */}
-                <td className="p-3 max-w-50">
-                  <p className="truncate text-muted-foreground">
-                    {item.objective || "—"}
-                  </p>
-                </td>
-
-                {/* Location */}
-                <td className="p-3 max-w-50">
-                  {item.location ? (
-                    <div className="flex items-center gap-1.5">
-                      <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      <span className="truncate">{item.location}</span>
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </td>
-
-                {/* Date range */}
-                <td className="p-3 text-center">
-                  <div className="inline-flex flex-col items-center gap-0.5">
-                    <Badge variant="outline" className="text-[11px]">
-                      {formatDate(item.startDate)}
-                    </Badge>
-                    <span className="text-[10px] text-muted-foreground">
-                      ถึง
-                    </span>
-                    <Badge variant="outline" className="text-[11px]">
-                      {formatDate(item.endDate)}
-                    </Badge>
-                  </div>
-                </td>
-
-                {/* Employees */}
-                <td className="p-3 text-center hidden lg:table-cell">
-                  {item.employeeList &&
-                  Array.isArray(item.employeeList) &&
-                  (item.employeeList as EmployeeListItem[]).length > 0 ? (
-                    <div className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-md">
-                      <Users className="h-3.5 w-3.5" />
-                      <span className="text-xs font-medium">
-                        {(item.employeeList as EmployeeListItem[]).length}
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  )}
-                </td>
-
-                {/* Posted by */}
-                <td className="p-3 hidden lg:table-cell">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-medium">
-                      {item.postedByUser.firstName[0]}
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium leading-tight">
-                        {item.postedByUser.firstName}{" "}
-                        {item.postedByUser.lastName}
-                      </p>
-                      {item.postedByUser.employeeId && (
-                        <p className="text-[10px] text-muted-foreground">
-                          {item.postedByUser.employeeId}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </td>
-
-                {/* File */}
-                <td className="p-3 hidden xl:table-cell">
-                  {item.originalFile ? (
-                    <div className="flex items-center gap-1.5">
-                      <FileText className="h-3.5 w-3.5 text-blue-500" />
-                      <span className="text-xs truncate max-w-25">
-                        {item.originalFile.fileName}
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  )}
-                </td>
-
-                {/* Actions */}
-                <td className="p-3">
-                  <div className="flex items-center justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openViewDialog(item)}
-                      title="ดูรายละเอียด"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openEditDialog(item)}
-                      title="แก้ไข"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openDeleteDialog(item)}
-                      title="ลบ"
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {items.length === 0 && (
-              <tr>
-                <td
-                  colSpan={8}
-                  className="text-center py-16 text-muted-foreground"
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => openEdit(item)}
                 >
-                  <ClipboardList className="h-10 w-10 mx-auto mb-3 opacity-40" />
-                  <p>ไม่พบข้อมูลคำสั่งออกปฏิบัติงาน</p>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => {
+                    setSelected(item);
+                    setMode("delete");
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </article>
+        ))}
+      </section>
 
-      {/* Pagination */}
-      {pagination && pagination.totalPages > 1 && (
-        <div className="flex items-center justify-between pt-2">
+      {items.length === 0 ? (
+        <div className="rounded-2xl border border-dashed p-10 text-center text-muted-foreground">
+          <FileText className="mx-auto mb-3 h-8 w-8 opacity-60" />
+          ไม่พบข้อมูลที่ตรงกับเงื่อนไข
+        </div>
+      ) : null}
+
+      {pagination && pagination.totalPages > 1 ? (
+        <section className="flex items-center justify-between rounded-xl border bg-card px-4 py-3">
           <p className="text-xs text-muted-foreground">
-            แสดง {items.length} จาก {pagination.total} รายการ
+            หน้า {pagination.page} / {pagination.totalPages} ทั้งหมด{" "}
+            {pagination.total} รายการ
           </p>
-          <div className="flex items-center gap-1">
+          <div className="flex gap-1">
             <Button
               variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(currentPage - 1)}
+              size="icon"
               disabled={!pagination.hasPrevious || isPending}
+              onClick={() => changePage(page - 1)}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="text-sm px-3 text-muted-foreground">
-              {pagination.page} / {pagination.totalPages}
-            </span>
             <Button
               variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(currentPage + 1)}
+              size="icon"
               disabled={!pagination.hasNext || isPending}
+              onClick={() => changePage(page + 1)}
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-        </div>
-      )}
+        </section>
+      ) : null}
 
-      {/* ================================================================= */}
-      {/* CREATE / EDIT DIALOG                                               */}
-      {/* ================================================================= */}
       <Dialog
-        open={dialogMode === "create" || dialogMode === "edit"}
-        onClose={closeDialog}
+        open={mode === "create" || mode === "edit"}
+        onClose={() => setMode(null)}
       >
-        <DialogClose onClose={closeDialog} />
+        <DialogClose onClose={() => setMode(null)} />
         <DialogHeader>
           <DialogTitle>
-            {dialogMode === "create"
-              ? "เพิ่มคำสั่งออกปฏิบัติงาน"
-              : "แก้ไขคำสั่งออกปฏิบัติงาน"}
+            {mode === "create" ? "เพิ่มคำสั่งใหม่" : "แก้ไขคำสั่ง"}
           </DialogTitle>
           <DialogDescription>
-            {dialogMode === "create"
-              ? "กรอกข้อมูลหนังสือคำสั่งเดินทางไปราชการ"
-              : "อัปเดตข้อมูลหนังสือคำสั่ง"}
+            กรอกข้อมูลเอกสารคำสั่งออกปฏิบัติงานนอกสถานที่
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
           <div className="space-y-4">
-            {/* Document ID */}
             <div className="space-y-2">
-              <Label htmlFor="docId">
-                เลขที่เอกสาร <span className="text-destructive">*</span>
-              </Label>
+              <Label htmlFor="id">เลขที่เอกสาร</Label>
               <Input
-                id="docId"
-                placeholder="เช่น TZ26002144"
-                value={formData.id}
+                id="id"
+                value={form.id}
+                disabled={mode === "edit"}
                 onChange={(e) =>
-                  setFormData((p) => ({ ...p, id: e.target.value }))
+                  setForm((prev) => ({ ...prev, id: e.target.value }))
                 }
-                disabled={dialogMode === "edit"}
-                autoFocus={dialogMode === "create"}
               />
-              {dialogMode === "edit" && (
-                <p className="text-xs text-muted-foreground">
-                  ไม่สามารถแก้ไขเลขที่เอกสารได้
-                </p>
-              )}
             </div>
 
-            {/* Inner Ref */}
             <div className="space-y-2">
-              <Label htmlFor="innerRef">เลขที่อ้างอิงภายใน</Label>
+              <Label htmlFor="innerRef">เลขอ้างอิงภายใน</Label>
               <Input
                 id="innerRef"
-                placeholder="(ไม่บังคับ)"
-                value={formData.innerRefDocumentId}
+                value={form.innerRefDocumentId}
                 onChange={(e) =>
-                  setFormData((p) => ({
-                    ...p,
+                  setForm((prev) => ({
+                    ...prev,
                     innerRefDocumentId: e.target.value,
                   }))
                 }
               />
             </div>
 
-            {/* Date Range */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="startDate">
-                  วันเริ่มต้น <span className="text-destructive">*</span>
-                </Label>
+                <Label htmlFor="startDate">วันเริ่มต้น</Label>
                 <Input
                   id="startDate"
                   type="date"
-                  value={formData.startDate}
+                  value={form.startDate}
                   onChange={(e) =>
-                    setFormData((p) => ({ ...p, startDate: e.target.value }))
+                    setForm((prev) => ({ ...prev, startDate: e.target.value }))
                   }
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="endDate">
-                  วันสิ้นสุด <span className="text-destructive">*</span>
-                </Label>
+                <Label htmlFor="endDate">วันสิ้นสุด</Label>
                 <Input
                   id="endDate"
                   type="date"
-                  value={formData.endDate}
+                  value={form.endDate}
                   onChange={(e) =>
-                    setFormData((p) => ({ ...p, endDate: e.target.value }))
+                    setForm((prev) => ({ ...prev, endDate: e.target.value }))
                   }
                 />
               </div>
             </div>
 
-            {/* Location */}
             <div className="space-y-2">
               <Label htmlFor="location">สถานที่</Label>
               <Input
                 id="location"
-                placeholder="เช่น จ.เชียงใหม่ อ.เมือง"
-                value={formData.location}
+                value={form.location}
                 onChange={(e) =>
-                  setFormData((p) => ({ ...p, location: e.target.value }))
+                  setForm((prev) => ({ ...prev, location: e.target.value }))
                 }
               />
             </div>
 
-            {/* Objective */}
             <div className="space-y-2">
               <Label htmlFor="objective">วัตถุประสงค์</Label>
               <Textarea
                 id="objective"
-                placeholder="ระบุวัตถุประสงค์การเดินทาง..."
-                value={formData.objective}
+                rows={4}
+                value={form.objective}
                 onChange={(e) =>
-                  setFormData((p) => ({ ...p, objective: e.target.value }))
+                  setForm((prev) => ({ ...prev, objective: e.target.value }))
                 }
-                rows={3}
               />
-            </div>
-
-            {/* Employee Assignment */}
-            <div className="space-y-3">
-              <Label>
-                <Users className="h-4 w-4 inline mr-1.5" />
-                รายชื่อผู้ปฏิบัติงาน
-              </Label>
-
-              {/* Selected employees */}
-              {formData.employeeList.length > 0 && (
-                <div className="flex flex-wrap gap-2 p-3 bg-muted/30 rounded-lg border border-border">
-                  {formData.employeeList.map((emp) => (
-                    <Badge
-                      key={emp.userId}
-                      variant="default"
-                      className="pl-2 pr-1 py-1 gap-1"
-                    >
-                      <span className="text-xs">
-                        {emp.firstName} {emp.lastName}
-                        {emp.employeeId && (
-                          <span className="text-[10px] opacity-70 ml-1">
-                            ({emp.employeeId})
-                          </span>
-                        )}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFormData((p) => ({
-                            ...p,
-                            employeeList: p.employeeList.filter(
-                              (e) => e.userId !== emp.userId,
-                            ),
-                          }));
-                        }}
-                        className="ml-1 hover:bg-background/20 rounded-sm p-0.5"
-                        aria-label="Remove employee"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
-                </div>
-              )}
-
-              {/* Employee selector */}
-              <div className="space-y-2">
-                <Input
-                  placeholder="ค้นหาชื่อ หรือรหัสพนักงาน..."
-                  value={employeeSearch}
-                  onChange={(e) => setEmployeeSearch(e.target.value)}
-                  className="text-sm"
-                />
-
-                {isLoadingUsers ? (
-                  <div className="text-center py-6 text-sm text-muted-foreground">
-                    <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
-                    กำลังโหลดรายชื่อ...
-                  </div>
-                ) : (
-                  <div className="max-h-40 overflow-y-auto border border-border rounded-lg">
-                    {availableUsers
-                      .filter((user) => {
-                        const selected = formData.employeeList.some(
-                          (e) => e.userId === user.userId,
-                        );
-                        if (selected) return false;
-                        if (!employeeSearch) return true;
-                        const search = employeeSearch.toLowerCase();
-                        return (
-                          user.firstName.toLowerCase().includes(search) ||
-                          user.lastName.toLowerCase().includes(search) ||
-                          user.employeeId?.toLowerCase().includes(search)
-                        );
-                      })
-                      .map((user) => (
-                        <button
-                          key={user.userId}
-                          type="button"
-                          onClick={() => {
-                            setFormData((p) => ({
-                              ...p,
-                              employeeList: [...p.employeeList, user],
-                            }));
-                            setEmployeeSearch("");
-                          }}
-                          className="w-full text-left px-3 py-2 hover:bg-muted/50 transition-colors border-b border-border last:border-0 flex items-center gap-2"
-                        >
-                          <UserPlus className="h-4 w-4 text-muted-foreground shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium">
-                              {user.firstName} {user.lastName}
-                            </p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {user.employeeId && `${user.employeeId} • `}
-                              {user.position || "ไม่ระบุตำแหน่ง"}
-                              {user.departmentName &&
-                                ` • ${user.departmentName}`}
-                            </p>
-                          </div>
-                        </button>
-                      ))}
-                  </div>
-                )}
-
-                {!isLoadingUsers &&
-                  availableUsers.filter(
-                    (u) =>
-                      !formData.employeeList.some((e) => e.userId === u.userId),
-                  ).length === 0 && (
-                    <p className="text-xs text-center text-muted-foreground py-4">
-                      เลือกพนักงานครบทุกคนแล้ว
-                    </p>
-                  )}
-              </div>
             </div>
           </div>
         </DialogBody>
         <DialogFooter>
           <Button
             variant="outline"
-            size="sm"
-            onClick={closeDialog}
+            onClick={() => setMode(null)}
             disabled={isPending}
           >
             ยกเลิก
           </Button>
           <Button
-            size="sm"
-            onClick={dialogMode === "create" ? handleCreate : handleUpdate}
-            disabled={isPending || !isFormValid}
+            disabled={!validForm || isPending}
+            onClick={mode === "create" ? submitCreate : submitEdit}
           >
-            {isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-            {dialogMode === "create" ? "บันทึก" : "อัปเดต"}
+            {isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : null}
+            {mode === "create" ? "บันทึก" : "อัปเดต"}
           </Button>
         </DialogFooter>
       </Dialog>
 
-      {/* ================================================================= */}
-      {/* VIEW DIALOG                                                        */}
-      {/* ================================================================= */}
-      <Dialog open={dialogMode === "view"} onClose={closeDialog}>
-        <DialogClose onClose={closeDialog} />
+      <Dialog open={mode === "view"} onClose={() => setMode(null)}>
+        <DialogClose onClose={() => setMode(null)} />
         <DialogHeader>
           <DialogTitle>รายละเอียดคำสั่ง</DialogTitle>
-          <DialogDescription>{selectedItem?.id}</DialogDescription>
+          <DialogDescription>{selected?.id}</DialogDescription>
         </DialogHeader>
         <DialogBody>
-          {selectedItem && (
-            <div className="space-y-4">
-              <DetailRow
-                label="เลขที่เอกสาร"
-                value={selectedItem.id}
-                icon={<FileText className="h-4 w-4" />}
-              />
-              {selectedItem.innerRefDocumentId && (
-                <DetailRow
-                  label="เลขอ้างอิงภายใน"
-                  value={selectedItem.innerRefDocumentId}
-                />
-              )}
-              <DetailRow
-                label="วันที่"
-                value={`${formatDate(selectedItem.startDate)} — ${formatDate(
-                  selectedItem.endDate,
-                )}`}
-                icon={<Calendar className="h-4 w-4" />}
-              />
-              {selectedItem.location && (
-                <DetailRow
-                  label="สถานที่"
-                  value={selectedItem.location}
-                  icon={<MapPin className="h-4 w-4" />}
-                />
-              )}
-              {selectedItem.objective && (
-                <DetailRow
-                  label="วัตถุประสงค์"
-                  value={selectedItem.objective}
-                  icon={<ClipboardList className="h-4 w-4" />}
-                />
-              )}
-
-              {/* Employee List */}
-              {selectedItem.employeeList &&
-              Array.isArray(selectedItem.employeeList) &&
-              (selectedItem.employeeList as EmployeeListItem[]).length > 0 ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">
-                      รายชื่อผู้ปฏิบัติงาน (
-                      {(selectedItem.employeeList as EmployeeListItem[]).length}{" "}
-                      คน)
-                    </span>
-                  </div>
-                  <div className="pl-6 space-y-1.5">
-                    {(selectedItem.employeeList as EmployeeListItem[]).map(
-                      (emp, idx) => (
-                        <div
-                          key={emp.userId}
-                          className="text-sm py-1.5 px-2 rounded bg-muted/30 flex items-center gap-2"
-                        >
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-medium shrink-0">
-                            {idx + 1}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium leading-tight">
-                              {emp.firstName} {emp.lastName}
-                            </p>
-                            {(emp.employeeId || emp.position) && (
-                              <p className="text-xs text-muted-foreground truncate">
-                                {emp.employeeId && `${emp.employeeId}`}
-                                {emp.employeeId && emp.position && " • "}
-                                {emp.position}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      ),
-                    )}
-                  </div>
-                </div>
-              ) : null}
-
-              <DetailRow
-                label="ผู้บันทึก"
-                value={`${selectedItem.postedByUser.firstName} ${selectedItem.postedByUser.lastName}`}
-                icon={<User className="h-4 w-4" />}
-              />
-              {selectedItem.originalFile && (
-                <DetailRow
-                  label="ไฟล์แนบ"
-                  value={selectedItem.originalFile.fileName}
-                  icon={<FileText className="h-4 w-4" />}
-                />
-              )}
-              <DetailRow
-                label="วันที่บันทึก"
-                value={formatDate(selectedItem.postedAt)}
-              />
+          {selected ? (
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">เลขที่เอกสาร</p>
+                <p className="font-medium">{selected.id}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">ช่วงวันที่</p>
+                <p className="font-medium">
+                  {formatDate(selected.startDate)} -{" "}
+                  {formatDate(selected.endDate)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">สถานที่</p>
+                <p className="font-medium">{selected.location || "-"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">วัตถุประสงค์</p>
+                <p className="font-medium whitespace-pre-wrap">
+                  {selected.objective || "-"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">ผู้บันทึก</p>
+                <p className="font-medium">
+                  {selected.postedByUser.firstName}{" "}
+                  {selected.postedByUser.lastName}
+                </p>
+              </div>
             </div>
-          )}
+          ) : null}
         </DialogBody>
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={closeDialog}>
+          <Button variant="outline" onClick={() => setMode(null)}>
             ปิด
           </Button>
-          {selectedItem && (
-            <Button
-              size="sm"
-              onClick={() => {
-                closeDialog();
-                setTimeout(() => openEditDialog(selectedItem), 200);
-              }}
-            >
-              <Pencil className="h-4 w-4 mr-1" />
-              แก้ไข
-            </Button>
-          )}
         </DialogFooter>
       </Dialog>
 
-      {/* ================================================================= */}
-      {/* DELETE CONFIRMATION DIALOG                                         */}
-      {/* ================================================================= */}
-      <Dialog open={dialogMode === "delete"} onClose={closeDialog}>
-        <DialogClose onClose={closeDialog} />
+      <Dialog open={mode === "delete"} onClose={() => setMode(null)}>
+        <DialogClose onClose={() => setMode(null)} />
         <DialogHeader>
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-destructive/10">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-            </div>
-            <div>
-              <DialogTitle>ยืนยันการลบ</DialogTitle>
-              <DialogDescription>การลบจะไม่สามารถย้อนกลับได้</DialogDescription>
-            </div>
-          </div>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            ยืนยันการลบ
+          </DialogTitle>
+          <DialogDescription>
+            ข้อมูลจะถูกยกเลิกแบบ soft-delete
+          </DialogDescription>
         </DialogHeader>
-        <DialogBody className="space-y-4">
-          <div className="rounded-lg border border-destructive/50 bg-destructive/5 p-4">
-            <p className="text-sm text-muted-foreground">
-              คุณต้องการลบคำสั่งเลขที่{" "}
-              <span className="font-semibold text-foreground">
-                {selectedItem?.id}
-              </span>{" "}
-              ใช่หรือไม่?
-            </p>
-          </div>
-          {selectedItem?.location && (
-            <p className="text-sm text-muted-foreground">
-              สถานที่: {selectedItem.location}
-            </p>
-          )}
+        <DialogBody>
+          <p className="text-sm text-muted-foreground">
+            ต้องการลบรายการเลขที่{" "}
+            <span className="font-semibold text-foreground">
+              {selected?.id}
+            </span>{" "}
+            ใช่หรือไม่
+          </p>
         </DialogBody>
         <DialogFooter>
           <Button
             variant="outline"
-            size="sm"
-            onClick={closeDialog}
+            onClick={() => setMode(null)}
             disabled={isPending}
           >
             ยกเลิก
           </Button>
           <Button
             variant="destructive"
-            size="sm"
-            onClick={handleDelete}
+            onClick={submitDelete}
             disabled={isPending}
           >
-            {isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+            {isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : null}
             ยืนยันลบ
           </Button>
         </DialogFooter>
       </Dialog>
-    </div>
-  );
-}
-
-// =============================================================================
-// SUB-COMPONENTS
-// =============================================================================
-
-function DetailRow({
-  label,
-  value,
-  icon,
-}: {
-  label: string;
-  value: string;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-start gap-3 text-sm">
-      {icon && (
-        <div className="mt-0.5 text-muted-foreground shrink-0">{icon}</div>
-      )}
-      <div className="min-w-0">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="font-medium wrap-break-word">{value}</p>
-      </div>
     </div>
   );
 }

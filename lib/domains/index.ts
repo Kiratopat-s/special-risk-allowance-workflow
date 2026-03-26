@@ -18,5 +18,8 @@ export * from "./action-log";
 // OffSiteWork Domain
 export * from "./off-site-work";
 
+// ExpenseClaimDocument Domain
+export * from "./expense-claim-document";
+
 // Permission Domain
 export * from "./permission";

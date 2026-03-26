@@ -12,7 +12,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { User, LogOut, Settings, ShieldCheck, MapPin } from "lucide-react";
+import {
+  User,
+  LogOut,
+  Settings,
+  ShieldCheck,
+  MapPin,
+  FileText,
+} from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { usePermissions } from "@/lib/hooks/use-permissions";
 
@@ -48,6 +55,13 @@ export function Navbar() {
     { resource: "OFF_SITE_WORK", action: "LIST" },
     { resource: "OFF_SITE_WORK", action: "CREATE" },
     { resource: "OFF_SITE_WORK", action: "MANAGE" },
+  ]);
+
+  const hasExpenseClaimAccess = canAny([
+    { resource: "EXPENSE_CLAIM", action: "READ" },
+    { resource: "EXPENSE_CLAIM", action: "LIST" },
+    { resource: "EXPENSE_CLAIM", action: "CREATE" },
+    { resource: "EXPENSE_CLAIM", action: "MANAGE" },
   ]);
 
   return (
@@ -115,6 +129,17 @@ export function Navbar() {
                     <Link href="/off-site-work" className="flex items-center">
                       <MapPin className="mr-2 h-4 w-4" />
                       <span>คำสั่งออกนอกสถานที่</span>
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {hasExpenseClaimAccess && (
+                  <DropdownMenuItem asChild>
+                    <Link
+                      href="/expense-claim-document"
+                      className="flex items-center"
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      <span>เอกสารเบิกค่าใช้จ่าย</span>
                     </Link>
                   </DropdownMenuItem>
                 )}
