@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useCallback } from "react";
+import { useState, useTransition, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,9 @@ import {
   Eye,
   ChevronLeft,
   ChevronRight,
+  X,
+  Users,
+  UserPlus,
 } from "lucide-react";
 import {
   listOffSiteWorks,
@@ -38,7 +41,11 @@ import {
   updateOffSiteWork,
   deleteOffSiteWork,
 } from "@/app/actions/off-site-work";
-import type { OffSiteWorkWithRelations } from "@/lib/domains/off-site-work";
+import { listActiveUsers } from "@/app/actions/user";
+import type {
+  OffSiteWorkWithRelations,
+  EmployeeListItem,
+} from "@/lib/domains/off-site-work";
 
 // =============================================================================
 // TYPES
@@ -67,6 +74,7 @@ interface FormData {
   endDate: string;
   objective: string;
   location: string;
+  employeeList: EmployeeListItem[];
 }
 
 // =============================================================================
@@ -114,8 +122,36 @@ export function OffSiteWorkClient({
     endDate: "",
     objective: "",
     location: "",
+    employeeList: [],
   });
   const [isPending, startTransition] = useTransition();
+  const [availableUsers, setAvailableUsers] = useState<EmployeeListItem[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [employeeSearch, setEmployeeSearch] = useState("");
+
+  // Load users when dialog opens
+  useEffect(() => {
+    if (dialogMode === "create" || dialogMode === "edit") {
+      let didCancel = false;
+
+      const fetchUsers = async () => {
+        setIsLoadingUsers(true);
+        const result = await listActiveUsers();
+        if (!didCancel) {
+          if (result.success) {
+            setAvailableUsers(result.data);
+          }
+          setIsLoadingUsers(false);
+        }
+      };
+
+      fetchUsers();
+
+      return () => {
+        didCancel = true;
+      };
+    }
+  }, [dialogMode]);
 
   // ---------------------------------------------------------------------------
   // Data fetching
@@ -160,12 +196,19 @@ export function OffSiteWorkClient({
       endDate: formatDateInput(new Date()),
       objective: "",
       location: "",
+      employeeList: [],
     });
     setSelectedItem(null);
+    setEmployeeSearch("");
     setDialogMode("create");
   };
 
   const openEditDialog = (item: OffSiteWorkWithRelations) => {
+    const employees = item.employeeList
+      ? Array.isArray(item.employeeList)
+        ? item.employeeList
+        : []
+      : [];
     setFormData({
       id: item.id,
       innerRefDocumentId: item.innerRefDocumentId || "",
@@ -173,8 +216,10 @@ export function OffSiteWorkClient({
       endDate: formatDateInput(item.endDate),
       objective: item.objective || "",
       location: item.location || "",
+      employeeList: employees as EmployeeListItem[],
     });
     setSelectedItem(item);
+    setEmployeeSearch("");
     setDialogMode("edit");
   };
 
@@ -205,6 +250,8 @@ export function OffSiteWorkClient({
         endDate: formData.endDate,
         objective: formData.objective || undefined,
         location: formData.location || undefined,
+        employeeList:
+          formData.employeeList.length > 0 ? formData.employeeList : undefined,
       });
 
       if (result.success) {
@@ -221,6 +268,15 @@ export function OffSiteWorkClient({
 
   const handleUpdate = () => {
     if (!selectedItem) return;
+
+    const existingEmployees = selectedItem.employeeList
+      ? Array.isArray(selectedItem.employeeList)
+        ? selectedItem.employeeList
+        : []
+      : [];
+    const employeesChanged =
+      JSON.stringify(formData.employeeList) !==
+      JSON.stringify(existingEmployees);
 
     startTransition(async () => {
       const result = await updateOffSiteWork(selectedItem.id, {
@@ -245,6 +301,11 @@ export function OffSiteWorkClient({
           formData.location !== (selectedItem.location || "")
             ? formData.location || null
             : undefined,
+        employeeList: employeesChanged
+          ? formData.employeeList.length > 0
+            ? formData.employeeList
+            : null
+          : undefined,
       });
 
       if (result.success) {
@@ -302,7 +363,7 @@ export function OffSiteWorkClient({
 
       {/* Toolbar */}
       <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
+        <div className="relative flex-1 min-w-50 max-w-sm">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="ค้นหาเลขที่, สถานที่, วัตถุประสงค์..."
@@ -361,6 +422,16 @@ export function OffSiteWorkClient({
                   {item.postedByUser.firstName} {item.postedByUser.lastName}
                 </span>
               </div>
+              {item.employeeList &&
+              Array.isArray(item.employeeList) &&
+              (item.employeeList as EmployeeListItem[]).length > 0 ? (
+                <div className="flex items-center gap-2">
+                  <Users className="h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    {(item.employeeList as EmployeeListItem[]).length} คน
+                  </span>
+                </div>
+              ) : null}
             </div>
 
             {/* Date range */}
@@ -420,6 +491,9 @@ export function OffSiteWorkClient({
               <th className="text-left font-medium p-3">วัตถุประสงค์</th>
               <th className="text-left font-medium p-3">สถานที่</th>
               <th className="text-center font-medium p-3">ช่วงวันที่</th>
+              <th className="text-center font-medium p-3 hidden lg:table-cell">
+                ผู้ปฏิบัติงาน
+              </th>
               <th className="text-left font-medium p-3 hidden lg:table-cell">
                 ผู้บันทึก
               </th>
@@ -448,14 +522,14 @@ export function OffSiteWorkClient({
                 </td>
 
                 {/* Objective */}
-                <td className="p-3 max-w-[200px]">
+                <td className="p-3 max-w-50">
                   <p className="truncate text-muted-foreground">
                     {item.objective || "—"}
                   </p>
                 </td>
 
                 {/* Location */}
-                <td className="p-3 max-w-[160px]">
+                <td className="p-3 max-w-50">
                   {item.location ? (
                     <div className="flex items-center gap-1.5">
                       <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -479,6 +553,22 @@ export function OffSiteWorkClient({
                       {formatDate(item.endDate)}
                     </Badge>
                   </div>
+                </td>
+
+                {/* Employees */}
+                <td className="p-3 text-center hidden lg:table-cell">
+                  {item.employeeList &&
+                  Array.isArray(item.employeeList) &&
+                  (item.employeeList as EmployeeListItem[]).length > 0 ? (
+                    <div className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-md">
+                      <Users className="h-3.5 w-3.5" />
+                      <span className="text-xs font-medium">
+                        {(item.employeeList as EmployeeListItem[]).length}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
                 </td>
 
                 {/* Posted by */}
@@ -506,7 +596,7 @@ export function OffSiteWorkClient({
                   {item.originalFile ? (
                     <div className="flex items-center gap-1.5">
                       <FileText className="h-3.5 w-3.5 text-blue-500" />
-                      <span className="text-xs truncate max-w-[100px]">
+                      <span className="text-xs truncate max-w-25">
                         {item.originalFile.fileName}
                       </span>
                     </div>
@@ -550,7 +640,7 @@ export function OffSiteWorkClient({
             {items.length === 0 && (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="text-center py-16 text-muted-foreground"
                 >
                   <ClipboardList className="h-10 w-10 mx-auto mb-3 opacity-40" />
@@ -708,6 +798,122 @@ export function OffSiteWorkClient({
                 rows={3}
               />
             </div>
+
+            {/* Employee Assignment */}
+            <div className="space-y-3">
+              <Label>
+                <Users className="h-4 w-4 inline mr-1.5" />
+                รายชื่อผู้ปฏิบัติงาน
+              </Label>
+
+              {/* Selected employees */}
+              {formData.employeeList.length > 0 && (
+                <div className="flex flex-wrap gap-2 p-3 bg-muted/30 rounded-lg border border-border">
+                  {formData.employeeList.map((emp) => (
+                    <Badge
+                      key={emp.userId}
+                      variant="default"
+                      className="pl-2 pr-1 py-1 gap-1"
+                    >
+                      <span className="text-xs">
+                        {emp.firstName} {emp.lastName}
+                        {emp.employeeId && (
+                          <span className="text-[10px] opacity-70 ml-1">
+                            ({emp.employeeId})
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData((p) => ({
+                            ...p,
+                            employeeList: p.employeeList.filter(
+                              (e) => e.userId !== emp.userId,
+                            ),
+                          }));
+                        }}
+                        className="ml-1 hover:bg-background/20 rounded-sm p-0.5"
+                        aria-label="Remove employee"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              {/* Employee selector */}
+              <div className="space-y-2">
+                <Input
+                  placeholder="ค้นหาชื่อ หรือรหัสพนักงาน..."
+                  value={employeeSearch}
+                  onChange={(e) => setEmployeeSearch(e.target.value)}
+                  className="text-sm"
+                />
+
+                {isLoadingUsers ? (
+                  <div className="text-center py-6 text-sm text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
+                    กำลังโหลดรายชื่อ...
+                  </div>
+                ) : (
+                  <div className="max-h-40 overflow-y-auto border border-border rounded-lg">
+                    {availableUsers
+                      .filter((user) => {
+                        const selected = formData.employeeList.some(
+                          (e) => e.userId === user.userId,
+                        );
+                        if (selected) return false;
+                        if (!employeeSearch) return true;
+                        const search = employeeSearch.toLowerCase();
+                        return (
+                          user.firstName.toLowerCase().includes(search) ||
+                          user.lastName.toLowerCase().includes(search) ||
+                          user.employeeId?.toLowerCase().includes(search)
+                        );
+                      })
+                      .map((user) => (
+                        <button
+                          key={user.userId}
+                          type="button"
+                          onClick={() => {
+                            setFormData((p) => ({
+                              ...p,
+                              employeeList: [...p.employeeList, user],
+                            }));
+                            setEmployeeSearch("");
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-muted/50 transition-colors border-b border-border last:border-0 flex items-center gap-2"
+                        >
+                          <UserPlus className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium">
+                              {user.firstName} {user.lastName}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {user.employeeId && `${user.employeeId} • `}
+                              {user.position || "ไม่ระบุตำแหน่ง"}
+                              {user.departmentName &&
+                                ` • ${user.departmentName}`}
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                  </div>
+                )}
+
+                {!isLoadingUsers &&
+                  availableUsers.filter(
+                    (u) =>
+                      !formData.employeeList.some((e) => e.userId === u.userId),
+                  ).length === 0 && (
+                    <p className="text-xs text-center text-muted-foreground py-4">
+                      เลือกพนักงานครบทุกคนแล้ว
+                    </p>
+                  )}
+              </div>
+            </div>
           </div>
         </DialogBody>
         <DialogFooter>
@@ -774,6 +980,49 @@ export function OffSiteWorkClient({
                   icon={<ClipboardList className="h-4 w-4" />}
                 />
               )}
+
+              {/* Employee List */}
+              {selectedItem.employeeList &&
+              Array.isArray(selectedItem.employeeList) &&
+              (selectedItem.employeeList as EmployeeListItem[]).length > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">
+                      รายชื่อผู้ปฏิบัติงาน (
+                      {(selectedItem.employeeList as EmployeeListItem[]).length}{" "}
+                      คน)
+                    </span>
+                  </div>
+                  <div className="pl-6 space-y-1.5">
+                    {(selectedItem.employeeList as EmployeeListItem[]).map(
+                      (emp, idx) => (
+                        <div
+                          key={emp.userId}
+                          className="text-sm py-1.5 px-2 rounded bg-muted/30 flex items-center gap-2"
+                        >
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-medium shrink-0">
+                            {idx + 1}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium leading-tight">
+                              {emp.firstName} {emp.lastName}
+                            </p>
+                            {(emp.employeeId || emp.position) && (
+                              <p className="text-xs text-muted-foreground truncate">
+                                {emp.employeeId && `${emp.employeeId}`}
+                                {emp.employeeId && emp.position && " • "}
+                                {emp.position}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
               <DetailRow
                 label="ผู้บันทึก"
                 value={`${selectedItem.postedByUser.firstName} ${selectedItem.postedByUser.lastName}`}
@@ -888,7 +1137,7 @@ function DetailRow({
       )}
       <div className="min-w-0">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="font-medium break-words">{value}</p>
+        <p className="font-medium wrap-break-word">{value}</p>
       </div>
     </div>
   );

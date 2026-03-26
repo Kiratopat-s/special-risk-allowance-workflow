@@ -7,6 +7,19 @@
  */
 
 /**
+ * Employee list item structure
+ */
+export interface EmployeeListItem {
+  userId: string;
+  employeeId: string | null;
+  firstName: string;
+  lastName: string;
+  position: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+}
+
+/**
  * Core OffSiteWork entity interface
  */
 export interface OffSiteWorkEntity {
@@ -16,12 +29,20 @@ export interface OffSiteWorkEntity {
   endDate: Date;
   objective: string | null;
   location: string | null;
-  employeeList: unknown | null;
+  employeeList: EmployeeListItem[] | null;
   postedAt: Date;
   postedByUserId: string;
   updatedAt: Date | null;
   deletedAt: Date | null;
   originalFileId: string | null;
+}
+
+/**
+ * Helper type to safely extract employeeList as typed array
+ */
+export function toEmployeeListItem(data: unknown): EmployeeListItem[] | null {
+  if (!data || !Array.isArray(data)) return null;
+  return data as EmployeeListItem[];
 }
 
 /**
@@ -53,7 +74,7 @@ export interface CreateOffSiteWorkInput {
   endDate: Date | string;
   objective?: string;
   location?: string;
-  employeeList?: unknown;
+  employeeList?: EmployeeListItem[];
   originalFileId?: string;
 }
 
@@ -66,7 +87,7 @@ export interface UpdateOffSiteWorkInput {
   endDate?: Date | string;
   objective?: string | null;
   location?: string | null;
-  employeeList?: unknown | null;
+  employeeList?: EmployeeListItem[] | null;
   originalFileId?: string | null;
 }
 

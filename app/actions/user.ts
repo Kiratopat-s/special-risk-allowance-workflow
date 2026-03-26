@@ -398,3 +398,56 @@ export async function updateKeycloakProfile(
     }
 }
 
+/**
+ * List active users for selection (e.g., employee assignment)
+ */
+export async function listActiveUsers() {
+    const session = await auth();
+    if (!session?.user?.dbUserId) {
+        return { success: false as const, error: "Unauthorized", code: "UNAUTHORIZED" };
+    }
+
+    try {
+        const { prisma } = await import("@/lib/db");
+        const users = await prisma.user.findMany({
+            where: { status: "ACTIVE" },
+            select: {
+                id: true,
+                employeeId: true,
+                firstName: true,
+                lastName: true,
+                position: true,
+                departmentId: true,
+                department: {
+                    select: {
+                        id: true,
+                        name: true,
+                        shortName: true,
+                    },
+                },
+            },
+            orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+        });
+
+        return {
+            success: true as const,
+            data: users.map((u) => ({
+                userId: u.id,
+                employeeId: u.employeeId,
+                firstName: u.firstName,
+                lastName: u.lastName,
+                position: u.position,
+                departmentId: u.departmentId,
+                departmentName: u.department?.name || null,
+            })),
+        };
+    } catch (error) {
+        console.error("Error listing users:", error);
+        return {
+            success: false as const,
+            error: "Failed to load users",
+            code: "FETCH_ERROR"
+        };
+    }
+}
+

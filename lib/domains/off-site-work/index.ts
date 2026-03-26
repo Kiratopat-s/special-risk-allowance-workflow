@@ -8,6 +8,7 @@
 
 // Types
 export type {
+  EmployeeListItem,
   OffSiteWorkEntity,
   OffSiteWorkWithRelations,
   CreateOffSiteWorkInput,

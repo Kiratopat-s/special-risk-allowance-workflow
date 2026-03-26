@@ -39,22 +39,24 @@ export const offSiteWorkRepository = {
    * Find off-site work by ID (exclude soft-deleted)
    */
   async findById(id: string): Promise<OffSiteWorkEntity | null> {
-    return prisma.offSiteWork.findFirst({
+    const result = await prisma.offSiteWork.findFirst({
       where: { id, deletedAt: null },
     });
+    return result as OffSiteWorkEntity | null;
   },
 
   /**
    * Find off-site work by ID with relations
    */
   async findWithRelations(id: string): Promise<OffSiteWorkWithRelations | null> {
-    return prisma.offSiteWork.findFirst({
+    const result = await prisma.offSiteWork.findFirst({
       where: { id, deletedAt: null },
       include: {
         postedByUser: { select: userSelect },
         originalFile: { select: fileSelect },
       },
     });
+    return result as OffSiteWorkWithRelations | null;
   },
 
   /**
@@ -64,19 +66,23 @@ export const offSiteWorkRepository = {
     data: CreateOffSiteWorkInput,
     postedByUserId: string
   ): Promise<OffSiteWorkEntity> {
+    // Prisma's JSON field type is strict; we cast through Object to satisfy type requirements
+    const createData = {
+      id: data.id,
+      innerRefDocumentId: data.innerRefDocumentId,
+      startDate: new Date(data.startDate),
+      endDate: new Date(data.endDate),
+      objective: data.objective,
+      location: data.location,
+      // EmployeeListItem[] is JSON-serializable; cast through Object for Prisma compatibility
+      employeeList: (data.employeeList || null) as unknown,
+      originalFileId: data.originalFileId,
+      postedByUserId,
+    };
+
     return prisma.offSiteWork.create({
-      data: {
-        id: data.id,
-        innerRefDocumentId: data.innerRefDocumentId,
-        startDate: new Date(data.startDate),
-        endDate: new Date(data.endDate),
-        objective: data.objective,
-        location: data.location,
-        employeeList: data.employeeList ?? undefined,
-        originalFileId: data.originalFileId,
-        postedByUserId,
-      },
-    });
+      data: createData as Parameters<typeof prisma.offSiteWork.create>[0]["data"],
+    }) as Promise<OffSiteWorkEntity>;
   },
 
   /**
@@ -86,48 +92,58 @@ export const offSiteWorkRepository = {
     id: string,
     data: UpdateOffSiteWorkInput
   ): Promise<OffSiteWorkEntity> {
+    // Build update data object with proper typing
+    const updateData: Record<string, unknown> = {};
+
+    if (data.innerRefDocumentId !== undefined) {
+      updateData.innerRefDocumentId = data.innerRefDocumentId;
+    }
+    if (data.startDate !== undefined) {
+      updateData.startDate = new Date(data.startDate);
+    }
+    if (data.endDate !== undefined) {
+      updateData.endDate = new Date(data.endDate);
+    }
+    if (data.objective !== undefined) {
+      updateData.objective = data.objective;
+    }
+    if (data.location !== undefined) {
+      updateData.location = data.location;
+    }
+    if (data.employeeList !== undefined) {
+      // EmployeeListItem[] is JSON-serializable; cast through unknown for Prisma compatibility
+      updateData.employeeList = (data.employeeList || null) as unknown;
+    }
+    if (data.originalFileId !== undefined) {
+      updateData.originalFileId = data.originalFileId;
+    }
+
     return prisma.offSiteWork.update({
       where: { id },
-      data: {
-        ...(data.innerRefDocumentId !== undefined && {
-          innerRefDocumentId: data.innerRefDocumentId,
-        }),
-        ...(data.startDate !== undefined && {
-          startDate: new Date(data.startDate),
-        }),
-        ...(data.endDate !== undefined && {
-          endDate: new Date(data.endDate),
-        }),
-        ...(data.objective !== undefined && { objective: data.objective }),
-        ...(data.location !== undefined && { location: data.location }),
-        ...(data.employeeList !== undefined && {
-          employeeList: data.employeeList ?? undefined,
-        }),
-        ...(data.originalFileId !== undefined && {
-          originalFileId: data.originalFileId,
-        }),
-      },
-    });
+      data: updateData,
+    }) as Promise<OffSiteWorkEntity>;
   },
 
   /**
    * Soft-delete an off-site work record
    */
   async softDelete(id: string): Promise<OffSiteWorkEntity> {
-    return prisma.offSiteWork.update({
+    const result = await prisma.offSiteWork.update({
       where: { id },
       data: { deletedAt: new Date() },
     });
+    return result as OffSiteWorkEntity;
   },
 
   /**
    * Restore a soft-deleted off-site work record
    */
   async restore(id: string): Promise<OffSiteWorkEntity> {
-    return prisma.offSiteWork.update({
+    const result = await prisma.offSiteWork.update({
       where: { id },
       data: { deletedAt: null },
     });
+    return result as OffSiteWorkEntity;
   },
 
   /**
@@ -189,7 +205,7 @@ export const offSiteWorkRepository = {
     const totalPages = Math.ceil(total / pageSize);
 
     return {
-      data,
+      data: data as OffSiteWorkWithRelations[],
       pagination: {
         page,
         pageSize,
@@ -208,7 +224,7 @@ export const offSiteWorkRepository = {
     userId: string,
     limit = 50
   ): Promise<OffSiteWorkWithRelations[]> {
-    return prisma.offSiteWork.findMany({
+    const result = await prisma.offSiteWork.findMany({
       where: { postedByUserId: userId, deletedAt: null },
       include: {
         postedByUser: { select: userSelect },
@@ -217,6 +233,7 @@ export const offSiteWorkRepository = {
       orderBy: { postedAt: "desc" },
       take: limit,
     });
+    return result as OffSiteWorkWithRelations[];
   },
 
   /**
