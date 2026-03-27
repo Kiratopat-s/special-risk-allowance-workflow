@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useTransition,
+} from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -35,6 +42,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   createExpenseClaimDocument,
   deleteExpenseClaimDocument,
+  getExpenseClaimDocument,
   listEligibleOffSiteWorksForClaim,
   listExpenseClaimDocuments,
   updateExpenseClaimDocument,
@@ -58,6 +66,7 @@ interface Pagination {
 interface ExpenseClaimDocumentClientProps {
   initialItems: ExpenseClaimDocumentWithRelations[];
   initialPagination: Pagination | null;
+  initialViewId: string | null;
   currentUserDisplayName: string;
   currentUserClaimantPositionAtSubmission: string;
 }
@@ -203,9 +212,11 @@ function getCalendarGridDates(monthValue: string): Array<string | null> {
 export function ExpenseClaimDocumentClient({
   initialItems,
   initialPagination,
+  initialViewId,
   currentUserDisplayName,
   currentUserClaimantPositionAtSubmission,
 }: ExpenseClaimDocumentClientProps) {
+  const router = useRouter();
   const [items, setItems] = useState(initialItems);
   const [pagination, setPagination] = useState(initialPagination);
   const [search, setSearch] = useState("");
@@ -235,6 +246,45 @@ export function ExpenseClaimDocumentClient({
   const [offSiteSearch, setOffSiteSearch] = useState("");
   const [isLoadingEligibleOffSites, setIsLoadingEligibleOffSites] =
     useState(false);
+
+  useEffect(() => {
+    if (!initialViewId) return;
+
+    let cancelled = false;
+
+    const openInitialClaim = async () => {
+      const existingItem = initialItems.find(
+        (item) => item.id === initialViewId,
+      );
+      if (existingItem) {
+        if (!cancelled) {
+          setSelected(existingItem);
+          setMode("view");
+          router.replace("/expense-claim-document", { scroll: false });
+        }
+        return;
+      }
+
+      const result = await getExpenseClaimDocument(initialViewId);
+      if (!cancelled) {
+        if (result.success) {
+          setSelected(result.data);
+          setMode("view");
+        } else {
+          toast.error("ไม่สามารถเปิดเอกสารเบิกได้", {
+            description: result.error,
+          });
+        }
+        router.replace("/expense-claim-document", { scroll: false });
+      }
+    };
+
+    void openInitialClaim();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialItems, initialViewId, router]);
 
   const dateCount = selectedClaimDates.length;
   const totalAmount = dateCount * RATE_PER_DAY;
@@ -274,6 +324,22 @@ export function ExpenseClaimDocumentClient({
     () => new Set(selectedClaimDates),
     [selectedClaimDates],
   );
+
+  const viewMonthValue = useMemo(
+    () =>
+      selected ? toMonthInput(selected.expenseMonth) : toMonthInput(new Date()),
+    [selected],
+  );
+
+  const viewCalendarCells = useMemo(
+    () => getCalendarGridDates(viewMonthValue),
+    [viewMonthValue],
+  );
+
+  const viewSelectedDateSet = useMemo(() => {
+    const selectedDates = selected?.selectedDates ?? [];
+    return new Set(selectedDates.map((value) => value.slice(0, 10)));
+  }, [selected]);
 
   const refresh = useCallback(
     async (nextPage = page, nextSearch = search) => {
@@ -946,7 +1012,7 @@ export function ExpenseClaimDocumentClient({
       <Dialog
         open={mode === "view"}
         onClose={() => setMode(null)}
-        className="max-w-2xl"
+        className="max-w-3xl"
       >
         <DialogClose onClose={() => setMode(null)} />
         <DialogHeader>
@@ -955,7 +1021,7 @@ export function ExpenseClaimDocumentClient({
         </DialogHeader>
         <DialogBody>
           {selected ? (
-            <div className="space-y-3 text-sm">
+            <div className="space-y-4 text-sm">
               <div>
                 <p className="text-xs text-muted-foreground">ผู้ยื่น</p>
                 <p className="font-medium">
@@ -990,6 +1056,62 @@ export function ExpenseClaimDocumentClient({
                 <p className="font-medium whitespace-pre-wrap">
                   {selected.remark || "-"}
                 </p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  วันที่ที่ยื่นเบิก (ปฏิทิน)
+                </p>
+                <div className="rounded-md border p-2">
+                  {viewSelectedDateSet.size === 0 ? (
+                    <p className="py-4 text-center text-sm text-muted-foreground">
+                      ไม่มีวันที่ที่บันทึกไว้
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground">
+                        <span>Sun</span>
+                        <span>Mon</span>
+                        <span>Tue</span>
+                        <span>Wed</span>
+                        <span>Thu</span>
+                        <span>Fri</span>
+                        <span>Sat</span>
+                      </div>
+                      <div className="grid grid-cols-7 gap-1">
+                        {viewCalendarCells.map((cell, idx) => {
+                          if (!cell) {
+                            return (
+                              <div
+                                key={`view-empty-${idx}`}
+                                className="h-9 rounded-md"
+                              />
+                            );
+                          }
+
+                          const checked = viewSelectedDateSet.has(cell);
+
+                          return (
+                            <div
+                              key={`view-${cell}`}
+                              className={`flex h-9 items-center justify-center rounded-md border text-xs ${
+                                checked
+                                  ? "border-primary bg-primary text-primary-foreground"
+                                  : "border-muted-foreground/20 text-muted-foreground"
+                              }`}
+                              title={formatDay(cell)}
+                            >
+                              {new Date(cell).getUTCDate()}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        วันที่ที่เลือก: {viewSelectedDateSet.size} วัน
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ) : null}

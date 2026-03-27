@@ -21,8 +21,17 @@ function getLockedClaimantPosition(
   return `${short} ${level}`.trim();
 }
 
-export default async function ExpenseClaimDocumentPage() {
+interface ExpenseClaimDocumentPageProps {
+  searchParams?: Promise<{
+    claimId?: string;
+  }>;
+}
+
+export default async function ExpenseClaimDocumentPage({
+  searchParams,
+}: ExpenseClaimDocumentPageProps) {
   const session = await auth();
+  const resolvedSearchParams = await searchParams;
   const result = await listExpenseClaimDocuments({ page: 1, pageSize: 20 });
 
   const currentUserDisplayName =
@@ -43,6 +52,7 @@ export default async function ExpenseClaimDocumentPage() {
     <ExpenseClaimDocumentClient
       initialItems={data.items}
       initialPagination={data.pagination}
+      initialViewId={resolvedSearchParams?.claimId ?? null}
       currentUserDisplayName={currentUserDisplayName}
       currentUserClaimantPositionAtSubmission={
         currentUserClaimantPositionAtSubmission

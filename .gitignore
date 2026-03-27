@@ -42,4 +42,4 @@ next-env.d.ts
 
 /lib/generated/prisma
 
-CURRENT_TABLE_sraw010.sql
+sql-lab/

@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   MapPin,
   FileText,
+  FolderOpen,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { usePermissions } from "@/lib/hooks/use-permissions";
@@ -62,6 +63,14 @@ export function Navbar() {
     { resource: "EXPENSE_CLAIM", action: "LIST" },
     { resource: "EXPENSE_CLAIM", action: "CREATE" },
     { resource: "EXPENSE_CLAIM", action: "MANAGE" },
+  ]);
+
+  const hasMonthlyRequestAccess = canAny([
+    { resource: "MONTHLY_REQUEST", action: "READ" },
+    { resource: "MONTHLY_REQUEST", action: "LIST" },
+    { resource: "MONTHLY_REQUEST", action: "MANAGE" },
+    { resource: "MONTHLY_REQUEST", action: "SUBMIT" },
+    { resource: "MONTHLY_REQUEST", action: "APPROVE" },
   ]);
 
   return (
@@ -140,6 +149,17 @@ export function Navbar() {
                     >
                       <FileText className="mr-2 h-4 w-4" />
                       <span>เอกสารเบิกค่าใช้จ่าย</span>
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {hasMonthlyRequestAccess && (
+                  <DropdownMenuItem asChild>
+                    <Link
+                      href="/monthly-request-collection"
+                      className="flex items-center"
+                    >
+                      <FolderOpen className="mr-2 h-4 w-4" />
+                      <span>รวบรวมเบิกค่าตอบแทนเสี่ยงภัยฯ</span>
                     </Link>
                   </DropdownMenuItem>
                 )}

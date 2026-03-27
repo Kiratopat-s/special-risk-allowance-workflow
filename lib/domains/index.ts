@@ -23,3 +23,6 @@ export * from "./expense-claim-document";
 
 // Permission Domain
 export * from "./permission";
+
+// MonthlyRequestCollection Domain
+export * from "./monthly-request-collection";

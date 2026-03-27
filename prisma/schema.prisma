@@ -107,6 +107,7 @@ model User {
   
   monthlyRequestsCollection MonthlyRequestCollection[]
   signatures Signature[]
+  mrcApprovalSteps MrcApprovalStep[]
 }
 
 // =============================================================================
@@ -245,6 +246,7 @@ model Files {
 enum ClaimDocumentStatus {
   DRAFT // Initial status when a claim is being prepared but not yet submitted for review
   PENDING // Status when a claim is created and awaiting review
+  COLLECTED // Status when a claim has been collected into a monthly request collection by admin
   APPROVED // Status when a claim has been reviewed and approved by the relevant authority
   REJECTED // Status when a claim has been reviewed and rejected, often with feedback for the claimant
   CANCELLED // Status when a claim has been cancelled by the claimant or due to other reasons
@@ -299,20 +301,35 @@ model ExpenseClaimOffSiteWork {
   @@index([offSiteWorkId])
 }
 
+/// Stage in the multi-level approval chain for MonthlyRequestCollection
+enum MrcApprovalStage {
+  HPA_CHECK   // หผ. verification
+  RK_CHECK    // รก. verification
+  OK_APPROVE  // อก. final approval
+}
+
+/// Status of an individual approval step
+enum MrcStepStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model MonthlyRequestCollection {
   id                 String     @id @default(uuid())
   collectorId        String     @map("collector_id")
   collector          User       @relation(fields: [collectorId], references: [id], onDelete: Cascade)
-  collectForMonth       DateTime   @map("collect_for_month") // Represents the month for which data is being collected (e.g. 2024-01-01 for January 2024)
-  countDates         Decimal?   @map("count_dates") // Represents the number of specific dates selected for the month, if applicable
-  amount              Decimal?   @map("amount")
+  collectForMonth    DateTime   @map("collect_for_month") // Represents the month for which data is being collected (e.g. 2024-01-01 for January 2024)
+  countDates         Decimal?   @map("count_dates") // Sum of all collected expense claim countDates
+  amount             Decimal?   @map("amount")       // Sum of all collected expense claim amounts
 
   status            ClaimDocumentStatus @default(DRAFT)
   createdAt         DateTime   @default(now()) @map("created_at")
   updatedAt         DateTime?  @map("updated_at") @updatedAt
   cancelledAt       DateTime?  @map("cancelled_at")
   
-  expenseClaims ExpenseClaim[]
+  expenseClaims     ExpenseClaim[]
+  approvalSteps     MrcApprovalStep[]
   
   @@map("monthly_request_collections")
   @@index([collectorId])
@@ -320,6 +337,31 @@ model MonthlyRequestCollection {
   @@index([status])
   @@index([createdAt])
   @@index([collectorId, collectForMonth])
+}
+
+/// Tracks each approval step in the MRC review chain
+model MrcApprovalStep {
+  id                          String            @id @default(uuid())
+  monthlyRequestCollectionId  String            @map("monthly_request_collection_id")
+  monthlyRequestCollection    MonthlyRequestCollection @relation(fields: [monthlyRequestCollectionId], references: [id], onDelete: Cascade)
+  
+  stage       MrcApprovalStage  @map("stage")
+  status      MrcStepStatus     @default(PENDING) @map("status")
+  
+  reviewerId  String?   @map("reviewer_id")
+  reviewer    User?     @relation(fields: [reviewerId], references: [id], onDelete: SetNull)
+  reviewedAt  DateTime? @map("reviewed_at")
+  remark      String?   @map("remark")
+  
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime? @map("updated_at") @updatedAt
+  
+  @@unique([monthlyRequestCollectionId, stage])
+  @@map("mrc_approval_steps")
+  @@index([monthlyRequestCollectionId])
+  @@index([stage])
+  @@index([status])
+  @@index([reviewerId])
 }
 
 model Signature {
