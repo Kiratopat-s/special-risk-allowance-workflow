@@ -41,21 +41,6 @@ export function PrintPageControls() {
     >
       <button
         type="button"
-        onClick={handleBack}
-        style={{
-          fontFamily: "'THSarabun', 'Sarabun', sans-serif",
-          fontSize: "15px",
-          padding: "6px 16px",
-          borderRadius: "6px",
-          border: "1px solid #888",
-          cursor: "pointer",
-          background: "#fff",
-        }}
-      >
-        ← กลับ
-      </button>
-      <button
-        type="button"
         onClick={handlePrint}
         style={{
           fontFamily: "'THSarabun', 'Sarabun', sans-serif",

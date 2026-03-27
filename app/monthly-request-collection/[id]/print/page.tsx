@@ -202,6 +202,24 @@ html, body {
   margin-bottom: 12px;
 }
 
+.doc-header-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.doc-logo {
+  flex-shrink: 0;
+  width: 98px;
+  height: 98px;
+  object-fit: contain;
+}
+
+.doc-header-text {
+  flex: 1;
+}
+
 .doc-title {
   text-align: center;
   font-size: 20px;
@@ -355,10 +373,20 @@ button.primary {
                 className="print-sheet"
               >
                 <div className="doc-header">
-                  <p className="doc-title">
-                    บัญชีสรุปรายชื่อผู้มีสิทธิ์รับค่าตอบแทนเสี่ยงภัยพิเศษ
-                  </p>
-                  <p className="doc-subtitle">{`ประจำ เดือน ${forMonth}`}</p>
+                  <div className="doc-header-top">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/logo/pea_logo_big.png"
+                      alt="PEA Logo"
+                      className="doc-logo"
+                    />
+                    <div className="doc-header-text">
+                      <p className="doc-title">
+                        บัญชีสรุปรายชื่อผู้มีสิทธิ์รับค่าตอบแทนเสี่ยงภัยพิเศษ
+                      </p>
+                      <p className="doc-subtitle">{`ประจำ เดือน ${forMonth}`}</p>
+                    </div>
+                  </div>
                   <div className="doc-meta">
                     <span>{`วันที่พิมพ์: ${printedDate}`}</span>
                     <span className="doc-page-mark">
