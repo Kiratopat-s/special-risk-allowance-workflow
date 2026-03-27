@@ -108,6 +108,8 @@ model User {
   monthlyRequestsCollection MonthlyRequestCollection[]
   signatures Signature[]
   mrcApprovalSteps MrcApprovalStep[]
+  notifications    Notification[]
+  pushSubscriptions PushSubscription[]
 }
 
 // =============================================================================
@@ -542,4 +544,70 @@ model RolePermission {
   @@index([permissionId])
 }
 
+// =============================================================================
+// DOMAIN: NOTIFICATIONS
+// =============================================================================
+
+/// Categorises the business event that produced a notification
+enum NotificationType {
+  // MRC lifecycle
+  MRC_SUBMITTED           // Notifies the first reviewer (HPA) when an MRC is submitted
+  MRC_STEP_APPROVED       // Notifies the next reviewer when the current step is approved
+  MRC_APPROVED            // Notifies the collector when the MRC is fully approved
+  MRC_REJECTED            // Notifies the collector when any reviewer rejects the MRC
+  MRC_CANCELLED           // Notifies the collector when the MRC is cancelled
+
+  // Expense claim lifecycle
+  CLAIM_STATUS_CHANGED    // Notifies the claimant when their claim status changes
+
+  // Off-site work lifecycle
+  OFF_SITE_WORK_UPDATED   // Notifies the creator when an off-site work record changes
+
+  // System / admin
+  SYSTEM_ANNOUNCEMENT     // A message broadcast by an administrator to one or more users
+}
+
+/// Persisted notification record linked to a single recipient
+model Notification {
+  id          String           @id @default(uuid())
+
+  // Recipient
+  userId      String           @map("user_id")
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Content
+  type        NotificationType @map("type")
+  title       String
+  body        String
+  link        String?          // Optional deep-link (e.g. /monthly-request-collection/abc)
+
+  // Read tracking
+  isRead      Boolean          @default(false) @map("is_read")
+  readAt      DateTime?        @map("read_at")
+
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  @@map("notifications")
+  @@index([userId])
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+/// Stores Web Push API subscriptions on a per-device basis
+model PushSubscription {
+  id          String   @id @default(uuid())
+
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  endpoint    String   @unique   // Push service endpoint URL
+  p256dh      String   @map("p256dh")   // Client public key
+  auth        String             // Authentication secret
+  userAgent   String?  @map("user_agent")
+
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("push_subscriptions")
+  @@index([userId])
+}
 

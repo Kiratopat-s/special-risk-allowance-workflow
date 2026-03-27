@@ -17,6 +17,7 @@
 
 import { monthlyRequestCollectionRepository as repo } from "./repository";
 import { actionLogService } from "@/lib/domains/action-log/service";
+import { notificationService } from "@/lib/domains/notification";
 import { ActionType } from "@/lib/shared/types";
 import { success, error, type Result } from "@/lib/shared/types";
 import type { Prisma } from "@/lib/generated/prisma/client";
@@ -176,6 +177,16 @@ export const monthlyRequestCollectionService = {
         });
 
         const updated = await repo.findById(id);
+
+        // Fire-and-forget: notify the collector that the MRC was submitted for review
+        void notificationService.send(
+            mrc.collectorId,
+            "MRC_SUBMITTED",
+            "การรวบรวมคำขอรายเดือนถูกส่งแล้ว",
+            `รายการรวบรวม เดือน${mrc.collectForMonth} ถูกส่งเพื่อตรวจสอบแล้ว`,
+            "/monthly-request-collection"
+        );
+
         return success(updated!, "Submitted for review");
     },
 
@@ -224,6 +235,15 @@ export const monthlyRequestCollectionService = {
                 newData: { stage: input.stage, status: "REJECTED", remark: input.remark } as JsonValue,
             });
 
+            // Fire-and-forget: notify the collector that the MRC was rejected
+            void notificationService.send(
+                mrc.collectorId,
+                "MRC_REJECTED",
+                "คำขอรายเดือนถูกปฏิเสธ",
+                `รายการรวบรวมคำขอรายเดือนของคุณถูกปฏิเสธในขั้นตอน ${input.stage}`,
+                "/monthly-request-collection"
+            );
+
             const updated = await repo.findById(id);
             return success(updated!, "Rejected successfully");
         }
@@ -245,6 +265,15 @@ export const monthlyRequestCollectionService = {
                 targetEntityId: id,
                 newData: { stage: input.stage, status: "APPROVED" } as JsonValue,
             });
+
+            // Fire-and-forget: notify the collector of final approval
+            void notificationService.send(
+                mrc.collectorId,
+                "MRC_APPROVED",
+                "คำขอรายเดือนได้รับการอนุมัติแล้ว",
+                "รายการรวบรวมคำขอรายเดือนของคุณได้รับการอนุมัติครบทุกขั้นตอนแล้ว",
+                "/monthly-request-collection"
+            );
         } else {
             // Advance to next stage
             const nextStage = STAGE_ORDER[currentIndex + 1];
@@ -258,6 +287,15 @@ export const monthlyRequestCollectionService = {
                 targetEntityId: id,
                 newData: { stage: input.stage, nextStage } as JsonValue,
             });
+
+            // Fire-and-forget: notify the collector of an intermediate step approval
+            void notificationService.send(
+                mrc.collectorId,
+                "MRC_STEP_APPROVED",
+                "ขั้นตอนการอนุมัติผ่านแล้ว",
+                `คำขอรายเดือนผ่านการตรวจสอบขั้น ${input.stage} แล้ว กำลังดำเนินการขั้นถัดไป`,
+                "/monthly-request-collection"
+            );
         }
 
         const updated = await repo.findById(id);
@@ -296,6 +334,15 @@ export const monthlyRequestCollectionService = {
             previousData: { status: mrc.status } as JsonValue,
             newData: { status: "CANCELLED" } as JsonValue,
         });
+
+        // Fire-and-forget: notify the collector of cancellation
+        void notificationService.send(
+            mrc.collectorId,
+            "MRC_CANCELLED",
+            "คำขอรายเดือนถูกยกเลิก",
+            "รายการรวบรวมคำขอรายเดือนถูกยกเลิกแล้ว",
+            "/monthly-request-collection"
+        );
 
         return success(undefined, "Monthly request collection cancelled");
     },

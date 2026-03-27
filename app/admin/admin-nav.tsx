@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Shield, Users, Key, Building2 } from "lucide-react";
+import { Shield, Users, Key, Building2, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -10,6 +10,7 @@ const navItems = [
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/departments", label: "Departments", icon: Building2 },
   { href: "/admin/permissions", label: "Permissions", icon: Key },
+  { href: "/admin/notifications", label: "Notifications", icon: Bell },
 ];
 
 export function AdminNav() {

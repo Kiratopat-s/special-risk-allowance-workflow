@@ -23,6 +23,7 @@ import {
   PenLine,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { NotificationBell } from "@/components/notification-bell";
 import { usePermissions } from "@/lib/hooks/use-permissions";
 
 export function Navbar() {
@@ -97,6 +98,7 @@ export function Navbar() {
 
         <nav className="flex items-center gap-2">
           <ThemeToggle />
+          {session?.user && <NotificationBell />}
           {isLoading ? (
             <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
           ) : session?.user ? (

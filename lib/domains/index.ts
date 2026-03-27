@@ -29,3 +29,6 @@ export * from "./monthly-request-collection";
 
 // Signature Domain
 export * from "./signature";
+
+// Notification Domain
+export * from "./notification";
