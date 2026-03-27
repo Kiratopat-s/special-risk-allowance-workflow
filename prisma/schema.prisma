@@ -421,7 +421,10 @@ enum PermissionAction {
   REJECT
   SUBMIT
   CANCEL
-  MANAGE  // Full control over the resource
+  MANAGE      // Full control over the resource
+  REVIEW_HPA  // Review MRC at HPA_CHECK stage (หัวหน้าแผนก)
+  REVIEW_RK   // Review MRC at RK_CHECK stage (รองผู้อำนวยการกอง)
+  REVIEW_OK   // Review MRC at OK_APPROVE stage (ผู้อำนวยการกอง)
 }
 
 /// Scope of permission (own items, department items, or all items)

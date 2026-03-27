@@ -26,10 +26,11 @@ export default async function MrcPage() {
   const session = await auth();
   const userId = session?.user?.dbUserId ?? "";
 
-  const [canManage, canSubmit, canApprove] = await Promise.all([
+  const [canManage, canHpa, canRk, canDrt] = await Promise.all([
     can(userId, "MONTHLY_REQUEST", "MANAGE"),
-    can(userId, "MONTHLY_REQUEST", "SUBMIT"),
-    can(userId, "MONTHLY_REQUEST", "APPROVE"),
+    can(userId, "MONTHLY_REQUEST", "REVIEW_HPA"),
+    can(userId, "MONTHLY_REQUEST", "REVIEW_RK"),
+    can(userId, "MONTHLY_REQUEST", "REVIEW_OK"),
   ]);
 
   const result = await listMonthlyRequestCollections({ page: 1, pageSize: 20 });
@@ -47,8 +48,9 @@ export default async function MrcPage() {
       initialItems={data.items}
       initialPagination={data.pagination}
       canManage={canManage}
-      canSubmit={canSubmit}
-      canApprove={canApprove}
+      canHpa={canHpa}
+      canRk={canRk}
+      canDrt={canDrt}
     />
   );
 }

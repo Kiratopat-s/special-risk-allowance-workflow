@@ -85,9 +85,14 @@ export const DEFAULT_PERMISSIONS: CreatePermissionInput[] = [
     { code: "monthly-request:read", name: "Read Monthly Requests", resource: "MONTHLY_REQUEST", action: "READ", scope: "DEPARTMENT", isSystem: true },
     { code: "monthly-request:read:all", name: "Read All Monthly Requests", resource: "MONTHLY_REQUEST", action: "READ", scope: "ALL", isSystem: true },
     { code: "monthly-request:update", name: "Update Monthly Requests", resource: "MONTHLY_REQUEST", action: "UPDATE", scope: "DEPARTMENT", isSystem: true },
+    { code: "monthly-request:list", name: "List Monthly Requests", resource: "MONTHLY_REQUEST", action: "LIST", scope: "ALL", isSystem: true },
     { code: "monthly-request:submit", name: "Submit Monthly Requests", resource: "MONTHLY_REQUEST", action: "SUBMIT", scope: "DEPARTMENT", isSystem: true },
     { code: "monthly-request:approve", name: "Approve Monthly Requests", resource: "MONTHLY_REQUEST", action: "APPROVE", scope: "ALL", isSystem: true },
     { code: "monthly-request:manage", name: "Manage Monthly Requests", resource: "MONTHLY_REQUEST", action: "MANAGE", scope: "ALL", isSystem: true },
+    // Per-approval-stage review permissions (1-to-1 with MrcApprovalStage)
+    { code: "monthly-request:review:hpa", name: "Review MRC — HPA_CHECK Stage", resource: "MONTHLY_REQUEST", action: "REVIEW_HPA", scope: "ALL", isSystem: true },
+    { code: "monthly-request:review:rk", name: "Review MRC — RK_CHECK Stage", resource: "MONTHLY_REQUEST", action: "REVIEW_RK", scope: "ALL", isSystem: true },
+    { code: "monthly-request:review:ok", name: "Review MRC — OK_APPROVE Stage", resource: "MONTHLY_REQUEST", action: "REVIEW_OK", scope: "ALL", isSystem: true },
 
     // SIGNATURE PERMISSIONS
     { code: "signature:create", name: "Create Own Signature", resource: "SIGNATURE", action: "CREATE", scope: "OWN", isSystem: true },
@@ -167,6 +172,30 @@ export const DEFAULT_ROLES: CreateRoleInput[] = [
         level: 5,
         isSystem: true,
     },
+    // -------------------------------------------------------------------------
+    // MRC Approval workflow roles (1-to-1 with approval stages)
+    // -------------------------------------------------------------------------
+    {
+        code: "hpa",
+        name: "หัวหน้าแผนก (HPA)",
+        description: "ผู้ตรวจสอบในขั้นตอน HPA_CHECK — หัวหน้าแผนก",
+        level: 45,
+        isSystem: true,
+    },
+    {
+        code: "rk",
+        name: "รองผู้อำนวยการกอง (RK)",
+        description: "ผู้ตรวจสอบในขั้นตอน RK_CHECK — รองผู้อำนวยการกอง",
+        level: 55,
+        isSystem: true,
+    },
+    {
+        code: "drt",
+        name: "ผู้อำนวยการกอง (DRT)",
+        description: "ผู้อนุมัติขั้นสุดท้าย OK_APPROVE — ผู้อำนวยการกอง",
+        level: 70,
+        isSystem: true,
+    },
 ];
 
 /**
@@ -182,6 +211,10 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         "expense-claim:manage",
         "off-site-work:manage",
         "monthly-request:manage",
+        "monthly-request:list",
+        "monthly-request:review:hpa",
+        "monthly-request:review:rk",
+        "monthly-request:review:ok",
         "signature:manage",
         "file:manage",
         "action-log:read:all",
@@ -210,7 +243,12 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         "off-site-work:read:all",
         "off-site-work:list:all",
         "monthly-request:read:all",
+        "monthly-request:list",
         "monthly-request:approve",
+        "monthly-request:manage",
+        "monthly-request:review:hpa",
+        "monthly-request:review:rk",
+        "monthly-request:review:ok",
         "signature:read:all",
         "file:read:all",
         "action-log:read:all",
@@ -238,8 +276,11 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         "off-site-work:list:all",
         "monthly-request:create",
         "monthly-request:read",
+        "monthly-request:read:all",
+        "monthly-request:list",
         "monthly-request:update",
         "monthly-request:submit",
+        "monthly-request:manage",
         "signature:create",
         "signature:read",
         "signature:update",
@@ -264,6 +305,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         "off-site-work:update",
         "off-site-work:list",
         "monthly-request:read",
+        "monthly-request:list",
         "signature:create",
         "signature:read",
         "signature:update",
@@ -297,6 +339,52 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         "off-site-work:read",
         "off-site-work:list",
         "monthly-request:read",
+        "monthly-request:list",
+    ],
+    // -------------------------------------------------------------------------
+    // MRC workflow approver roles
+    // -------------------------------------------------------------------------
+    hpa: [
+        "user:read",
+        "user:read:department",
+        "department:read",
+        "department:list",
+        "monthly-request:read:all",
+        "monthly-request:list",
+        "monthly-request:submit",       // retains canSubmit=true for sidebar visibility
+        "monthly-request:review:hpa",   // stage-specific action gate
+        "signature:create",
+        "signature:read",
+        "signature:update",
+        "signature:delete",
+    ],
+    rk: [
+        "user:read",
+        "user:read:department",
+        "department:read",
+        "department:list",
+        "monthly-request:read:all",
+        "monthly-request:list",
+        "monthly-request:submit",       // retains canSubmit=true for sidebar visibility
+        "monthly-request:review:rk",    // stage-specific action gate
+        "signature:create",
+        "signature:read",
+        "signature:update",
+        "signature:delete",
+    ],
+    drt: [
+        "user:read",
+        "user:read:department",
+        "department:read",
+        "department:list",
+        "monthly-request:read:all",
+        "monthly-request:list",
+        "monthly-request:approve",      // retains canApprove=true for sidebar visibility
+        "monthly-request:review:ok",    // stage-specific action gate
+        "signature:create",
+        "signature:read",
+        "signature:update",
+        "signature:delete",
     ],
 };
 

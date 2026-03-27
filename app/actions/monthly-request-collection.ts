@@ -19,6 +19,7 @@ import {
     monthlyRequestCollectionService,
     monthlyRequestCollectionRepository,
 } from "@/lib/domains/monthly-request-collection";
+import { signatureRepository } from "@/lib/domains/signature";
 import type { Result, PaginatedResult } from "@/lib/shared/types";
 import type {
     MonthlyRequestCollectionEntity,
@@ -187,8 +188,9 @@ export async function submitMonthlyRequestCollection(
 
 /**
  * Review a step in the approval chain.
- * HPA_CHECK and RK_CHECK require SUBMIT permission.
- * OK_APPROVE requires APPROVE permission.
+ * MANAGE permission bypasses stage checks (admin).
+ * HPA_CHECK requires REVIEW_HPA, RK_CHECK requires REVIEW_RK, OK_APPROVE requires REVIEW_OK.
+ * Approver must have an active signature before any review action.
  */
 export async function reviewMonthlyRequestCollectionStep(
     id: string,
@@ -199,15 +201,36 @@ export async function reviewMonthlyRequestCollectionStep(
         return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
     }
 
-    const isFinalApproval = input.stage === "OK_APPROVE";
-    const requiredAction = isFinalApproval ? "APPROVE" : "SUBMIT";
+    const userId = session.user.dbUserId;
 
-    const hasPerm = await can(session.user.dbUserId, "MONTHLY_REQUEST", requiredAction);
-    if (!hasPerm) {
-        return { success: false, error: "Permission denied", code: "PERMISSION_DENIED" };
+    // Super-admin / admin bypass via MANAGE
+    const isAdmin = await can(userId, "MONTHLY_REQUEST", "MANAGE");
+
+    // Per-stage permission check
+    let hasStageAccess = false;
+    if (input.stage === "HPA_CHECK") {
+        hasStageAccess = isAdmin || await can(userId, "MONTHLY_REQUEST", "REVIEW_HPA");
+    } else if (input.stage === "RK_CHECK") {
+        hasStageAccess = isAdmin || await can(userId, "MONTHLY_REQUEST", "REVIEW_RK");
+    } else if (input.stage === "OK_APPROVE") {
+        hasStageAccess = isAdmin || await can(userId, "MONTHLY_REQUEST", "REVIEW_OK");
     }
 
-    return monthlyRequestCollectionService.reviewStep(id, input, session.user.dbUserId);
+    if (!hasStageAccess) {
+        return { success: false, error: "ไม่มีสิทธิ์ในขั้นตอนนี้", code: "PERMISSION_DENIED" };
+    }
+
+    // Signature guard — approver must have an active signature
+    const activeSig = await signatureRepository.findActiveByUserId(userId);
+    if (!activeSig) {
+        return {
+            success: false,
+            error: "กรุณาลงลายมือชื่อก่อนอนุมัติเอกสาร",
+            code: "SIGNATURE_REQUIRED",
+        };
+    }
+
+    return monthlyRequestCollectionService.reviewStep(id, input, userId);
 }
 
 /**

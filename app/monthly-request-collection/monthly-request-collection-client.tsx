@@ -65,8 +65,9 @@ interface MrcClientProps {
   initialItems: MonthlyRequestCollectionWithRelations[];
   initialPagination: Pagination | null;
   canManage: boolean;
-  canSubmit: boolean;
-  canApprove: boolean;
+  canHpa: boolean;
+  canRk: boolean;
+  canDrt: boolean;
 }
 
 type Mode =
@@ -239,8 +240,9 @@ export function MrcClient({
   initialItems,
   initialPagination,
   canManage,
-  canSubmit,
-  canApprove,
+  canHpa,
+  canRk,
+  canDrt,
 }: MrcClientProps) {
   const [items, setItems] = useState(initialItems);
   const [pagination, setPagination] = useState(initialPagination);
@@ -423,6 +425,17 @@ export function MrcClient({
         remark: reviewRemark.trim() || undefined,
       });
       if (!result.success) {
+        if (result.code === "SIGNATURE_REQUIRED") {
+          toast.error("กรุณาลงลายมือชื่อก่อนอนุมัติ", {
+            description:
+              "คุณยังไม่มีลายมือชื่อที่ใช้งานอยู่ กรุณาลงลายมือชื่อก่อนดำเนินการ",
+            action: {
+              label: "ไปลงลายมือชื่อ",
+              onClick: () => window.open("/profile", "_blank"),
+            },
+          });
+          return;
+        }
         toast.error("ไม่สามารถดำเนินการได้", { description: result.error });
         return;
       }
@@ -456,17 +469,12 @@ export function MrcClient({
       if (mrc.status !== "PENDING") return null;
       const pendingStep = mrc.approvalSteps.find((s) => s.status === "PENDING");
       if (!pendingStep) return null;
-      if (pendingStep.stage === "OK_APPROVE" && canApprove) return "OK_APPROVE";
-      if (
-        (pendingStep.stage === "HPA_CHECK" ||
-          pendingStep.stage === "RK_CHECK") &&
-        canSubmit
-      ) {
-        return pendingStep.stage;
-      }
+      if (pendingStep.stage === "HPA_CHECK" && canHpa) return "HPA_CHECK";
+      if (pendingStep.stage === "RK_CHECK" && canRk) return "RK_CHECK";
+      if (pendingStep.stage === "OK_APPROVE" && canDrt) return "OK_APPROVE";
       return null;
     },
-    [canSubmit, canApprove],
+    [canHpa, canRk, canDrt],
   );
 
   const canCancelMrc = useCallback(
