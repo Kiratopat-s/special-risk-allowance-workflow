@@ -50,6 +50,8 @@ export interface MrcApprovalStepWithReviewer extends MrcApprovalStepEntity {
         lastName: string;
         positionShort: string | null;
         positionLevel: string | null;
+        /** Active signature binary rows (0 or 1 element) */
+        signatures?: Array<{ signatureData: Buffer }>;
     } | null;
 }
 
@@ -71,6 +73,7 @@ export interface MrcExpenseClaimSummary {
         positionShort: string | null;
         positionLevel: string | null;
         departmentId: string | null;
+        department: { shortName: string | null } | null;
     };
 }
 

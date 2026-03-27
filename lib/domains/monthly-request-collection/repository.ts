@@ -36,6 +36,7 @@ const claimantSelect = {
     positionShort: true,
     positionLevel: true,
     departmentId: true,
+    department: { select: { shortName: true } },
 } as const;
 
 const reviewerSelect = {
@@ -44,6 +45,11 @@ const reviewerSelect = {
     lastName: true,
     positionShort: true,
     positionLevel: true,
+    signatures: {
+        where: { isActive: true, deletedAt: null },
+        select: { signatureData: true },
+        take: 1,
+    },
 } as const;
 
 const expenseClaimInclude = {

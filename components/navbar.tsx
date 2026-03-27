@@ -20,6 +20,7 @@ import {
   MapPin,
   FileText,
   FolderOpen,
+  PenLine,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { usePermissions } from "@/lib/hooks/use-permissions";
@@ -71,6 +72,13 @@ export function Navbar() {
     { resource: "MONTHLY_REQUEST", action: "MANAGE" },
     { resource: "MONTHLY_REQUEST", action: "SUBMIT" },
     { resource: "MONTHLY_REQUEST", action: "APPROVE" },
+  ]);
+
+  const hasSignatureAccess = canAny([
+    { resource: "SIGNATURE", action: "READ" },
+    { resource: "SIGNATURE", action: "CREATE" },
+    { resource: "SIGNATURE", action: "UPDATE" },
+    { resource: "SIGNATURE", action: "MANAGE" },
   ]);
 
   return (
@@ -160,6 +168,14 @@ export function Navbar() {
                     >
                       <FolderOpen className="mr-2 h-4 w-4" />
                       <span>รวบรวมเบิกค่าตอบแทนเสี่ยงภัยฯ</span>
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {hasSignatureAccess && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/signature" className="flex items-center">
+                      <PenLine className="mr-2 h-4 w-4" />
+                      <span>My Signature</span>
                     </Link>
                   </DropdownMenuItem>
                 )}

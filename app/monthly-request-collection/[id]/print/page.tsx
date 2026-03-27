@@ -46,6 +46,22 @@ function thMonth(date: Date | string): string {
   });
 }
 
+/** Convert a reviewer's active signature bytes to a data URL, or null if unavailable. */
+function reviewerSigUrl(
+  reviewer:
+    | { signatures?: Array<{ signatureData: Buffer | Uint8Array }> }
+    | null
+    | undefined,
+): string | null {
+  const data = reviewer?.signatures?.[0]?.signatureData;
+  if (!data) return null;
+  try {
+    return `data:image/png;base64,${Buffer.from(data).toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
 function paginateClaimsForPrint<T>(
   items: T[],
   regularPageRows: number,
@@ -261,9 +277,9 @@ th, td {
 
 th { background: #f5f5f5; font-weight: bold; text-align: center; }
 .col-order { width: 5%; }
-.col-name { width: 30%; }
-.col-position { width: 25%; }
 .col-employee-id { width: 10%; }
+.col-name { width: 25%; }
+.col-position { width: 30%; }
 .col-days { width: 10%; }
 .col-amount { width: 20%; }
 td.center { text-align: center; }
@@ -295,9 +311,18 @@ tr { break-inside: avoid; page-break-inside: avoid; }
 
 .sig-block { text-align: center; }
 
+.sig-image {
+  display: block;
+  margin: 8px auto 0;
+  max-width: 120px;
+  max-height: 56px;
+  object-fit: contain;
+}
+.sig-placeholder { height: 64px; }
+
 .sig-line {
   border-bottom: 1px solid #000;
-  margin: 48px 12px 4px;
+  margin: 4px 12px 4px;
 }
 
 .sig-label { font-size: 14px; }
@@ -399,9 +424,9 @@ button.primary {
                   <thead>
                     <tr>
                       <th className="col-order">ลำดับ</th>
-                      <th className="col-name">ชื่อ-สกุล</th>
-                      <th className="col-position">ตำแหน่ง</th>
                       <th className="col-employee-id">รหัสพนักงาน</th>
+                      <th className="col-name">ชื่อ-สกุล</th>
+                      <th className="col-position">ตำแหน่ง/สังกัด</th>
                       <th className="col-days">จำนวนวัน</th>
                       <th className="col-amount">จำนวนเงิน (บาท)</th>
                     </tr>
@@ -412,12 +437,17 @@ button.primary {
                         <td className="center">
                           {claimPage.rowOffset + idx + 1}
                         </td>
+                        <td className="center">
+                          {claim.claimant.employeeId ?? "-"}
+                        </td>
                         <td>
                           {claim.claimant.firstName} {claim.claimant.lastName}
                         </td>
-                        <td>{claim.claimantPositionAtSubmission}</td>
-                        <td className="center">
-                          {claim.claimant.employeeId ?? "-"}
+                        <td>
+                          {claim.claimantPositionAtSubmission}
+                          {claim.claimant.department?.shortName
+                            ? ` / ${claim.claimant.department.shortName}`
+                            : ""}
                         </td>
                         <td className="center">
                           {decimalText(claim.countDates)}
@@ -459,8 +489,22 @@ button.primary {
                           "รก. ตรวจสอบ",
                           "อก. อนุมัติ",
                         ];
+                        const sigUrl =
+                          step?.status === "APPROVED"
+                            ? reviewerSigUrl(step?.reviewer)
+                            : null;
                         return (
                           <div key={i} className="sig-block">
+                            {sigUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={sigUrl}
+                                alt="ลายเซ็น"
+                                className="sig-image"
+                              />
+                            ) : (
+                              <div className="sig-placeholder" />
+                            )}
                             <div className="sig-line" />
                             <p className="sig-label">{labels[i]}</p>
                             {step?.reviewer ? (
