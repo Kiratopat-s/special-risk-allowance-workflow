@@ -133,6 +133,8 @@ export interface EligibleExpenseClaimForCollection {
     countDates: Prisma.Decimal | null;
     amount: Prisma.Decimal | null;
     remark: string | null;
+    status: ClaimDocumentStatus;
+    isVerified: boolean;
     claimant: {
         id: string;
         firstName: string;

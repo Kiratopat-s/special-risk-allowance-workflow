@@ -18,7 +18,6 @@ import type {
     UserEntity,
     UserWithDepartment,
     KeycloakUserProfile,
-    CreateUserInput,
     UpdateUserInput,
     UserFilterCriteria,
 } from "./types";

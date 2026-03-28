@@ -15,9 +15,6 @@ import {
   PenLine,
   ShieldCheck,
   Star,
-  GitFork,
-  Users,
-  Workflow,
 } from "lucide-react";
 import { CursorSpotlight } from "@/components/cursor-spotlight";
 

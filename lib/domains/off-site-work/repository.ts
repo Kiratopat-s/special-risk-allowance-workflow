@@ -24,6 +24,14 @@ const userSelect = {
   employeeId: true,
 } as const;
 
+const leaderUserSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  employeeId: true,
+  position: true,
+} as const;
+
 const fileSelect = {
   id: true,
   fileName: true,
@@ -54,6 +62,7 @@ export const offSiteWorkRepository = {
       include: {
         postedByUser: { select: userSelect },
         originalFile: { select: fileSelect },
+        leaderUser: { select: leaderUserSelect },
       },
     });
     return result as OffSiteWorkWithRelations | null;
@@ -78,6 +87,12 @@ export const offSiteWorkRepository = {
       employeeList: (data.employeeList || null) as unknown,
       originalFileId: data.originalFileId,
       postedByUserId,
+      leaderUserId: data.leaderUserId ?? null,
+      leaderEmpId: data.leaderEmpId ?? null,
+      leaderFirstName: data.leaderFirstName ?? null,
+      leaderLastName: data.leaderLastName ?? null,
+      leaderPosition: data.leaderPosition ?? null,
+      leaderEmail: data.leaderEmail ?? null,
     };
 
     return prisma.offSiteWork.create({
@@ -116,6 +131,24 @@ export const offSiteWorkRepository = {
     }
     if (data.originalFileId !== undefined) {
       updateData.originalFileId = data.originalFileId;
+    }
+    if (data.leaderUserId !== undefined) {
+      updateData.leaderUserId = data.leaderUserId;
+    }
+    if (data.leaderEmpId !== undefined) {
+      updateData.leaderEmpId = data.leaderEmpId;
+    }
+    if (data.leaderFirstName !== undefined) {
+      updateData.leaderFirstName = data.leaderFirstName;
+    }
+    if (data.leaderLastName !== undefined) {
+      updateData.leaderLastName = data.leaderLastName;
+    }
+    if (data.leaderPosition !== undefined) {
+      updateData.leaderPosition = data.leaderPosition;
+    }
+    if (data.leaderEmail !== undefined) {
+      updateData.leaderEmail = data.leaderEmail;
     }
 
     return prisma.offSiteWork.update({
@@ -194,6 +227,7 @@ export const offSiteWorkRepository = {
         include: {
           postedByUser: { select: userSelect },
           originalFile: { select: fileSelect },
+          leaderUser: { select: leaderUserSelect },
         },
         skip: (page - 1) * pageSize,
         take: pageSize,

@@ -9,8 +9,6 @@
  * at the root scope ("/").
  */
 
-// @ts-nocheck — service worker global scope
-
 self.addEventListener("push", (event) => {
   if (!event.data) return;
 

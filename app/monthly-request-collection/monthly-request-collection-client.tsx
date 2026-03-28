@@ -5,9 +5,6 @@ import {
   AlertTriangle,
   ArrowUpRight,
   CalendarDays,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   ClipboardList,
   Eye,
   Loader2,
@@ -17,7 +14,6 @@ import {
   ThumbsDown,
   ThumbsUp,
   Trash2,
-  XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,20 +42,21 @@ import type {
   MonthlyRequestCollectionWithRelations,
   MrcApprovalStage,
 } from "@/lib/domains/monthly-request-collection";
-import type { ClaimDocumentStatus } from "@/lib/shared/types";
+import type { Pagination } from "@/lib/shared/types";
+import { monthDisplay, decimalText, toMonthInput } from "@/lib/shared/format";
+import { PaginationControls } from "@/components/ui/pagination-controls";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  ApprovalTimeline,
+  MrcStatusBadge,
+  stageLabel,
+  mrcStatusVariant as statusVariant,
+  mrcStatusLabel as statusLabel,
+} from "./approval-timeline";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface Pagination {
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-  hasNext: boolean;
-  hasPrevious: boolean;
-}
 
 interface MrcClientProps {
   initialItems: MonthlyRequestCollectionWithRelations[];
@@ -81,156 +78,6 @@ type Mode =
   | null;
 
 const PAGE_SIZE = 20;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function toMonthInput(date: Date | string): string {
-  const d = new Date(date);
-  const y = d.getUTCFullYear();
-  const m = `${d.getUTCMonth() + 1}`.padStart(2, "0");
-  return `${y}-${m}`;
-}
-
-function monthDisplay(month: Date | string): string {
-  return new Date(month).toLocaleDateString("th-TH", {
-    year: "numeric",
-    month: "long",
-  });
-}
-
-function dateTimeDisplay(value: Date | string): string {
-  return new Date(value).toLocaleString("th-TH", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-}
-
-function decimalText(v: unknown): string {
-  if (v === null || v === undefined) return "-";
-  if (typeof v === "object" && "toString" in (v as object)) {
-    return String((v as { toString(): string }).toString());
-  }
-  return String(v);
-}
-
-function statusLabel(status: ClaimDocumentStatus): string {
-  const map: Record<string, string> = {
-    DRAFT: "ร่าง",
-    PENDING: "รอตรวจสอบ",
-    COLLECTED: "รวบรวมแล้ว",
-    APPROVED: "อนุมัติแล้ว",
-    REJECTED: "ถูกปฏิเสธ",
-    CANCELLED: "ยกเลิก",
-  };
-  return map[status] ?? status;
-}
-
-function statusVariant(
-  status: ClaimDocumentStatus,
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "APPROVED") return "default";
-  if (status === "REJECTED" || status === "CANCELLED") return "destructive";
-  if (status === "PENDING") return "secondary";
-  return "outline";
-}
-
-function stageLabel(stage: MrcApprovalStage): string {
-  const map: Record<MrcApprovalStage, string> = {
-    HPA_CHECK: "หผ. ตรวจสอบ",
-    RK_CHECK: "รก. ตรวจสอบ",
-    OK_APPROVE: "อก. อนุมัติ",
-  };
-  return map[stage] ?? stage;
-}
-
-function stepStatusVariant(
-  s: string,
-): "default" | "secondary" | "destructive" | "outline" {
-  if (s === "APPROVED") return "default";
-  if (s === "REJECTED") return "destructive";
-  return "outline";
-}
-
-function stepStatusLabel(s: string): string {
-  if (s === "APPROVED") return "ผ่าน";
-  if (s === "REJECTED") return "ปฏิเสธ";
-  return "รอดำเนินการ";
-}
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-function MrcStatusBadge({ status }: { status: ClaimDocumentStatus }) {
-  return <Badge variant={statusVariant(status)}>{statusLabel(status)}</Badge>;
-}
-
-function ApprovalTimeline({
-  mrc,
-}: {
-  mrc: MonthlyRequestCollectionWithRelations;
-}) {
-  const stages: MrcApprovalStage[] = ["HPA_CHECK", "RK_CHECK", "OK_APPROVE"];
-  return (
-    <div className="space-y-2">
-      {stages.map((stage) => {
-        const step = mrc.approvalSteps.find((s) => s.stage === stage);
-        return (
-          <div
-            key={stage}
-            className="flex items-start gap-3 rounded-lg border p-3"
-          >
-            <div className="mt-0.5">
-              {!step && (
-                <div className="h-4 w-4 rounded-full border-2 border-muted-foreground" />
-              )}
-              {step?.status === "PENDING" && (
-                <div className="h-4 w-4 rounded-full border-2 border-yellow-500 bg-yellow-100" />
-              )}
-              {step?.status === "APPROVED" && (
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
-              )}
-              {step?.status === "REJECTED" && (
-                <XCircle className="h-4 w-4 text-destructive" />
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium">{stageLabel(stage)}</span>
-                {step && (
-                  <Badge
-                    variant={stepStatusVariant(step.status)}
-                    className="text-xs"
-                  >
-                    {stepStatusLabel(step.status)}
-                  </Badge>
-                )}
-              </div>
-              {step?.reviewer && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  {step.reviewer.firstName} {step.reviewer.lastName}
-                  {step.reviewedAt && ` · ${dateTimeDisplay(step.reviewedAt)}`}
-                </p>
-              )}
-              {step?.remark && (
-                <p className="text-xs text-muted-foreground mt-1 italic">
-                  &quot;{step.remark}&quot;
-                </p>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Main client component
@@ -550,13 +397,17 @@ export function MrcClient({
                       aria-label="เลือกหรือยกเลิกเลือกทั้งหมด"
                       type="checkbox"
                       checked={
-                        selectedClaimIds.length === eligibleClaims.length &&
-                        eligibleClaims.length > 0
+                        eligibleClaims.filter((c) => c.isVerified).length > 0 &&
+                        eligibleClaims
+                          .filter((c) => c.isVerified)
+                          .every((c) => selectedClaimIds.includes(c.id))
                       }
                       onChange={(e) =>
                         setSelectedClaimIds(
                           e.target.checked
-                            ? eligibleClaims.map((c) => c.id)
+                            ? eligibleClaims
+                                .filter((c) => c.isVerified)
+                                .map((c) => c.id)
                             : [],
                         )
                       }
@@ -564,6 +415,7 @@ export function MrcClient({
                   </th>
                   <th className="py-2 px-3 text-left">ชื่อ-สกุล</th>
                   <th className="py-2 px-3 text-left">ตำแหน่ง</th>
+                  <th className="py-2 px-3 text-left">สถานะ</th>
                   <th className="py-2 px-3 text-right">จำนวนวัน</th>
                   <th className="py-2 px-3 text-right">จำนวนเงิน</th>
                   <th className="py-2 px-3 text-center">ดูเอกสาร</th>
@@ -572,19 +424,25 @@ export function MrcClient({
               <tbody>
                 {eligibleClaims.map((claim) => {
                   const checked = selectedClaimIds.includes(claim.id);
+                  const selectable = claim.isVerified;
                   return (
                     <tr
                       key={claim.id}
-                      className={`border-b last:border-0 cursor-pointer transition-colors ${
-                        checked ? "bg-primary/5" : "hover:bg-muted/30"
+                      className={`border-b last:border-0 transition-colors ${
+                        !selectable
+                          ? "opacity-60 cursor-not-allowed"
+                          : checked
+                          ? "bg-primary/5 cursor-pointer"
+                          : "hover:bg-muted/30 cursor-pointer"
                       }`}
-                      onClick={() =>
+                      onClick={() => {
+                        if (!selectable) return;
                         setSelectedClaimIds((prev) =>
                           prev.includes(claim.id)
                             ? prev.filter((id) => id !== claim.id)
                             : [...prev, claim.id],
-                        )
-                      }
+                        );
+                      }}
                     >
                       <td
                         className="py-2 px-3"
@@ -594,6 +452,7 @@ export function MrcClient({
                           type="checkbox"
                           title={`เลือกเอกสารเบิก ${claim.id}`}
                           aria-label={`เลือกเอกสารเบิก ${claim.id}`}
+                          disabled={!selectable}
                           checked={checked}
                           onChange={(e) =>
                             setSelectedClaimIds((prev) =>
@@ -609,6 +468,14 @@ export function MrcClient({
                       </td>
                       <td className="py-2 px-3 text-muted-foreground text-xs">
                         {claim.claimantPositionAtSubmission}
+                      </td>
+                      <td className="py-2 px-3">
+                        <Badge
+                          variant={statusVariant(claim.status)}
+                          className="text-[10px]"
+                        >
+                          {statusLabel(claim.status)}
+                        </Badge>
                       </td>
                       <td className="py-2 px-3 text-right tabular-nums">
                         {decimalText(claim.countDates)}
@@ -811,37 +678,19 @@ export function MrcClient({
       )}
 
       {/* Pagination */}
-      {pagination && pagination.totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            แสดง {items.length} / {pagination.total} รายการ
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              disabled={!pagination.hasPrevious || isPending}
-              onClick={() => {
-                void refresh(page - 1);
-              }}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm">
-              หน้า {page} / {pagination.totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="icon"
-              disabled={!pagination.hasNext || isPending}
-              onClick={() => {
-                void refresh(page + 1);
-              }}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+      {pagination && (
+        <PaginationControls
+          pagination={pagination}
+          isPending={isPending}
+          onPrevious={() => void refresh(page - 1)}
+          onNext={() => void refresh(page + 1)}
+          label={
+            <p className="text-sm text-muted-foreground">
+              แสดง {items.length} / {pagination.total} รายการ · หน้า {page} /{" "}
+              {pagination.totalPages}
+            </p>
+          }
+        />
       )}
 
       {/* ─── Create dialog ────────────────────────────────────────── */}
@@ -1102,34 +951,22 @@ export function MrcClient({
         </DialogFooter>
       </Dialog>
 
-      {/* ─── Cancel confirm dialog ────────────────────────────────── */}
-      <Dialog open={mode === "cancel"} onClose={() => setMode(null)}>
-        <DialogClose onClose={() => setMode(null)} />
-        <DialogHeader>
-          <DialogTitle className="text-destructive flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5" />
-            ยืนยันการยกเลิก
-          </DialogTitle>
-          <DialogDescription>
+      <ConfirmDialog
+        open={mode === "cancel"}
+        onClose={() => setMode(null)}
+        title="ยืนยันการยกเลิก"
+        description={
+          <>
             ยกเลิกรายการรวบรวมเดือน{" "}
             {selected ? monthDisplay(selected.collectForMonth) : ""}?
             รายการเบิกที่รวบรวมไว้จะถูกคืนสถานะเป็น &quot;รอตรวจสอบ&quot;
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => setMode(null)}
-            disabled={isPending}
-          >
-            ไม่ยกเลิก
-          </Button>
-          <Button variant="destructive" onClick={doCancel} disabled={isPending}>
-            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            ยืนยันการยกเลิก
-          </Button>
-        </DialogFooter>
-      </Dialog>
+          </>
+        }
+        confirmLabel="ยืนยันการยกเลิก"
+        cancelLabel="ไม่ยกเลิก"
+        isPending={isPending}
+        onConfirm={doCancel}
+      />
     </div>
   );
 }

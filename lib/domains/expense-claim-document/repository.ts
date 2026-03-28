@@ -40,7 +40,33 @@ const offSiteWorkSelect = {
     endDate: true,
     location: true,
     objective: true,
+    leaderUserId: true,
+    leaderEmpId: true,
+    leaderFirstName: true,
+    leaderLastName: true,
+    leaderPosition: true,
+    leaderEmail: true,
 } as const;
+
+const leaderVerificationSelect = {
+    id: true,
+    offSiteWorkId: true,
+    leaderUserId: true,
+    leaderEmail: true,
+    token: true,
+    expiresAt: true,
+    verifiedAt: true,
+} as const;
+
+function serializeDecimalFields<T extends { countDates: unknown; amount: unknown }>(
+    item: T
+): T {
+    return {
+        ...item,
+        countDates: item.countDates != null ? Number(item.countDates) : null,
+        amount: item.amount != null ? Number(item.amount) : null,
+    };
+}
 
 export const expenseClaimDocumentRepository = {
     /**
@@ -110,7 +136,7 @@ export const expenseClaimDocumentRepository = {
             },
         });
 
-        return result as ExpenseClaimDocumentEntity | null;
+        return result ? serializeDecimalFields(result as ExpenseClaimDocumentEntity) : null;
     },
 
     /**
@@ -134,10 +160,24 @@ export const expenseClaimDocumentRepository = {
                         offSiteWork: { select: offSiteWorkSelect },
                     },
                 },
+                leaderVerifications: { select: leaderVerificationSelect },
             },
         });
 
-        return result as ExpenseClaimDocumentWithRelations | null;
+        return result ? serializeDecimalFields(result as ExpenseClaimDocumentWithRelations) : null;
+    },
+
+    /**
+     * Update only the status field of a claim document
+     */
+    async updateStatus(
+        id: string,
+        status: string
+    ): Promise<ExpenseClaimDocumentEntity> {
+        return prisma.expenseClaim.update({
+            where: { id },
+            data: { status: status as never },
+        }) as Promise<ExpenseClaimDocumentEntity>;
     },
 
     /**
@@ -317,6 +357,7 @@ export const expenseClaimDocumentRepository = {
                             offSiteWork: { select: offSiteWorkSelect },
                         },
                     },
+                    leaderVerifications: { select: leaderVerificationSelect },
                 },
                 orderBy: [{ expenseMonth: "desc" }, { createdAt: "desc" }],
                 skip: (page - 1) * pageSize,
@@ -328,7 +369,7 @@ export const expenseClaimDocumentRepository = {
         const totalPages = Math.ceil(total / pageSize);
 
         return {
-            data: data as ExpenseClaimDocumentWithRelations[],
+            data: (data as ExpenseClaimDocumentWithRelations[]).map(serializeDecimalFields),
             pagination: {
                 page,
                 pageSize,

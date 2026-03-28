@@ -18,8 +18,8 @@ export interface ExpenseClaimDocumentEntity {
     userId: string;
     claimantPositionAtSubmission: string;
     selectedDates: string[] | null;
-    countDates: Prisma.Decimal | null;
-    amount: Prisma.Decimal | null;
+    countDates: number | null;
+    amount: number | null;
     remark: string | null;
     createdById: string;
     createdAt: Date;
@@ -57,7 +57,22 @@ export interface ExpenseClaimDocumentWithRelations
             endDate: Date;
             location: string | null;
             objective: string | null;
+            leaderUserId: string | null;
+            leaderEmpId: string | null;
+            leaderFirstName: string | null;
+            leaderLastName: string | null;
+            leaderPosition: string | null;
+            leaderEmail: string | null;
         };
+    }>;
+    leaderVerifications: Array<{
+        id: string;
+        offSiteWorkId: string;
+        leaderUserId: string | null;
+        leaderEmail: string | null;
+        token: string;
+        expiresAt: Date;
+        verifiedAt: Date | null;
     }>;
 }
 

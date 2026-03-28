@@ -10,11 +10,8 @@ import {
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  AlertTriangle,
   CalendarDays,
   Check,
-  ChevronLeft,
-  ChevronRight,
   Eye,
   FileText,
   Loader2,
@@ -52,16 +49,18 @@ import type {
   ExpenseClaimDocumentWithRelations,
   UpdateExpenseClaimDocumentInput,
 } from "@/lib/domains/expense-claim-document";
-import type { ClaimDocumentStatus } from "@/lib/shared/types";
-
-interface Pagination {
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-  hasNext: boolean;
-  hasPrevious: boolean;
-}
+import type { ClaimDocumentStatus, Pagination } from "@/lib/shared/types";
+import {
+  monthDisplay,
+  dateDisplay,
+  decimalText,
+  toMonthInput,
+} from "@/lib/shared/format";
+import { claimStatusVariant } from "@/lib/shared/claim-status";
+import { PaginationControls } from "@/components/ui/pagination-controls";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { LeaderVerificationSection } from "./leader-verification-section";
 
 interface ExpenseClaimDocumentClientProps {
   initialItems: ExpenseClaimDocumentWithRelations[];
@@ -85,48 +84,20 @@ interface FormState {
 const PAGE_SIZE = 20;
 const RATE_PER_DAY = 150;
 
-function toMonthInput(value: Date | string): string {
-  const date = new Date(value);
-  const y = date.getUTCFullYear();
-  const m = `${date.getUTCMonth() + 1}`.padStart(2, "0");
-  return `${y}-${m}`;
-}
-
 function toMonthDate(monthValue: string): string {
   return `${monthValue}-01`;
 }
 
-function monthDisplay(value: Date | string): string {
-  return new Date(value).toLocaleDateString("th-TH", {
-    year: "numeric",
-    month: "long",
-  });
-}
-
-function dateDisplay(value: Date | string): string {
-  return new Date(value).toLocaleDateString("th-TH", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
-
-function decimalText(value: unknown): string {
-  if (value === null || value === undefined) return "-";
-  if (typeof value === "object" && value !== null && "toString" in value) {
-    return String((value as { toString(): string }).toString());
-  }
-  return String(value);
-}
-
-function statusTone(
-  status: ClaimDocumentStatus,
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "APPROVED") return "default";
-  if (status === "REJECTED" || status === "CANCELLED") return "destructive";
-  if (status === "PENDING") return "secondary";
-  return "outline";
-}
+const STATUS_LABEL: Record<ClaimDocumentStatus, string> = {
+  DRAFT: "ร่าง",
+  PENDING: "รอดำเนินการ",
+  PENDING_LEADER_VERIFY: "รอหัวหน้ายืนยัน",
+  WAIT_FOR_COLLECTION: "รอรวบรวม",
+  COLLECTED: "รวบรวมแล้ว",
+  APPROVED: "อนุมัติ",
+  REJECTED: "ปฏิเสธ",
+  CANCELLED: "ยกเลิก",
+};
 
 function formatDay(isoDate: string): string {
   return new Date(isoDate).toLocaleDateString("th-TH", {
@@ -208,6 +179,8 @@ function getCalendarGridDates(monthValue: string): Array<string | null> {
 
   return cells;
 }
+
+// ────────────────────────────────────────────────────────────────────────────
 
 export function ExpenseClaimDocumentClient({
   initialItems,
@@ -622,7 +595,9 @@ export function ExpenseClaimDocumentClient({
                   {item.claimant.firstName} {item.claimant.lastName}
                 </p>
               </div>
-              <Badge variant={statusTone(item.status)}>{item.status}</Badge>
+              <Badge variant={claimStatusVariant(item.status)}>
+                {STATUS_LABEL[item.status] ?? item.status}
+              </Badge>
             </div>
 
             <div className="space-y-2 text-sm text-muted-foreground">
@@ -674,39 +649,18 @@ export function ExpenseClaimDocumentClient({
         ))}
       </section>
 
-      {items.length === 0 ? (
-        <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">
-          <FileText className="mx-auto mb-3 h-8 w-8 opacity-60" />
-          ไม่พบเอกสารเบิกจ่าย
-        </div>
-      ) : null}
+      {items.length === 0 && (
+        <EmptyState icon={FileText} message="ไม่พบเอกสารเบิกจ่าย" />
+      )}
 
-      {pagination && pagination.totalPages > 1 ? (
-        <section className="flex items-center justify-between rounded-xl border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">
-            หน้า {pagination.page}/{pagination.totalPages} ทั้งหมด{" "}
-            {pagination.total} รายการ
-          </p>
-          <div className="flex items-center gap-1">
-            <Button
-              size="icon"
-              variant="outline"
-              disabled={!pagination.hasPrevious || isPending}
-              onClick={() => changePage(page - 1)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              size="icon"
-              variant="outline"
-              disabled={!pagination.hasNext || isPending}
-              onClick={() => changePage(page + 1)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </section>
-      ) : null}
+      {pagination && (
+        <PaginationControls
+          pagination={pagination}
+          isPending={isPending}
+          onPrevious={() => changePage(page - 1)}
+          onNext={() => changePage(page + 1)}
+        />
+      )}
 
       <Dialog
         open={mode === "create" || mode === "edit"}
@@ -943,6 +897,12 @@ export function ExpenseClaimDocumentClient({
                   >
                     <option value="DRAFT">DRAFT</option>
                     <option value="PENDING">PENDING</option>
+                    <option value="PENDING_LEADER_VERIFY">
+                      PENDING_LEADER_VERIFY
+                    </option>
+                    <option value="WAIT_FOR_COLLECTION">
+                      WAIT_FOR_COLLECTION
+                    </option>
                     <option value="APPROVED">APPROVED</option>
                     <option value="REJECTED">REJECTED</option>
                     <option value="CANCELLED">CANCELLED</option>
@@ -1047,8 +1007,8 @@ export function ExpenseClaimDocumentClient({
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">สถานะ</p>
-                <Badge variant={statusTone(selected.status)}>
-                  {selected.status}
+                <Badge variant={claimStatusVariant(selected.status)}>
+                  {STATUS_LABEL[selected.status] ?? selected.status}
                 </Badge>
               </div>
               <div>
@@ -1057,6 +1017,15 @@ export function ExpenseClaimDocumentClient({
                   {selected.remark || "-"}
                 </p>
               </div>
+
+              {/* Leader verification section */}
+              {selected.leaderVerifications &&
+              selected.leaderVerifications.length > 0 ? (
+                <LeaderVerificationSection
+                  verifications={selected.leaderVerifications}
+                  claimId={selected.id}
+                />
+              ) : null}
 
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
@@ -1127,52 +1096,24 @@ export function ExpenseClaimDocumentClient({
         </DialogFooter>
       </Dialog>
 
-      <Dialog
+      <ConfirmDialog
         open={mode === "delete"}
         onClose={() => setMode(null)}
-        className="max-w-md"
-      >
-        <DialogClose onClose={() => setMode(null)} />
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-destructive" />
-            ยืนยันการยกเลิกเอกสาร
-          </DialogTitle>
-          <DialogDescription>
-            ระบบจะทำ soft-delete โดยเปลี่ยนสถานะเป็น CANCELLED
-          </DialogDescription>
-        </DialogHeader>
-        <DialogBody>
-          <p className="text-sm text-muted-foreground">
+        title="ยืนยันการยกเลิกเอกสาร"
+        description="ระบบจะทำ soft-delete โดยเปลี่ยนสถานะเป็น CANCELLED"
+        bodyText={
+          <>
             ต้องการยกเลิกเอกสาร{" "}
             <span className="font-semibold text-foreground">
               {selected?.id}
             </span>{" "}
             ใช่หรือไม่
-          </p>
-        </DialogBody>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            className="w-full sm:w-auto"
-            onClick={() => setMode(null)}
-            disabled={isPending}
-          >
-            ยกเลิก
-          </Button>
-          <Button
-            variant="destructive"
-            className="w-full sm:w-auto"
-            onClick={submitDelete}
-            disabled={isPending}
-          >
-            {isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : null}
-            ยืนยันยกเลิก
-          </Button>
-        </DialogFooter>
-      </Dialog>
+          </>
+        }
+        confirmLabel="ยืนยันยกเลิก"
+        isPending={isPending}
+        onConfirm={submitDelete}
+      />
     </div>
   );
 }

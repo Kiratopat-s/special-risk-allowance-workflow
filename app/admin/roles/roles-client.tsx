@@ -31,7 +31,6 @@ import {
 } from "lucide-react";
 import {
   createRole,
-  updateRole,
   getRole,
   setRolePermissions as setRolePermissionsAction,
 } from "@/app/actions/permissions";

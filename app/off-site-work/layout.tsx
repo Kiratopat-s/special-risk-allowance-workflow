@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { can, canAny } from "@/lib/auth/permissions";
+import { canAny } from "@/lib/auth/permissions";
 
 interface OffSiteWorkLayoutProps {
   children: React.ReactNode;

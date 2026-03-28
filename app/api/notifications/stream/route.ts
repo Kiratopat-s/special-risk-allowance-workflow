@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { notificationBroker } from "@/lib/notification-broker";
 
@@ -15,7 +15,7 @@ const HEARTBEAT_MS = 25_000;
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET(_req: NextRequest) {
+export async function GET() {
     const session = await auth();
     const userId = session?.user?.dbUserId;
 

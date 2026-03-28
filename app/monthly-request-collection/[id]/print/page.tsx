@@ -10,18 +10,10 @@ import { auth } from "@/lib/auth";
 import { canAny } from "@/lib/auth/permissions";
 import { monthlyRequestCollectionRepository } from "@/lib/domains/monthly-request-collection";
 import { PrintPageControls } from "../print-client";
+import { longDateDisplay, monthDisplay } from "@/lib/shared/format";
 
 interface PrintPageProps {
   params: Promise<{ id: string }>;
-}
-
-function thDate(date: Date | string | null, fallback = ""): string {
-  if (!date) return fallback;
-  return new Date(date).toLocaleDateString("th-TH", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
 }
 
 function decimalToNumber(v: unknown): number {
@@ -37,13 +29,6 @@ function decimalToNumber(v: unknown): number {
 function decimalText(v: unknown): string {
   const num = decimalToNumber(v);
   return num === 0 ? "-" : num.toString();
-}
-
-function thMonth(date: Date | string): string {
-  return new Date(date).toLocaleDateString("th-TH", {
-    month: "long",
-    year: "numeric",
-  });
 }
 
 /** Convert a reviewer's active signature bytes to a data URL, or null if unavailable. */
@@ -110,6 +95,10 @@ function paginateClaimsForPrint<T>(
   return pages;
 }
 
+export const metadata = {
+  title: "บัญชีสรุปค่าตอบแทนเสี่ยงภัยพิเศษ",
+};
+
 export default async function MrcPrintPage({ params }: PrintPageProps) {
   const { id } = await params;
   const session = await auth();
@@ -126,9 +115,8 @@ export default async function MrcPrintPage({ params }: PrintPageProps) {
   const mrc = await monthlyRequestCollectionRepository.findWithRelations(id);
   if (!mrc) notFound();
 
-  const printedDate = thDate(new Date());
-  const forMonth = thMonth(mrc.collectForMonth);
-  const pageTitle = `บัญชีสรุปค่าตอบแทนเสี่ยงภัยพิเศษ — ${forMonth}`;
+  const printedDate = longDateDisplay(new Date());
+  const forMonth = monthDisplay(mrc.collectForMonth);
 
   const claims = [...mrc.expenseClaims].sort((a, b) =>
     (a.claimant.employeeId ?? "").localeCompare(b.claimant.employeeId ?? ""),
@@ -157,14 +145,10 @@ export default async function MrcPrintPage({ params }: PrintPageProps) {
   const totalPages = claimPages.length;
 
   return (
-    <html lang="th">
-      <head>
-        <meta charSet="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>{pageTitle}</title>
-        <style
-          dangerouslySetInnerHTML={{
-            __html: `
+    <>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
 @font-face {
   font-family: 'THSarabun';
   src: url('/font/THSarabun.ttf') format('truetype');
@@ -384,180 +368,173 @@ button.primary {
   }
 }
             `,
-          }}
-        />
-      </head>
-      <body>
-        <div className="page">
-          <PrintPageControls />
+        }}
+      />
+      <div className="page" lang="th">
+        <PrintPageControls />
 
-          {claimPages.map((claimPage, pageIndex) => {
-            return (
-              <section
-                key={`print-page-${pageIndex + 1}`}
-                className="print-sheet"
-              >
-                <div className="doc-header">
-                  <div className="doc-header-top">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src="/logo/pea_logo_big.png"
-                      alt="PEA Logo"
-                      className="doc-logo"
-                    />
-                    <div className="doc-header-text">
-                      <p className="doc-title">
-                        บัญชีสรุปรายชื่อผู้มีสิทธิ์รับค่าตอบแทนเสี่ยงภัยพิเศษ
-                      </p>
-                      <p className="doc-subtitle">{`ประจำ เดือน ${forMonth}`}</p>
-                    </div>
-                  </div>
-                  <div className="doc-meta">
-                    <span>{`วันที่พิมพ์: ${printedDate}`}</span>
-                    <span className="doc-page-mark">
-                      {`หน้าที่ ${pageIndex + 1}/${totalPages}`}
-                    </span>
+        {claimPages.map((claimPage, pageIndex) => {
+          return (
+            <section
+              key={`print-page-${pageIndex + 1}`}
+              className="print-sheet"
+            >
+              <div className="doc-header">
+                <div className="doc-header-top">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/logo/pea_logo_big.png"
+                    alt="PEA Logo"
+                    className="doc-logo"
+                  />
+                  <div className="doc-header-text">
+                    <p className="doc-title">สรุปรายการเบิกเสี่ยงภัยพิเศษ</p>
+                    <p className="doc-subtitle">{`ประจำ เดือน ${forMonth}`}</p>
                   </div>
                 </div>
+                <div className="doc-meta">
+                  <span>{`วันที่พิมพ์: ${printedDate}`}</span>
+                  <span className="doc-page-mark">
+                    {`หน้าที่ ${pageIndex + 1}/${totalPages}`}
+                  </span>
+                </div>
+              </div>
 
-                <table>
-                  <thead>
-                    <tr>
-                      <th className="col-order">ลำดับ</th>
-                      <th className="col-employee-id">รหัสพนักงาน</th>
-                      <th className="col-name">ชื่อ-สกุล</th>
-                      <th className="col-position">ตำแหน่ง/สังกัด</th>
-                      <th className="col-days">จำนวนวัน</th>
-                      <th className="col-amount">จำนวนเงิน (บาท)</th>
+              <table>
+                <thead>
+                  <tr>
+                    <th className="col-order">ลำดับ</th>
+                    <th className="col-employee-id">รหัสพนักงาน</th>
+                    <th className="col-name">ชื่อ-สกุล</th>
+                    <th className="col-position">ตำแหน่ง/สังกัด</th>
+                    <th className="col-days">จำนวนวัน</th>
+                    <th className="col-amount">จำนวนเงิน (บาท)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {claimPage.rows.map((claim, idx) => (
+                    <tr key={claim.id}>
+                      <td className="center">
+                        {claimPage.rowOffset + idx + 1}
+                      </td>
+                      <td className="center">
+                        {claim.claimant.employeeId ?? "-"}
+                      </td>
+                      <td>
+                        {claim.claimant.firstName} {claim.claimant.lastName}
+                      </td>
+                      <td>
+                        {claim.claimantPositionAtSubmission}
+                        {claim.claimant.department?.shortName
+                          ? ` / ${claim.claimant.department.shortName}`
+                          : ""}
+                      </td>
+                      <td className="center">
+                        {decimalText(claim.countDates)}
+                      </td>
+                      <td className="right">
+                        {decimalToNumber(claim.amount) > 0
+                          ? decimalToNumber(claim.amount).toLocaleString(
+                              "th-TH",
+                              {
+                                minimumFractionDigits: 2,
+                              },
+                            )
+                          : "-"}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {claimPage.rows.map((claim, idx) => (
-                      <tr key={claim.id}>
-                        <td className="center">
-                          {claimPage.rowOffset + idx + 1}
-                        </td>
-                        <td className="center">
-                          {claim.claimant.employeeId ?? "-"}
-                        </td>
-                        <td>
-                          {claim.claimant.firstName} {claim.claimant.lastName}
-                        </td>
-                        <td>
-                          {claim.claimantPositionAtSubmission}
-                          {claim.claimant.department?.shortName
-                            ? ` / ${claim.claimant.department.shortName}`
-                            : ""}
-                        </td>
-                        <td className="center">
-                          {decimalText(claim.countDates)}
-                        </td>
-                        <td className="right">
-                          {decimalToNumber(claim.amount) > 0
-                            ? decimalToNumber(claim.amount).toLocaleString(
-                                "th-TH",
-                                {
-                                  minimumFractionDigits: 2,
-                                },
-                              )
-                            : "-"}
-                        </td>
-                      </tr>
-                    ))}
-                    {claimPage.isLastPage && (
-                      <tr className="total-row">
-                        <td className="center" colSpan={4}>
-                          รวมทั้งสิ้น
-                        </td>
-                        <td className="center">{totalDates}</td>
-                        <td className="right">
-                          {totalAmount.toLocaleString("th-TH", {
-                            minimumFractionDigits: 2,
-                          })}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                  ))}
+                  {claimPage.isLastPage && (
+                    <tr className="total-row">
+                      <td className="center" colSpan={4}>
+                        รวมทั้งสิ้น
+                      </td>
+                      <td className="center">{totalDates}</td>
+                      <td className="right">
+                        {totalAmount.toLocaleString("th-TH", {
+                          minimumFractionDigits: 2,
+                        })}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
 
-                {claimPage.isLastPage && (
-                  <>
-                    <div className="signatures">
-                      {[hpaStep, rkStep, okStep].map((step, i) => {
-                        const labels = [
-                          "หผ. ตรวจสอบ",
-                          "รก. ตรวจสอบ",
-                          "อก. อนุมัติ",
-                        ];
-                        const sigUrl =
-                          step?.status === "APPROVED"
-                            ? reviewerSigUrl(step?.reviewer)
-                            : null;
-                        return (
-                          <div key={i} className="sig-block">
-                            {sigUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={sigUrl}
-                                alt="ลายเซ็น"
-                                className="sig-image"
-                              />
-                            ) : (
-                              <div className="sig-placeholder" />
-                            )}
-                            <div className="sig-line" />
-                            <p className="sig-label">{labels[i]}</p>
-                            {step?.reviewer ? (
-                              <>
-                                <p className="sig-name">
-                                  ({step.reviewer.firstName}{" "}
-                                  {step.reviewer.lastName})
-                                </p>
-                                <p className="sig-role">
-                                  {step.reviewer.positionShort ?? ""}
-                                  {step.reviewer.positionLevel
-                                    ? ` ${step.reviewer.positionLevel}`
-                                    : ""}
-                                </p>
-                                <p className="sig-date">
-                                  {step.reviewedAt
-                                    ? thDate(step.reviewedAt)
-                                    : ""}
-                                </p>
-                              </>
-                            ) : (
-                              <>
-                                <p className="sig-name">(……………………………)</p>
-                                <p className="sig-role">&nbsp;</p>
-                                <p className="sig-date">&nbsp;</p>
-                              </>
-                            )}
-                            {step?.status === "REJECTED" && step.remark && (
-                              <p className="sig-remark">
-                                ปฏิเสธ: {step.remark}
+              {claimPage.isLastPage && (
+                <>
+                  <div className="signatures">
+                    {[hpaStep, rkStep, okStep].map((step, i) => {
+                      const labels = [
+                        "หผ. ตรวจสอบ",
+                        "รก. ตรวจสอบ",
+                        "อก. อนุมัติ",
+                      ];
+                      const sigUrl =
+                        step?.status === "APPROVED"
+                          ? reviewerSigUrl(step?.reviewer)
+                          : null;
+                      return (
+                        <div key={i} className="sig-block">
+                          {sigUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={sigUrl}
+                              alt="ลายเซ็น"
+                              className="sig-image"
+                            />
+                          ) : (
+                            <div className="sig-placeholder" />
+                          )}
+                          <div className="sig-line" />
+                          <p className="sig-label">{labels[i]}</p>
+                          {step?.reviewer ? (
+                            <>
+                              <p className="sig-name">
+                                ({step.reviewer.firstName}{" "}
+                                {step.reviewer.lastName})
                               </p>
-                            )}
-                            {step?.status === "APPROVED" && (
-                              <p className="sig-status sig-status-approved">
-                                ✓ อนุมัติ
+                              <p className="sig-role">
+                                {step.reviewer.positionShort ?? ""}
+                                {step.reviewer.positionLevel
+                                  ? ` ${step.reviewer.positionLevel}`
+                                  : ""}
                               </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
+                              <p className="sig-date">
+                                {step.reviewedAt
+                                  ? longDateDisplay(step.reviewedAt)
+                                  : ""}
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="sig-name">(……………………………)</p>
+                              <p className="sig-role">&nbsp;</p>
+                              <p className="sig-date">&nbsp;</p>
+                            </>
+                          )}
+                          {step?.status === "REJECTED" && step.remark && (
+                            <p className="sig-remark">ปฏิเสธ: {step.remark}</p>
+                          )}
+                          {step?.status === "APPROVED" && (
+                            <p className="sig-status sig-status-approved">
+                              ✓ อนุมัติ
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
 
-                <div className="sheet-footer">
-                  <span>{`MRC ID: ${mrc.id}`}</span>
-                  <span>{`เอกสารนี้จัดทำโดยระบบ Special Risk Allowance Workflow · พิมพ์เมื่อ ${printedDate}`}</span>
-                </div>
-              </section>
-            );
-          })}
-        </div>
-      </body>
-    </html>
+              <div className="sheet-footer">
+                <span>{`MRC ID: ${mrc.id}`}</span>
+                <span>{`เอกสารนี้จัดทำโดยระบบ Special Risk Allowance Workflow · พิมพ์เมื่อ ${printedDate}`}</span>
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </>
   );
 }

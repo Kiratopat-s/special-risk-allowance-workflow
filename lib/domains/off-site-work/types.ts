@@ -35,6 +35,14 @@ export interface OffSiteWorkEntity {
   updatedAt: Date | null;
   deletedAt: Date | null;
   originalFileId: string | null;
+  // Leader — internal
+  leaderUserId: string | null;
+  // Leader — external
+  leaderEmpId: string | null;
+  leaderFirstName: string | null;
+  leaderLastName: string | null;
+  leaderPosition: string | null;
+  leaderEmail: string | null;
 }
 
 /**
@@ -62,6 +70,13 @@ export interface OffSiteWorkWithRelations extends OffSiteWorkEntity {
     fileType: string | null;
     fileSize: number | null;
   } | null;
+  leaderUser: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    employeeId: string | null;
+    position: string | null;
+  } | null;
 }
 
 /**
@@ -76,6 +91,13 @@ export interface CreateOffSiteWorkInput {
   location?: string;
   employeeList?: EmployeeListItem[];
   originalFileId?: string;
+  // Leader
+  leaderUserId?: string | null;
+  leaderEmpId?: string | null;
+  leaderFirstName?: string | null;
+  leaderLastName?: string | null;
+  leaderPosition?: string | null;
+  leaderEmail?: string | null;
 }
 
 /**
@@ -89,6 +111,13 @@ export interface UpdateOffSiteWorkInput {
   location?: string | null;
   employeeList?: EmployeeListItem[] | null;
   originalFileId?: string | null;
+  // Leader
+  leaderUserId?: string | null;
+  leaderEmpId?: string | null;
+  leaderFirstName?: string | null;
+  leaderLastName?: string | null;
+  leaderPosition?: string | null;
+  leaderEmail?: string | null;
 }
 
 /**

@@ -13,9 +13,9 @@ import {
   Search,
   Trash2,
   User,
-  ChevronLeft,
-  ChevronRight,
-  AlertTriangle,
+  Users,
+  UserCheck,
+  X,
 } from "lucide-react";
 import {
   Dialog,
@@ -37,16 +37,16 @@ import {
   listOffSiteWorks,
   updateOffSiteWork,
 } from "@/app/actions/off-site-work";
-import type { OffSiteWorkWithRelations } from "@/lib/domains/off-site-work";
-
-interface Pagination {
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-  hasNext: boolean;
-  hasPrevious: boolean;
-}
+import { searchUsersForLeader } from "@/app/actions/user";
+import type {
+  OffSiteWorkWithRelations,
+  EmployeeListItem,
+} from "@/lib/domains/off-site-work";
+import type { Pagination } from "@/lib/shared/types";
+import { shortDateDisplay, toDateInputValue } from "@/lib/shared/format";
+import { PaginationControls } from "@/components/ui/pagination-controls";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface OffSiteWorkClientProps {
   initialItems: OffSiteWorkWithRelations[];
@@ -54,6 +54,16 @@ interface OffSiteWorkClientProps {
 }
 
 type Mode = "create" | "edit" | "view" | "delete" | null;
+type LeaderType = "none" | "internal" | "external";
+
+interface LeaderUser {
+  id: string;
+  employeeId: string | null;
+  firstName: string;
+  lastName: string;
+  position: string | null;
+  email: string | null;
+}
 
 interface FormState {
   id: string;
@@ -62,25 +72,80 @@ interface FormState {
   endDate: string;
   location: string;
   objective: string;
+  employeeList: EmployeeListItem[];
+  // leader
+  leaderType: LeaderType;
+  leaderUserId: string;
+  leaderEmpId: string;
+  leaderFirstName: string;
+  leaderLastName: string;
+  leaderPosition: string;
+  leaderEmail: string;
 }
 
 const DEFAULT_PAGE_SIZE = 24;
 
-function formatDate(value: Date | string): string {
-  return new Date(value).toLocaleDateString("th-TH", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function toDateInputValue(value: Date | string): string {
-  return new Date(value).toISOString().split("T")[0];
-}
-
 function nextPrefixId(): string {
   const yy = new Date().getFullYear().toString().slice(-2);
   return `TZ${yy}`;
+}
+
+function blankLeader(): Pick<
+  FormState,
+  | "leaderType"
+  | "leaderUserId"
+  | "leaderEmpId"
+  | "leaderFirstName"
+  | "leaderLastName"
+  | "leaderPosition"
+  | "leaderEmail"
+> {
+  return {
+    leaderType: "none",
+    leaderUserId: "",
+    leaderEmpId: "",
+    leaderFirstName: "",
+    leaderLastName: "",
+    leaderPosition: "",
+    leaderEmail: "",
+  };
+}
+
+function leaderFromItem(
+  item: OffSiteWorkWithRelations,
+): Pick<
+  FormState,
+  | "leaderType"
+  | "leaderUserId"
+  | "leaderEmpId"
+  | "leaderFirstName"
+  | "leaderLastName"
+  | "leaderPosition"
+  | "leaderEmail"
+> {
+  if (item.leaderUserId) {
+    return {
+      leaderType: "internal",
+      leaderUserId: item.leaderUserId,
+      leaderEmpId: item.leaderEmpId || "",
+      leaderFirstName: item.leaderFirstName || "",
+      leaderLastName: item.leaderLastName || "",
+      leaderPosition: item.leaderPosition || "",
+      leaderEmail: item.leaderEmail || "",
+    };
+  }
+  if (item.leaderFirstName || item.leaderEmpId) {
+    return {
+      leaderType: "external",
+      leaderUserId: "",
+      leaderEmpId: item.leaderEmpId || "",
+      leaderFirstName: item.leaderFirstName || "",
+      leaderLastName: item.leaderLastName || "",
+      leaderPosition: item.leaderPosition || "",
+      leaderEmail: item.leaderEmail || "",
+    };
+  }
+  return blankLeader();
 }
 
 export function OffSiteWorkClient({
@@ -102,13 +167,31 @@ export function OffSiteWorkClient({
     endDate: "",
     location: "",
     objective: "",
+    employeeList: [],
+    ...blankLeader(),
   });
   const [isPending, startTransition] = useTransition();
+
+  // Leader user search state
+  const [leaderSearch, setLeaderSearch] = useState("");
+  const [leaderResults, setLeaderResults] = useState<LeaderUser[]>([]);
+  const [leaderSearchPending, startLeaderSearch] = useTransition();
+  const [selectedLeaderUser, setSelectedLeaderUser] =
+    useState<LeaderUser | null>(null);
+
+  // Employee list search state
+  const [empSearch, setEmpSearch] = useState("");
+  const [empResults, setEmpResults] = useState<LeaderUser[]>([]);
+  const [empSearchPending, startEmpSearch] = useTransition();
 
   const validForm = useMemo(() => {
     if (!form.id.trim()) return false;
     if (!form.startDate || !form.endDate) return false;
-    return new Date(form.endDate) >= new Date(form.startDate);
+    if (new Date(form.endDate) < new Date(form.startDate)) return false;
+    if (form.leaderType === "internal" && !form.leaderUserId) return false;
+    if (form.leaderType === "external" && !form.leaderFirstName.trim())
+      return false;
+    return true;
   }, [form]);
 
   const refresh = useCallback(
@@ -134,6 +217,11 @@ export function OffSiteWorkClient({
   const openCreate = () => {
     const today = toDateInputValue(new Date());
     setSelected(null);
+    setSelectedLeaderUser(null);
+    setLeaderSearch("");
+    setLeaderResults([]);
+    setEmpSearch("");
+    setEmpResults([]);
     setForm({
       id: nextPrefixId(),
       innerRefDocumentId: "",
@@ -141,12 +229,31 @@ export function OffSiteWorkClient({
       endDate: today,
       location: "",
       objective: "",
+      employeeList: [],
+      ...blankLeader(),
     });
     setMode("create");
   };
 
   const openEdit = (item: OffSiteWorkWithRelations) => {
     setSelected(item);
+    const leaderData = leaderFromItem(item);
+    const internalUser =
+      leaderData.leaderType === "internal" && item.leaderUser
+        ? {
+            id: item.leaderUser.id,
+            employeeId: item.leaderUser.employeeId || null,
+            firstName: item.leaderUser.firstName,
+            lastName: item.leaderUser.lastName,
+            position: item.leaderUser.position || null,
+            email: null,
+          }
+        : null;
+    setSelectedLeaderUser(internalUser);
+    setLeaderSearch("");
+    setLeaderResults([]);
+    setEmpSearch("");
+    setEmpResults([]);
     setForm({
       id: item.id,
       innerRefDocumentId: item.innerRefDocumentId || "",
@@ -154,9 +261,101 @@ export function OffSiteWorkClient({
       endDate: toDateInputValue(item.endDate),
       location: item.location || "",
       objective: item.objective || "",
+      employeeList: item.employeeList ?? [],
+      ...leaderData,
     });
     setMode("edit");
   };
+
+  const handleLeaderSearch = () => {
+    startLeaderSearch(async () => {
+      const res = await searchUsersForLeader(leaderSearch);
+      if (res.success) {
+        setLeaderResults(res.data as LeaderUser[]);
+      }
+    });
+  };
+
+  const handleEmpSearch = () => {
+    startEmpSearch(async () => {
+      const res = await searchUsersForLeader(empSearch);
+      if (res.success) {
+        setEmpResults(res.data as LeaderUser[]);
+      }
+    });
+  };
+
+  const addEmployee = (u: LeaderUser) => {
+    setForm((prev) => {
+      if (prev.employeeList.some((e) => e.userId === u.id)) return prev;
+      const newItem: EmployeeListItem = {
+        userId: u.id,
+        employeeId: u.employeeId,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        position: u.position,
+        departmentId: null,
+        departmentName: null,
+      };
+      return { ...prev, employeeList: [...prev.employeeList, newItem] };
+    });
+    setEmpResults([]);
+    setEmpSearch("");
+  };
+
+  const removeEmployee = (userId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      employeeList: prev.employeeList.filter((e) => e.userId !== userId),
+    }));
+  };
+
+  const selectInternalLeader = (u: LeaderUser) => {
+    setSelectedLeaderUser(u);
+    setForm((prev) => ({
+      ...prev,
+      leaderUserId: u.id,
+      leaderEmpId: u.employeeId || "",
+      leaderFirstName: u.firstName,
+      leaderLastName: u.lastName,
+      leaderPosition: u.position || "",
+      leaderEmail: u.email || "",
+    }));
+    setLeaderResults([]);
+    setLeaderSearch("");
+  };
+
+  const clearLeader = () => {
+    setSelectedLeaderUser(null);
+    setLeaderSearch("");
+    setLeaderResults([]);
+    setForm((prev) => ({
+      ...prev,
+      ...blankLeader(),
+      leaderType: prev.leaderType,
+    }));
+  };
+
+  function buildLeaderPayload(f: FormState) {
+    if (f.leaderType === "none") {
+      return {
+        leaderUserId: null as string | null,
+        leaderEmpId: null as string | null,
+        leaderFirstName: null as string | null,
+        leaderLastName: null as string | null,
+        leaderPosition: null as string | null,
+        leaderEmail: null as string | null,
+      };
+    }
+    return {
+      leaderUserId: f.leaderType === "internal" ? f.leaderUserId || null : null,
+      leaderEmpId: f.leaderEmpId.trim() || null,
+      leaderFirstName: f.leaderFirstName.trim() || null,
+      leaderLastName: f.leaderLastName.trim() || null,
+      leaderPosition: f.leaderPosition.trim() || null,
+      leaderEmail: f.leaderEmail.trim() || null,
+    };
+  }
 
   const submitCreate = () => {
     startTransition(async () => {
@@ -167,6 +366,9 @@ export function OffSiteWorkClient({
         endDate: form.endDate,
         location: form.location.trim() || undefined,
         objective: form.objective.trim() || undefined,
+        employeeList:
+          form.employeeList.length > 0 ? form.employeeList : undefined,
+        ...buildLeaderPayload(form),
       });
 
       if (!result.success) {
@@ -205,6 +407,8 @@ export function OffSiteWorkClient({
           form.objective !== (selected.objective || "")
             ? form.objective || null
             : undefined,
+        employeeList: form.employeeList,
+        ...buildLeaderPayload(form),
       });
 
       if (!result.success) {
@@ -305,7 +509,7 @@ export function OffSiteWorkClient({
               </div>
               <Badge variant="outline" className="text-[11px]">
                 <CalendarDays className="mr-1 h-3 w-3" />
-                {formatDate(item.startDate)}
+                {shortDateDisplay(item.startDate)}
               </Badge>
             </div>
 
@@ -321,6 +525,22 @@ export function OffSiteWorkClient({
                   {item.postedByUser.firstName} {item.postedByUser.lastName}
                 </span>
               </p>
+              {item.leaderFirstName || item.leaderUser ? (
+                <p className="flex items-center gap-2 text-xs">
+                  <UserCheck className="h-3.5 w-3.5 text-blue-500" />
+                  <span className="text-blue-700">
+                    {item.leaderFirstName} {item.leaderLastName}
+                  </span>
+                </p>
+              ) : null}
+              {item.employeeList && item.employeeList.length > 0 ? (
+                <p className="flex items-center gap-2 text-xs">
+                  <Users className="h-3.5 w-3.5 text-slate-500" />
+                  <span className="text-slate-600">
+                    {item.employeeList.length} คน
+                  </span>
+                </p>
+              ) : null}
             </div>
 
             <div className="mt-4 flex items-center justify-between border-t pt-3">
@@ -360,40 +580,20 @@ export function OffSiteWorkClient({
         ))}
       </section>
 
-      {items.length === 0 ? (
-        <div className="rounded-2xl border border-dashed p-10 text-center text-muted-foreground">
-          <FileText className="mx-auto mb-3 h-8 w-8 opacity-60" />
-          ไม่พบข้อมูลที่ตรงกับเงื่อนไข
-        </div>
-      ) : null}
+      {items.length === 0 && (
+        <EmptyState icon={FileText} message="ไม่พบข้อมูลที่ตรงกับเงื่อนไข" />
+      )}
 
-      {pagination && pagination.totalPages > 1 ? (
-        <section className="flex items-center justify-between rounded-xl border bg-card px-4 py-3">
-          <p className="text-xs text-muted-foreground">
-            หน้า {pagination.page} / {pagination.totalPages} ทั้งหมด{" "}
-            {pagination.total} รายการ
-          </p>
-          <div className="flex gap-1">
-            <Button
-              variant="outline"
-              size="icon"
-              disabled={!pagination.hasPrevious || isPending}
-              onClick={() => changePage(page - 1)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              disabled={!pagination.hasNext || isPending}
-              onClick={() => changePage(page + 1)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </section>
-      ) : null}
+      {pagination && (
+        <PaginationControls
+          pagination={pagination}
+          isPending={isPending}
+          onPrevious={() => changePage(page - 1)}
+          onNext={() => changePage(page + 1)}
+        />
+      )}
 
+      {/* Create / Edit Dialog */}
       <Dialog
         open={mode === "create" || mode === "edit"}
         onClose={() => setMode(null)}
@@ -482,6 +682,314 @@ export function OffSiteWorkClient({
                 }
               />
             </div>
+
+            {/* ─── Employee List Section ─── */}
+            <div className="rounded-xl border border-dashed p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">
+                  รายชื่อพนักงาน ({form.employeeList.length} คน)
+                </span>
+              </div>
+
+              {/* Search & add */}
+              <div className="flex gap-2">
+                <Input
+                  placeholder="ค้นหาชื่อ / รหัสพนักงาน"
+                  value={empSearch}
+                  onChange={(e) => setEmpSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleEmpSearch();
+                  }}
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleEmpSearch}
+                  disabled={empSearchPending}
+                >
+                  {empSearchPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Search className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </div>
+
+              {/* Search results */}
+              {empResults.length > 0 ? (
+                <ul className="max-h-40 overflow-y-auto rounded-lg border divide-y text-sm">
+                  {empResults.map((u) => {
+                    const already = form.employeeList.some(
+                      (e) => e.userId === u.id,
+                    );
+                    return (
+                      <li key={u.id}>
+                        <button
+                          type="button"
+                          disabled={already}
+                          className="w-full px-3 py-2 text-left hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                          onClick={() => addEmployee(u)}
+                        >
+                          <span className="font-medium">
+                            {u.firstName} {u.lastName}
+                          </span>
+                          {u.employeeId ? (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {u.employeeId}
+                            </span>
+                          ) : null}
+                          {u.position ? (
+                            <p className="text-xs text-muted-foreground">
+                              {u.position}
+                            </p>
+                          ) : null}
+                          {already ? (
+                            <span className="ml-2 text-xs text-green-600">
+                              เพิ่มแล้ว
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+
+              {/* Added employees */}
+              {form.employeeList.length > 0 ? (
+                <ul className="space-y-1.5">
+                  {form.employeeList.map((emp) => (
+                    <li
+                      key={emp.userId}
+                      className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2 text-sm"
+                    >
+                      <div>
+                        <span className="font-medium">
+                          {emp.firstName} {emp.lastName}
+                        </span>
+                        {emp.employeeId ? (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {emp.employeeId}
+                          </span>
+                        ) : null}
+                        {emp.position ? (
+                          <p className="text-xs text-muted-foreground">
+                            {emp.position}
+                          </p>
+                        ) : null}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-destructive hover:text-destructive"
+                        onClick={() => removeEmployee(emp.userId)}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-muted-foreground text-center py-2">
+                  ยังไม่มีพนักงานในรายการ
+                </p>
+              )}
+            </div>
+
+            {/* ─── Leader Section ─── */}
+            <div className="rounded-xl border border-dashed p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <UserCheck className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">
+                  หัวหน้า/ผู้ควบคุมงาน (ถ้ามี)
+                </span>
+              </div>
+
+              {/* Type selector */}
+              <div className="flex gap-2 flex-wrap">
+                {(["none", "internal", "external"] as LeaderType[]).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => {
+                      clearLeader();
+                      setForm((prev) => ({
+                        ...prev,
+                        ...blankLeader(),
+                        leaderType: t,
+                      }));
+                    }}
+                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                      form.leaderType === t
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-background text-muted-foreground hover:bg-accent"
+                    }`}
+                  >
+                    {t === "none"
+                      ? "ไม่มี"
+                      : t === "internal"
+                      ? "บุคลากรในระบบ"
+                      : "บุคคลภายนอก"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Internal: user search */}
+              {form.leaderType === "internal" ? (
+                <div className="space-y-2">
+                  {selectedLeaderUser ? (
+                    <div className="flex items-center justify-between rounded-lg border bg-blue-50 px-3 py-2 text-sm">
+                      <span className="font-medium text-blue-900">
+                        {selectedLeaderUser.firstName}{" "}
+                        {selectedLeaderUser.lastName}
+                        {selectedLeaderUser.employeeId
+                          ? ` (${selectedLeaderUser.employeeId})`
+                          : ""}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => clearLeader()}
+                      >
+                        เปลี่ยน
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="ค้นหาชื่อ / รหัสพนักงาน"
+                          value={leaderSearch}
+                          onChange={(e) => setLeaderSearch(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") handleLeaderSearch();
+                          }}
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleLeaderSearch}
+                          disabled={leaderSearchPending}
+                        >
+                          {leaderSearchPending ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Search className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </div>
+                      {leaderResults.length > 0 ? (
+                        <ul className="max-h-40 overflow-y-auto rounded-lg border divide-y text-sm">
+                          {leaderResults.map((u) => (
+                            <li key={u.id}>
+                              <button
+                                type="button"
+                                className="w-full px-3 py-2 text-left hover:bg-accent transition-colors"
+                                onClick={() => selectInternalLeader(u)}
+                              >
+                                <span className="font-medium">
+                                  {u.firstName} {u.lastName}
+                                </span>
+                                {u.employeeId ? (
+                                  <span className="ml-2 text-xs text-muted-foreground">
+                                    {u.employeeId}
+                                  </span>
+                                ) : null}
+                                {u.position ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    {u.position}
+                                  </p>
+                                ) : null}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              ) : null}
+
+              {/* External: manual fields */}
+              {form.leaderType === "external" ? (
+                <div className="space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">ชื่อ *</Label>
+                      <Input
+                        value={form.leaderFirstName}
+                        onChange={(e) =>
+                          setForm((p) => ({
+                            ...p,
+                            leaderFirstName: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">นามสกุล</Label>
+                      <Input
+                        value={form.leaderLastName}
+                        onChange={(e) =>
+                          setForm((p) => ({
+                            ...p,
+                            leaderLastName: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">รหัสพนักงาน</Label>
+                      <Input
+                        value={form.leaderEmpId}
+                        onChange={(e) =>
+                          setForm((p) => ({
+                            ...p,
+                            leaderEmpId: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">ตำแหน่ง</Label>
+                      <Input
+                        value={form.leaderPosition}
+                        onChange={(e) =>
+                          setForm((p) => ({
+                            ...p,
+                            leaderPosition: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">
+                      อีเมล (สำหรับส่งลิงก์ยืนยัน)
+                    </Label>
+                    <Input
+                      type="email"
+                      value={form.leaderEmail}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          leaderEmail: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
         </DialogBody>
         <DialogFooter>
@@ -504,6 +1012,7 @@ export function OffSiteWorkClient({
         </DialogFooter>
       </Dialog>
 
+      {/* View Dialog */}
       <Dialog open={mode === "view"} onClose={() => setMode(null)}>
         <DialogClose onClose={() => setMode(null)} />
         <DialogHeader>
@@ -520,8 +1029,8 @@ export function OffSiteWorkClient({
               <div>
                 <p className="text-xs text-muted-foreground">ช่วงวันที่</p>
                 <p className="font-medium">
-                  {formatDate(selected.startDate)} -{" "}
-                  {formatDate(selected.endDate)}
+                  {shortDateDisplay(selected.startDate)} -{" "}
+                  {shortDateDisplay(selected.endDate)}
                 </p>
               </div>
               <div>
@@ -541,6 +1050,82 @@ export function OffSiteWorkClient({
                   {selected.postedByUser.lastName}
                 </p>
               </div>
+              {selected.leaderFirstName || selected.leaderUser ? (
+                <div className="rounded-lg border bg-blue-50 p-3 space-y-1">
+                  <p className="text-xs font-medium text-blue-700 flex items-center gap-1">
+                    <UserCheck className="h-3.5 w-3.5" />
+                    หัวหน้า/ผู้ควบคุมงาน
+                  </p>
+                  <p className="font-medium">
+                    {selected.leaderFirstName} {selected.leaderLastName}
+                  </p>
+                  {selected.leaderEmpId ? (
+                    <p className="text-xs text-muted-foreground">
+                      รหัส: {selected.leaderEmpId}
+                    </p>
+                  ) : null}
+                  {selected.leaderPosition ? (
+                    <p className="text-xs text-muted-foreground">
+                      {selected.leaderPosition}
+                    </p>
+                  ) : null}
+                  {selected.leaderEmail ? (
+                    <p className="text-xs text-muted-foreground">
+                      {selected.leaderEmail}
+                    </p>
+                  ) : null}
+                  {selected.leaderUserId ? (
+                    <Badge variant="outline" className="text-[10px]">
+                      บุคลากรในระบบ
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px]">
+                      บุคคลภายนอก
+                    </Badge>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    หัวหน้า/ผู้ควบคุมงาน
+                  </p>
+                  <p className="font-medium text-muted-foreground">-</p>
+                </div>
+              )}
+
+              {/* Employee list */}
+              <div>
+                <p className="text-xs text-muted-foreground flex items-center gap-1 mb-2">
+                  <Users className="h-3.5 w-3.5" />
+                  รายชื่อพนักงาน ({selected.employeeList?.length ?? 0} คน)
+                </p>
+                {selected.employeeList && selected.employeeList.length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {selected.employeeList.map((emp) => (
+                      <li
+                        key={emp.userId}
+                        className="rounded-lg border bg-muted/40 px-3 py-2 text-sm"
+                      >
+                        <span className="font-medium">
+                          {emp.firstName} {emp.lastName}
+                        </span>
+                        {emp.employeeId ? (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {emp.employeeId}
+                          </span>
+                        ) : null}
+                        {emp.position ? (
+                          <p className="text-xs text-muted-foreground">
+                            {emp.position}
+                          </p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-muted-foreground">-</p>
+                )}
+              </div>
             </div>
           ) : null}
         </DialogBody>
@@ -551,46 +1136,24 @@ export function OffSiteWorkClient({
         </DialogFooter>
       </Dialog>
 
-      <Dialog open={mode === "delete"} onClose={() => setMode(null)}>
-        <DialogClose onClose={() => setMode(null)} />
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-destructive" />
-            ยืนยันการลบ
-          </DialogTitle>
-          <DialogDescription>
-            ข้อมูลจะถูกยกเลิกแบบ soft-delete
-          </DialogDescription>
-        </DialogHeader>
-        <DialogBody>
-          <p className="text-sm text-muted-foreground">
+      <ConfirmDialog
+        open={mode === "delete"}
+        onClose={() => setMode(null)}
+        title="ยืนยันการลบ"
+        description="ข้อมูลจะถูกยกเลิกแบบ soft-delete"
+        bodyText={
+          <>
             ต้องการลบรายการเลขที่{" "}
             <span className="font-semibold text-foreground">
               {selected?.id}
             </span>{" "}
             ใช่หรือไม่
-          </p>
-        </DialogBody>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => setMode(null)}
-            disabled={isPending}
-          >
-            ยกเลิก
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={submitDelete}
-            disabled={isPending}
-          >
-            {isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : null}
-            ยืนยันลบ
-          </Button>
-        </DialogFooter>
-      </Dialog>
+          </>
+        }
+        confirmLabel="ยืนยันลบ"
+        isPending={isPending}
+        onConfirm={submitDelete}
+      />
     </div>
   );
 }

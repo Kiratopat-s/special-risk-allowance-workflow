@@ -26,7 +26,6 @@ import {
   AlertTriangle,
   Globe,
   Building2,
-  Filter,
 } from "lucide-react";
 import {
   assignRoleToUser,
@@ -143,11 +142,11 @@ export function UsersClient({
   const handleRevokeRole = (
     userId: string,
     roleId: string,
-    departmentId: string | null
+    departmentId: string | null,
   ) => {
     const user = users.find((u) => u.id === userId);
     const role = user?.roles.find(
-      (r) => r.id === roleId && r.departmentId === departmentId
+      (r) => r.id === roleId && r.departmentId === departmentId,
     );
 
     if (!user || !role) return;
@@ -177,13 +176,13 @@ export function UsersClient({
     roleId: string,
     departmentId: string | null,
     user?: UserRow,
-    role?: UserRole
+    role?: UserRole,
   ) => {
     const targetUser = user || users.find((u) => u.id === userId);
     const targetRole =
       role ||
       targetUser?.roles.find(
-        (r) => r.id === roleId && r.departmentId === departmentId
+        (r) => r.id === roleId && r.departmentId === departmentId,
       );
 
     startTransition(async () => {
@@ -211,7 +210,7 @@ export function UsersClient({
     confirmRevocation(
       pendingRevocation.userId,
       pendingRevocation.roleId,
-      pendingRevocation.departmentId
+      pendingRevocation.departmentId,
     );
   };
 
@@ -234,7 +233,11 @@ export function UsersClient({
 
   // Department options for role assignment
   const departmentAssignOptions: SelectOption[] = [
-    { value: "", label: "Global (All Departments)", description: "Role applies everywhere" },
+    {
+      value: "",
+      label: "Global (All Departments)",
+      description: "Role applies everywhere",
+    },
     ...allDepartments.map((d) => ({
       value: d.id,
       label: d.name,
@@ -252,7 +255,8 @@ export function UsersClient({
     }));
 
   return (
-    <div className="space-y-4">{/* Toolbar */}
+    <div className="space-y-4">
+      {/* Toolbar */}
       <div className="flex gap-3 flex-wrap">
         <div className="relative flex-1 min-w-50 max-w-sm">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -314,7 +318,6 @@ export function UsersClient({
                   <ScrollArea className="max-h-24">
                     <div className="flex flex-wrap gap-1 pr-2">
                       {user.roles.map((role) => {
-                        const roleData = allRoles.find((r) => r.id === role.id);
                         const isCriticalRole =
                           role.code === "super-admin" || role.code === "admin";
                         const isGlobal = !role.departmentId;
@@ -346,7 +349,7 @@ export function UsersClient({
                                 handleRevokeRole(
                                   user.id,
                                   role.id,
-                                  role.departmentId
+                                  role.departmentId,
                                 )
                               }
                               className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 hover:bg-background/20 rounded p-0.5"

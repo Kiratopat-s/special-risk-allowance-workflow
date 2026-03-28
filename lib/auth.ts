@@ -1,7 +1,6 @@
 import NextAuth from "next-auth";
 import Keycloak from "next-auth/providers/keycloak";
 import type { NextAuthConfig } from "next-auth";
-import type { JWT } from "@auth/core/jwt";
 import { authEvents } from "@/lib/auth/events";
 
 // Extend the default session and JWT types
@@ -27,28 +26,6 @@ declare module "next-auth" {
         };
         accessToken?: string;
         error?: string;
-    }
-}
-
-declare module "@auth/core/jwt" {
-    interface JWT {
-        accessToken?: string;
-        refreshToken?: string;
-        expiresAt?: number;
-        error?: string;
-        keycloakId?: string;
-        dbUserId?: string; // Database user ID
-        email?: string;
-        firstName?: string;
-        lastName?: string;
-        peaEmail?: string;
-        employeeId?: string;
-        position?: string;
-        positionShort?: string;
-        positionLevel?: string;
-        department?: string;
-        departmentShort?: string;
-        phoneNumber?: string;
     }
 }
 

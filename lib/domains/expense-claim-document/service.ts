@@ -8,6 +8,8 @@
 
 import { expenseClaimDocumentRepository } from "./repository";
 import { actionLogService } from "@/lib/domains/action-log/service";
+import { leaderVerificationService } from "@/lib/domains/leader-verification";
+import { leaderVerificationRepository } from "@/lib/domains/leader-verification/repository";
 import { ActionType } from "@/lib/shared/types";
 import { success, error, type Result } from "@/lib/shared/types";
 import type { Prisma } from "@/lib/generated/prisma/client";
@@ -104,6 +106,37 @@ export const expenseClaimDocumentService = {
             actorId
         );
 
+        // If any linked OSW has a leader, create verification records
+        if (data.offSiteWorkIds && data.offSiteWorkIds.length > 0) {
+            const verifications = await leaderVerificationService.createForClaim(
+                claim.id,
+                data.offSiteWorkIds
+            );
+            if (verifications.length > 0) {
+                await expenseClaimDocumentRepository.updateStatus(
+                    claim.id,
+                    "PENDING_LEADER_VERIFY"
+                );
+                // Re-fetch with updated status
+                const updated = await expenseClaimDocumentRepository.findById(claim.id);
+                await actionLogService.log({
+                    userId: actorId,
+                    actionType: ActionType.OTHER,
+                    actionDescription: `Expense claim "${claim.id}" created`,
+                    targetEntityType: "ExpenseClaim",
+                    targetEntityId: claim.id,
+                    newData: {
+                        id: claim.id,
+                        userId: claim.userId,
+                        expenseMonth: claim.expenseMonth.toISOString(),
+                        status: "PENDING_LEADER_VERIFY",
+                    } as unknown as JsonValue,
+                    ...context,
+                });
+                return success(updated!, "Expense claim document created successfully");
+            }
+        }
+
         await actionLogService.log({
             userId: actorId,
             actionType: ActionType.OTHER,
@@ -162,6 +195,35 @@ export const expenseClaimDocumentService = {
         };
 
         const updated = await expenseClaimDocumentRepository.update(id, updatePayload);
+
+        // Recalculate leader verifications if offSiteWorkIds changed
+        if (data.offSiteWorkIds !== undefined) {
+            await leaderVerificationRepository.deleteAllByClaimId(id);
+            if (data.offSiteWorkIds.length > 0) {
+                const verifications = await leaderVerificationService.createForClaim(
+                    id,
+                    data.offSiteWorkIds
+                );
+                if (verifications.length > 0) {
+                    await expenseClaimDocumentRepository.updateStatus(
+                        id,
+                        "PENDING_LEADER_VERIFY"
+                    );
+                } else if (
+                    existing.status === "PENDING_LEADER_VERIFY" ||
+                    existing.status === "WAIT_FOR_COLLECTION"
+                ) {
+                    // No leaders anymore — revert to PENDING
+                    await expenseClaimDocumentRepository.updateStatus(id, "PENDING");
+                }
+            } else if (
+                existing.status === "PENDING_LEADER_VERIFY" ||
+                existing.status === "WAIT_FOR_COLLECTION"
+            ) {
+                // OSWs cleared — revert to PENDING
+                await expenseClaimDocumentRepository.updateStatus(id, "PENDING");
+            }
+        }
 
         await actionLogService.log({
             userId: actorId,

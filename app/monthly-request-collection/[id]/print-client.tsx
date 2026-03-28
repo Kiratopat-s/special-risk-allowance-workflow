@@ -25,10 +25,6 @@ export function PrintPageControls() {
     window.print();
   };
 
-  const handleBack = () => {
-    window.history.back();
-  };
-
   return (
     <div
       className="no-print"

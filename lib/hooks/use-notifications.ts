@@ -107,7 +107,6 @@ export function useNotifications() {
 
                 // Basic logging for debugging/monitoring of SSE failures.
                 // This does not change the reconnection behavior.
-                // eslint-disable-next-line no-console
                 console.error("[useNotifications] SSE error", {
                     errorType,
                     readyState: source?.readyState,

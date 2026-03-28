@@ -52,14 +52,6 @@ const reviewerSelect = {
     },
 } as const;
 
-const expenseClaimInclude = {
-    claimant: { select: claimantSelect },
-} as const;
-
-const approvalStepInclude = {
-    reviewer: { select: reviewerSelect },
-} as const;
-
 function normalizeMonth(value: Date | string): Date {
     const d = new Date(value);
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
@@ -171,13 +163,13 @@ export const monthlyRequestCollectionRepository = {
         const monthStart = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1));
         const monthEnd = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0, 23, 59, 59, 999));
 
-        return prisma.expenseClaim.findMany({
+        const rows = await prisma.expenseClaim.findMany({
             where: {
                 cancelledAt: null,
                 expenseMonth: { gte: monthStart, lte: monthEnd },
                 OR: [
                     {
-                        status: "PENDING",
+                        status: { in: ["PENDING", "PENDING_LEADER_VERIFY", "WAIT_FOR_COLLECTION"] },
                         monthlyRequestCollectionId: null,
                     },
                     ...(existingMrcId
@@ -197,10 +189,16 @@ export const monthlyRequestCollectionRepository = {
                 countDates: true,
                 amount: true,
                 remark: true,
+                status: true,
                 claimant: { select: claimantSelect },
             },
             orderBy: [{ claimant: { lastName: "asc" } }, { createdAt: "asc" }],
-        }) as Promise<EligibleExpenseClaimForCollection[]>;
+        });
+
+        return rows.map((row) => ({
+            ...row,
+            isVerified: row.status === "WAIT_FOR_COLLECTION",
+        })) as EligibleExpenseClaimForCollection[];
     },
 
     // -----------------------------------------------------------------------

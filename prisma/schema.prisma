@@ -110,6 +110,8 @@ model User {
   mrcApprovalSteps MrcApprovalStep[]
   notifications    Notification[]
   pushSubscriptions PushSubscription[]
+  ledOSWs          OffSiteWork[]        @relation("OffSiteWorkLeader")
+  leaderVerifications LeaderVerification[] @relation("LeaderVerificationUser")
 }
 
 // =============================================================================
@@ -213,9 +215,19 @@ model OffSiteWork {
   deletedAt             DateTime?   @map("deleted_at")
   originalFileId        String?     @map("original_file_id")
 
+  // Optional leader — internal (system user) or external (manual info)
+  leaderUserId          String?     @map("leader_user_id")
+  leaderUser            User?       @relation("OffSiteWorkLeader", fields: [leaderUserId], references: [id], onDelete: SetNull)
+  leaderEmpId           String?     @map("leader_emp_id")
+  leaderFirstName       String?     @map("leader_first_name")
+  leaderLastName        String?     @map("leader_last_name")
+  leaderPosition        String?     @map("leader_position")
+  leaderEmail           String?     @map("leader_email")
+
   originalFile          Files?      @relation(fields: [originalFileId], references: [id], onDelete: SetNull)
   
   expenseClaimOffSiteWorks ExpenseClaimOffSiteWork[]
+  leaderVerifications   LeaderVerification[]
   
   @@map("off_site_works")
   @@index([postedByUserId])
@@ -224,6 +236,7 @@ model OffSiteWork {
   @@index([endDate])
   @@index([deletedAt])
   @@index([postedAt])
+  @@index([leaderUserId])
 }
 
 model Files {
@@ -246,12 +259,14 @@ model Files {
 }
 
 enum ClaimDocumentStatus {
-  DRAFT // Initial status when a claim is being prepared but not yet submitted for review
-  PENDING // Status when a claim is created and awaiting review
-  COLLECTED // Status when a claim has been collected into a monthly request collection by admin
-  APPROVED // Status when a claim has been reviewed and approved by the relevant authority
-  REJECTED // Status when a claim has been reviewed and rejected, often with feedback for the claimant
-  CANCELLED // Status when a claim has been cancelled by the claimant or due to other reasons
+  DRAFT                  // Initial status when a claim is being prepared but not yet submitted for review
+  PENDING                // Status when a claim is submitted but has no leaders to verify (or all OSWs have no leader)
+  PENDING_LEADER_VERIFY  // Status when at least one linked OSW has a leader who hasn't yet verified
+  WAIT_FOR_COLLECTION    // Status when all leaders have verified; ready for admin to collect
+  COLLECTED              // Status when a claim has been collected into a monthly request collection by admin
+  APPROVED               // Status when a claim has been reviewed and approved by the relevant authority
+  REJECTED               // Status when a claim has been reviewed and rejected, often with feedback for the claimant
+  CANCELLED              // Status when a claim has been cancelled by the claimant or due to other reasons
 }
 model ExpenseClaim {
   id                     String     @id @default(uuid())
@@ -279,6 +294,7 @@ model ExpenseClaim {
   collectedAt            DateTime?   @map("collected_at")
   
   expenseClaimOffSiteWorks ExpenseClaimOffSiteWork[]
+  leaderVerifications      LeaderVerification[]
   
   @@map("expense_claims")
   @@index([userId])
@@ -563,6 +579,9 @@ enum NotificationType {
   // Expense claim lifecycle
   CLAIM_STATUS_CHANGED    // Notifies the claimant when their claim status changes
 
+  // Leader verification
+  LEADER_VERIFY_REQUEST   // Notifies an internal leader that they need to verify an expense claim
+
   // Off-site work lifecycle
   OFF_SITE_WORK_UPDATED   // Notifies the creator when an off-site work record changes
 
@@ -612,5 +631,46 @@ model PushSubscription {
 
   @@map("push_subscriptions")
   @@index([userId])
+}
+
+// =============================================================================
+// DOMAIN: LEADER VERIFICATION
+// =============================================================================
+
+/// One record per (ExpenseClaim × OffSiteWork) pair where the OSW has a leader.
+/// Internal leaders are linked via leaderUserId; external leaders use leaderEmail.
+/// The token is a one-time share link sent to external leaders.
+model LeaderVerification {
+  id              String         @id @default(uuid())
+
+  // Claim being verified
+  expenseClaimId  String         @map("expense_claim_id")
+  expenseClaim    ExpenseClaim   @relation(fields: [expenseClaimId], references: [id], onDelete: Cascade)
+
+  // The specific OSW this verification covers
+  offSiteWorkId   String         @map("off_site_work_id")
+  offSiteWork     OffSiteWork    @relation(fields: [offSiteWorkId], references: [id], onDelete: Cascade)
+
+  // Internal leader (system user)
+  leaderUserId    String?        @map("leader_user_id")
+  leaderUser      User?          @relation("LeaderVerificationUser", fields: [leaderUserId], references: [id], onDelete: SetNull)
+
+  // External leader (manual data, for display only)
+  leaderEmail     String?        @map("leader_email")
+
+  // One-time token for external share link
+  token           String         @unique @default(uuid())
+  expiresAt       DateTime       @map("expires_at")
+
+  verifiedAt      DateTime?      @map("verified_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  @@unique([expenseClaimId, offSiteWorkId])
+  @@map("leader_verifications")
+  @@index([expenseClaimId])
+  @@index([offSiteWorkId])
+  @@index([leaderUserId])
+  @@index([token])
+  @@index([verifiedAt])
 }
 

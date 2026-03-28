@@ -451,3 +451,51 @@ export async function listActiveUsers() {
     }
 }
 
+/**
+ * Search active users by name or employee ID — used for leader picker in OSW form.
+ */
+export async function searchUsersForLeader(search: string) {
+    const session = await auth();
+    if (!session?.user?.dbUserId) {
+        return { success: false as const, error: "Unauthorized", code: "UNAUTHORIZED" };
+    }
+
+    try {
+        const { prisma } = await import("@/lib/db");
+        const term = search.trim();
+        const users = await prisma.user.findMany({
+            where: {
+                status: "ACTIVE",
+                ...(term
+                    ? {
+                        OR: [
+                            { firstName: { contains: term, mode: "insensitive" } },
+                            { lastName: { contains: term, mode: "insensitive" } },
+                            { employeeId: { contains: term, mode: "insensitive" } },
+                        ],
+                    }
+                    : {}),
+            },
+            select: {
+                id: true,
+                employeeId: true,
+                firstName: true,
+                lastName: true,
+                position: true,
+                email: true,
+            },
+            orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+            take: 20,
+        });
+
+        return { success: true as const, data: users };
+    } catch (err) {
+        console.error("Error searching users for leader:", err);
+        return {
+            success: false as const,
+            error: "Failed to search users",
+            code: "FETCH_ERROR",
+        };
+    }
+}
+

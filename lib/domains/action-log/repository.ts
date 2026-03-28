@@ -7,7 +7,6 @@
  */
 
 import { prisma } from "@/lib/db";
-import type { ActionType } from "@/lib/shared/types";
 import type {
     ActionLogEntity,
     ActionLogWithDetails,

@@ -21,6 +21,7 @@ import {
   FileText,
   FolderOpen,
   PenLine,
+  ClipboardList,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
@@ -181,6 +182,15 @@ export function Navbar() {
                     </Link>
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuItem asChild>
+                  <Link
+                    href="/leader-verify/pending"
+                    className="flex items-center"
+                  >
+                    <ClipboardList className="mr-2 h-4 w-4" />
+                    <span>คิวยืนยันการออกปฏิบัติงาน</span>
+                  </Link>
+                </DropdownMenuItem>
                 {hasAdminAccess && (
                   <DropdownMenuItem asChild>
                     <Link href="/admin" className="flex items-center">
