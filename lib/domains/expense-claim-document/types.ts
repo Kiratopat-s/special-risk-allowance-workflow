@@ -134,6 +134,11 @@ export interface EligibleOffSiteWorkOption {
     endDate: Date;
     location: string | null;
     objective: string | null;
+    /** True when this OSW has an assigned leader (internal or external). */
+    hasLeader: boolean;
+    leaderFirstName: string | null;
+    leaderLastName: string | null;
+    leaderEmail: string | null;
 }
 
 /**

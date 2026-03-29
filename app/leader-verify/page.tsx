@@ -11,6 +11,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { auth } from "@/lib/auth";
+import { getMyActiveSignatureDataUrl } from "@/app/actions/leader-verify";
 import { LeaderVerifyClient } from "./leader-verify-client";
 
 export const metadata: Metadata = {
@@ -30,6 +31,13 @@ export default async function LeaderVerifyPage({
 
   const isLoggedIn = !!session?.user?.dbUserId;
 
+  // Pre-fetch existing signature for logged-in users so they can reuse it
+  let existingSignatureDataUrl: string | null = null;
+  if (isLoggedIn) {
+    const sigResult = await getMyActiveSignatureDataUrl();
+    existingSignatureDataUrl = sigResult.success ? sigResult.data : null;
+  }
+
   return (
     <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sky-50 to-white dark:from-sky-950 dark:to-background p-4">
       <div className="w-full max-w-lg space-y-4">
@@ -45,7 +53,10 @@ export default async function LeaderVerifyPage({
           </div>
         )}
         <Suspense>
-          <LeaderVerifyClient token={token} />
+          <LeaderVerifyClient
+            token={token}
+            existingSignatureDataUrl={existingSignatureDataUrl}
+          />
         </Suspense>
       </div>
     </main>

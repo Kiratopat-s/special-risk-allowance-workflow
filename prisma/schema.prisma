@@ -663,6 +663,7 @@ model LeaderVerification {
   expiresAt       DateTime       @map("expires_at")
 
   verifiedAt      DateTime?      @map("verified_at")
+  signatureData   Bytes?         @map("signature_data") // Leader's drawn signature at time of verification
   createdAt       DateTime       @default(now()) @map("created_at")
 
   @@unique([expenseClaimId, offSiteWorkId])

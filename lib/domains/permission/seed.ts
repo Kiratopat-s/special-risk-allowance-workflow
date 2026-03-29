@@ -128,6 +128,13 @@ export const DEFAULT_PERMISSIONS: CreatePermissionInput[] = [
 
 /**
  * Default system roles
+ *
+ * employee  — Regular employee with basic permissions (can create OSW, ECD, signature)
+ * collector — Employee extended with MRC management permissions
+ * hpa       — Employee extended with HPA_CHECK review permission
+ * rk        — Employee extended with RK_CHECK review permission
+ * drt       — Employee extended with OK_APPROVE permission
+ * super-admin — Full system access with all permissions
  */
 export const DEFAULT_ROLES: CreateRoleInput[] = [
     {
@@ -138,27 +145,6 @@ export const DEFAULT_ROLES: CreateRoleInput[] = [
         isSystem: true,
     },
     {
-        code: "admin",
-        name: "Administrator",
-        description: "Administrative access to manage users, roles, and system settings",
-        level: 90,
-        isSystem: true,
-    },
-    {
-        code: "manager",
-        name: "Manager",
-        description: "Department manager with approval permissions",
-        level: 50,
-        isSystem: true,
-    },
-    {
-        code: "supervisor",
-        name: "Supervisor",
-        description: "Team supervisor with limited approval permissions",
-        level: 40,
-        isSystem: true,
-    },
-    {
         code: "employee",
         name: "Employee",
         description: "Regular employee with basic permissions",
@@ -166,10 +152,10 @@ export const DEFAULT_ROLES: CreateRoleInput[] = [
         isSystem: true,
     },
     {
-        code: "viewer",
-        name: "Viewer",
-        description: "Read-only access to view data",
-        level: 5,
+        code: "collector",
+        name: "Collector",
+        description: "Employee extended with permission to collect and manage Monthly Request Collections",
+        level: 20,
         isSystem: true,
     },
     // -------------------------------------------------------------------------
@@ -198,6 +184,34 @@ export const DEFAULT_ROLES: CreateRoleInput[] = [
     },
 ];
 
+// Base permissions shared by all employees (including collector, hpa, rk, drt)
+const EMPLOYEE_BASE_PERMISSIONS = [
+    "user:read",
+    "user:update",
+    // Expense claim — own
+    "expense-claim:create",
+    "expense-claim:read",
+    "expense-claim:update",
+    "expense-claim:list",
+    "expense-claim:submit",
+    "expense-claim:cancel",
+    // Off-site work — own (employees create/manage their own OSWs per system flow)
+    "off-site-work:create",
+    "off-site-work:read",
+    "off-site-work:update",
+    "off-site-work:delete",
+    "off-site-work:list",
+    // Signature — own
+    "signature:create",
+    "signature:read",
+    "signature:update",
+    "signature:delete",
+    // File — own
+    "file:create",
+    "file:read",
+    "file:delete",
+];
+
 /**
  * Role-permission mappings (role code -> permission codes)
  */
@@ -224,167 +238,61 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         "system:export",
         "system:import",
     ],
-    admin: [
-        "user:create",
-        "user:read:all",
-        "user:update:all",
-        "user:delete",
-        "user:list",
+    employee: [
+        ...EMPLOYEE_BASE_PERMISSIONS,
+    ],
+    // -------------------------------------------------------------------------
+    // Collector: employee + MRC management
+    // -------------------------------------------------------------------------
+    collector: [
+        ...EMPLOYEE_BASE_PERMISSIONS,
+        // Broader read access for collection
+        "user:read:department",
         "department:read",
-        "department:list",
-        "role:read",
-        "role:list",
-        "permission:read",
-        "permission:list",
         "expense-claim:read:all",
         "expense-claim:list:all",
-        "expense-claim:approve:all",
-        "expense-claim:reject:all",
         "off-site-work:read:all",
         "off-site-work:list:all",
-        "monthly-request:read:all",
-        "monthly-request:list",
-        "monthly-request:approve",
-        "monthly-request:manage",
-        "monthly-request:review:hpa",
-        "monthly-request:review:rk",
-        "monthly-request:review:ok",
-        "signature:read:all",
-        "file:read:all",
-        "action-log:read:all",
-        "action-log:list",
-    ],
-    manager: [
-        "user:read:department",
-        "department:read",
-        "department:list",
-        "expense-claim:create",
-        "expense-claim:read",
-        "expense-claim:read:department",
-        "expense-claim:update",
-        "expense-claim:list",
-        "expense-claim:list:department",
-        "expense-claim:submit",
-        "expense-claim:approve",
-        "expense-claim:reject",
-        "expense-claim:cancel",
-        "off-site-work:create",
-        "off-site-work:read",
-        "off-site-work:read:all",
-        "off-site-work:update",
-        "off-site-work:list",
-        "off-site-work:list:all",
+        // MRC management
         "monthly-request:create",
-        "monthly-request:read",
         "monthly-request:read:all",
-        "monthly-request:list",
         "monthly-request:update",
+        "monthly-request:list",
         "monthly-request:submit",
         "monthly-request:manage",
-        "signature:create",
-        "signature:read",
-        "signature:update",
-        "signature:delete",
-        "file:create",
-        "file:read",
-        "file:delete",
-    ],
-    supervisor: [
-        "user:read:department",
-        "department:read",
-        "expense-claim:create",
-        "expense-claim:read",
-        "expense-claim:read:department",
-        "expense-claim:update",
-        "expense-claim:list",
-        "expense-claim:list:department",
-        "expense-claim:submit",
-        "expense-claim:cancel",
-        "off-site-work:create",
-        "off-site-work:read",
-        "off-site-work:update",
-        "off-site-work:list",
-        "monthly-request:read",
-        "monthly-request:list",
-        "signature:create",
-        "signature:read",
-        "signature:update",
-        "file:create",
-        "file:read",
-    ],
-    employee: [
-        "user:read",
-        "user:update",
-        "expense-claim:create",
-        "expense-claim:read",
-        "expense-claim:update",
-        "expense-claim:list",
-        "expense-claim:submit",
-        "expense-claim:cancel",
-        "off-site-work:read",
-        "off-site-work:list",
-        "signature:create",
-        "signature:read",
-        "signature:update",
-        "signature:delete",
-        "file:create",
-        "file:read",
-        "file:delete",
-    ],
-    viewer: [
-        "user:read",
-        "department:read",
-        "expense-claim:read",
-        "expense-claim:list",
-        "off-site-work:read",
-        "off-site-work:list",
-        "monthly-request:read",
-        "monthly-request:list",
     ],
     // -------------------------------------------------------------------------
-    // MRC workflow approver roles
+    // MRC workflow approver roles — employee base + stage-specific review
     // -------------------------------------------------------------------------
     hpa: [
-        "user:read",
+        ...EMPLOYEE_BASE_PERMISSIONS,
         "user:read:department",
         "department:read",
         "department:list",
         "monthly-request:read:all",
         "monthly-request:list",
-        "monthly-request:submit",       // retains canSubmit=true for sidebar visibility
-        "monthly-request:review:hpa",   // stage-specific action gate
-        "signature:create",
-        "signature:read",
-        "signature:update",
-        "signature:delete",
+        "monthly-request:submit",       // sidebar visibility
+        "monthly-request:review:hpa",   // stage gate
     ],
     rk: [
-        "user:read",
+        ...EMPLOYEE_BASE_PERMISSIONS,
         "user:read:department",
         "department:read",
         "department:list",
         "monthly-request:read:all",
         "monthly-request:list",
-        "monthly-request:submit",       // retains canSubmit=true for sidebar visibility
-        "monthly-request:review:rk",    // stage-specific action gate
-        "signature:create",
-        "signature:read",
-        "signature:update",
-        "signature:delete",
+        "monthly-request:submit",       // sidebar visibility
+        "monthly-request:review:rk",    // stage gate
     ],
     drt: [
-        "user:read",
+        ...EMPLOYEE_BASE_PERMISSIONS,
         "user:read:department",
         "department:read",
         "department:list",
         "monthly-request:read:all",
         "monthly-request:list",
-        "monthly-request:approve",      // retains canApprove=true for sidebar visibility
-        "monthly-request:review:ok",    // stage-specific action gate
-        "signature:create",
-        "signature:read",
-        "signature:update",
-        "signature:delete",
+        "monthly-request:approve",      // sidebar visibility
+        "monthly-request:review:ok",    // stage gate
     ],
 };
 

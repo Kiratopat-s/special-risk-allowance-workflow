@@ -119,10 +119,13 @@ export const leaderVerificationRepository = {
         }) as Promise<LeaderVerificationEntity[]>;
     },
 
-    async verify(id: string): Promise<LeaderVerificationEntity> {
+    async verify(id: string, signatureData?: Buffer | null): Promise<LeaderVerificationEntity> {
         return prisma.leaderVerification.update({
             where: { id },
-            data: { verifiedAt: new Date() },
+            data: {
+                verifiedAt: new Date(),
+                ...(signatureData != null ? { signatureData: new Uint8Array(signatureData) } : {}),
+            },
         }) as Promise<LeaderVerificationEntity>;
     },
 

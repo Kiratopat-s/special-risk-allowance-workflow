@@ -13,6 +13,7 @@
  * @module app/actions/monthly-request-collection
  */
 
+import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { can } from "@/lib/auth/permissions";
 import {
@@ -30,6 +31,50 @@ import type {
     ReviewMrcStepInput,
     MrcFilterCriteria,
 } from "@/lib/domains/monthly-request-collection";
+
+// ---------------------------------------------------------------------------
+// Serialization helpers — Prisma Decimal is not a plain object; convert to string
+// ---------------------------------------------------------------------------
+
+function serializeDecimal(v: unknown): string | null {
+    if (v === null || v === undefined) return null;
+    return String(v);
+}
+
+function serializeMrc(
+    mrc: MonthlyRequestCollectionWithRelations,
+): MonthlyRequestCollectionWithRelations {
+    return {
+        ...mrc,
+        countDates: serializeDecimal(mrc.countDates) as unknown as typeof mrc.countDates,
+        amount: serializeDecimal(mrc.amount) as unknown as typeof mrc.amount,
+        expenseClaims: mrc.expenseClaims.map((c) => ({
+            ...c,
+            countDates: serializeDecimal(c.countDates) as unknown as typeof c.countDates,
+            amount: serializeDecimal(c.amount) as unknown as typeof c.amount,
+        })),
+    };
+}
+
+function serializeMrcEntity(
+    mrc: MonthlyRequestCollectionEntity,
+): MonthlyRequestCollectionEntity {
+    return {
+        ...mrc,
+        countDates: serializeDecimal(mrc.countDates) as unknown as typeof mrc.countDates,
+        amount: serializeDecimal(mrc.amount) as unknown as typeof mrc.amount,
+    };
+}
+
+function serializeEligibleClaim(
+    c: EligibleExpenseClaimForCollection,
+): EligibleExpenseClaimForCollection {
+    return {
+        ...c,
+        countDates: serializeDecimal(c.countDates) as unknown as typeof c.countDates,
+        amount: serializeDecimal(c.amount) as unknown as typeof c.amount,
+    };
+}
 
 /**
  * List monthly request collections (paginated, filtered)
@@ -49,13 +94,29 @@ export async function listMonthlyRequestCollections(
         if (!canRead) {
             return { success: false, error: "Permission denied", code: "PERMISSION_DENIED" };
         }
-        return monthlyRequestCollectionService.list({
+        const fallbackResult = await monthlyRequestCollectionService.list({
             ...(filters ?? {}),
             collectorId: session.user.dbUserId,
         });
+        if (!fallbackResult.success) return fallbackResult;
+        return {
+            ...fallbackResult,
+            data: {
+                ...fallbackResult.data,
+                data: fallbackResult.data.data.map(serializeMrc),
+            },
+        };
     }
 
-    return monthlyRequestCollectionService.list(filters ?? {});
+    const result = await monthlyRequestCollectionService.list(filters ?? {});
+    if (!result.success) return result;
+    return {
+        ...result,
+        data: {
+            ...result.data,
+            data: result.data.data.map(serializeMrc),
+        },
+    };
 }
 
 /**
@@ -83,7 +144,9 @@ export async function getMonthlyRequestCollection(
         }
     }
 
-    return monthlyRequestCollectionService.getById(id);
+    const result = await monthlyRequestCollectionService.getById(id);
+    if (!result.success) return result;
+    return { ...result, data: serializeMrc(result.data) };
 }
 
 /**
@@ -113,7 +176,9 @@ export async function listEligibleExpenseClaimsForMonth(
         };
     }
 
-    return monthlyRequestCollectionService.listEligibleExpenseClaims(targetMonth, existingMrcId);
+    const result = await monthlyRequestCollectionService.listEligibleExpenseClaims(targetMonth, existingMrcId);
+    if (!result.success) return result;
+    return { ...result, data: result.data.map(serializeEligibleClaim) };
 }
 
 /**
@@ -132,7 +197,10 @@ export async function createMonthlyRequestCollection(
         return { success: false, error: "Permission denied", code: "PERMISSION_DENIED" };
     }
 
-    return monthlyRequestCollectionService.create(data, session.user.dbUserId);
+    const result = await monthlyRequestCollectionService.create(data, session.user.dbUserId);
+    if (!result.success) return result;
+    revalidatePath("/monthly-request-collection");
+    return { ...result, data: serializeMrcEntity(result.data) };
 }
 
 /**
@@ -158,7 +226,10 @@ export async function updateMonthlyRequestCollection(
         return { success: false, error: "Permission denied", code: "PERMISSION_DENIED" };
     }
 
-    return monthlyRequestCollectionService.update(id, data, session.user.dbUserId);
+    const result = await monthlyRequestCollectionService.update(id, data, session.user.dbUserId);
+    if (!result.success) return result;
+    revalidatePath("/monthly-request-collection");
+    return { ...result, data: serializeMrcEntity(result.data) };
 }
 
 /**
@@ -183,7 +254,10 @@ export async function submitMonthlyRequestCollection(
         return { success: false, error: "Permission denied", code: "PERMISSION_DENIED" };
     }
 
-    return monthlyRequestCollectionService.submit(id, session.user.dbUserId);
+    const result = await monthlyRequestCollectionService.submit(id, session.user.dbUserId);
+    if (!result.success) return result;
+    revalidatePath("/monthly-request-collection");
+    return { ...result, data: serializeMrcEntity(result.data) };
 }
 
 /**
@@ -230,7 +304,10 @@ export async function reviewMonthlyRequestCollectionStep(
         };
     }
 
-    return monthlyRequestCollectionService.reviewStep(id, input, userId);
+    const result = await monthlyRequestCollectionService.reviewStep(id, input, userId);
+    if (!result.success) return result;
+    revalidatePath("/monthly-request-collection");
+    return { ...result, data: serializeMrcEntity(result.data) };
 }
 
 /**
@@ -255,5 +332,7 @@ export async function cancelMonthlyRequestCollection(
         return { success: false, error: "Permission denied", code: "PERMISSION_DENIED" };
     }
 
-    return monthlyRequestCollectionService.cancel(id, session.user.dbUserId);
+    const cancelResult = await monthlyRequestCollectionService.cancel(id, session.user.dbUserId);
+    if (cancelResult.success) revalidatePath("/monthly-request-collection");
+    return cancelResult;
 }

@@ -5,10 +5,19 @@
  *
  * Renders the one-time external-leader verification flow.
  * Also used by internal leaders who click a link directly.
+ * Includes an inline signature canvas step before confirming.
  */
 
-import { useEffect, useState, useTransition } from "react";
-import { CheckCircle2, Loader2, ShieldAlert, ShieldCheck } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import {
+  CheckCircle2,
+  Loader2,
+  PenLine,
+  RotateCcw,
+  ShieldAlert,
+  ShieldCheck,
+  Star,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   getVerificationByToken,
@@ -18,6 +27,8 @@ import { monthDisplay, dateDisplay } from "@/lib/shared/format";
 
 type LoadState = "loading" | "ready" | "not_found" | "already_verified";
 type SubmitState = "idle" | "submitting" | "done" | "error";
+/** choose = pick existing vs draw new; draw = canvas open; ready = signature captured */
+type SigStep = "choose" | "draw" | "ready";
 
 interface VerificationInfo {
   id: string;
@@ -47,7 +58,156 @@ interface VerificationInfo {
   };
 }
 
-export function LeaderVerifyClient({ token }: { token: string | null }) {
+// ─── Inline signature canvas ──────────────────────────────────────────────────
+
+function SignatureCanvas({
+  onCapture,
+  onCancel,
+}: {
+  onCapture: (dataUrl: string) => void;
+  onCancel: () => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const drawing = useRef(false);
+  const hasStrokes = useRef(false);
+
+  const canvasPos = useCallback(
+    (e: MouseEvent | TouchEvent): { x: number; y: number } => {
+      const canvas = canvasRef.current!;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const src = "touches" in e ? e.touches[0] : e;
+      return {
+        x: (src.clientX - rect.left) * scaleX,
+        y: (src.clientY - rect.top) * scaleY,
+      };
+    },
+    [],
+  );
+
+  const initCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+  }, []);
+
+  useEffect(() => {
+    const id = setTimeout(initCanvas, 50);
+    return () => clearTimeout(id);
+  }, [initCanvas]);
+
+  const startDraw = useCallback(
+    (e: MouseEvent | TouchEvent) => {
+      drawing.current = true;
+      const ctx = canvasRef.current?.getContext("2d");
+      if (!ctx) return;
+      const pos = canvasPos(e);
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
+      e.preventDefault();
+    },
+    [canvasPos],
+  );
+
+  const moveDraw = useCallback(
+    (e: MouseEvent | TouchEvent) => {
+      if (!drawing.current) return;
+      const ctx = canvasRef.current?.getContext("2d");
+      if (!ctx) return;
+      const pos = canvasPos(e);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      hasStrokes.current = true;
+      e.preventDefault();
+    },
+    [canvasPos],
+  );
+
+  const stopDraw = useCallback(() => {
+    drawing.current = false;
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.addEventListener("mousedown", startDraw);
+    canvas.addEventListener("mousemove", moveDraw);
+    canvas.addEventListener("mouseup", stopDraw);
+    canvas.addEventListener("mouseleave", stopDraw);
+    canvas.addEventListener("touchstart", startDraw, { passive: false });
+    canvas.addEventListener("touchmove", moveDraw, { passive: false });
+    canvas.addEventListener("touchend", stopDraw);
+    return () => {
+      canvas.removeEventListener("mousedown", startDraw);
+      canvas.removeEventListener("mousemove", moveDraw);
+      canvas.removeEventListener("mouseup", stopDraw);
+      canvas.removeEventListener("mouseleave", stopDraw);
+      canvas.removeEventListener("touchstart", startDraw);
+      canvas.removeEventListener("touchmove", moveDraw);
+      canvas.removeEventListener("touchend", stopDraw);
+    };
+  }, [startDraw, moveDraw, stopDraw]);
+
+  const handleClear = () => {
+    hasStrokes.current = false;
+    initCanvas();
+  };
+
+  const handleConfirm = () => {
+    if (!hasStrokes.current) return;
+    const dataUrl = canvasRef.current!.toDataURL("image/png");
+    onCapture(dataUrl);
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm font-medium text-center">
+        วาดลายเซ็นของคุณด้านล่าง
+      </p>
+      <canvas
+        ref={canvasRef}
+        className="w-full h-36 rounded-xl border-2 border-dashed border-muted-foreground/30 bg-white touch-none cursor-crosshair"
+        style={{ touchAction: "none" }}
+      />
+      <div className="flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleClear}
+          className="gap-1.5"
+        >
+          <RotateCcw className="h-3.5 w-3.5" /> ล้าง
+        </Button>
+        <Button size="sm" onClick={handleConfirm} className="flex-1 gap-1.5">
+          <PenLine className="h-3.5 w-3.5" /> ใช้ลายเซ็นนี้
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          ยกเลิก
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export function LeaderVerifyClient({
+  token,
+  existingSignatureDataUrl,
+}: {
+  token: string | null;
+  existingSignatureDataUrl?: string | null;
+}) {
   const [loadState, setLoadState] = useState<LoadState>(
     token ? "loading" : "not_found",
   );
@@ -55,6 +215,14 @@ export function LeaderVerifyClient({ token }: { token: string | null }) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [info, setInfo] = useState<VerificationInfo | null>(null);
   const [, startTransition] = useTransition();
+
+  // Signature flow state
+  const initialSigStep: SigStep = existingSignatureDataUrl ? "choose" : "draw";
+  const [sigStep, setSigStep] = useState<SigStep>(initialSigStep);
+  const [capturedSig, setCapturedSig] = useState<string | null>(
+    // If existing sig but no draw required yet, don't pre-set — wait for user choice
+    null,
+  );
 
   useEffect(() => {
     if (!token) return;
@@ -93,11 +261,11 @@ export function LeaderVerifyClient({ token }: { token: string | null }) {
     };
   }, [token]);
 
-  const handleVerify = () => {
+  const handleVerify = (sigDataUrl: string) => {
     if (!token) return;
     setSubmitState("submitting");
     startTransition(async () => {
-      const res = await verifyByToken(token);
+      const res = await verifyByToken(token, sigDataUrl);
       if (!res.success) {
         setSubmitState("error");
         setSubmitError(res.error ?? "เกิดข้อผิดพลาด");
@@ -166,6 +334,100 @@ export function LeaderVerifyClient({ token }: { token: string | null }) {
 
   if (!info) return null;
 
+  // ──────────── Signature capture section ────────────
+
+  const renderSignatureSection = () => {
+    // "choose" — logged-in user with existing signature
+    if (sigStep === "choose" && existingSignatureDataUrl) {
+      return (
+        <div className="rounded-xl border p-4 space-y-3">
+          <p className="text-sm font-medium">ลายเซ็นของคุณ</p>
+          <div className="rounded-lg border bg-white p-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={existingSignatureDataUrl}
+              alt="ลายเซ็นที่บันทึกไว้"
+              className="h-16 w-full object-contain"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              className="flex-1 gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => setCapturedSig(existingSignatureDataUrl)}
+            >
+              <Star className="h-3.5 w-3.5" />
+              ใช้ลายเซ็นที่บันทึกไว้
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setSigStep("draw")}
+            >
+              <PenLine className="h-3.5 w-3.5" />
+              เซ็นใหม่
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
+    // "draw" — canvas open
+    if (sigStep === "draw" || sigStep === "ready") {
+      if (capturedSig && sigStep === "ready") {
+        return (
+          <div className="rounded-xl border p-4 space-y-3">
+            <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
+              ลายเซ็นพร้อมใช้งาน
+            </p>
+            <div className="rounded-lg border bg-white p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={capturedSig}
+                alt="ลายเซ็น"
+                className="h-16 w-full object-contain"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => {
+                setCapturedSig(null);
+                setSigStep("draw");
+              }}
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> เซ็นใหม่
+            </Button>
+          </div>
+        );
+      }
+
+      return (
+        <SignatureCanvas
+          onCapture={(dataUrl) => {
+            setCapturedSig(dataUrl);
+            setSigStep("ready");
+          }}
+          onCancel={() => {
+            if (existingSignatureDataUrl) {
+              setSigStep("choose");
+            }
+          }}
+        />
+      );
+    }
+
+    return null;
+  };
+
+  const readyToSubmit =
+    capturedSig !== null ||
+    (sigStep === "choose" && existingSignatureDataUrl !== null);
+
+  const submitSig = capturedSig ?? existingSignatureDataUrl ?? "";
+
   return (
     <div className="rounded-2xl border bg-card p-6 shadow-md space-y-6">
       {/* Header */}
@@ -175,7 +437,7 @@ export function LeaderVerifyClient({ token }: { token: string | null }) {
           ยืนยันการออกปฏิบัติงานนอกสถานที่
         </h1>
         <p className="text-sm text-muted-foreground">
-          กรุณาตรวจสอบข้อมูลและกดยืนยัน
+          กรุณาตรวจสอบข้อมูลและลงลายเซ็นยืนยัน
         </p>
       </div>
 
@@ -248,6 +510,9 @@ export function LeaderVerifyClient({ token }: { token: string | null }) {
         </p>
       ) : null}
 
+      {/* Signature section */}
+      {renderSignatureSection()}
+
       {/* Error */}
       {submitState === "error" && submitError ? (
         <div className="rounded-lg border border-destructive bg-destructive/10 px-4 py-2 text-sm text-destructive">
@@ -258,15 +523,15 @@ export function LeaderVerifyClient({ token }: { token: string | null }) {
       {/* Action */}
       <Button
         className="w-full"
-        onClick={handleVerify}
-        disabled={submitState === "submitting"}
+        onClick={() => handleVerify(submitSig)}
+        disabled={submitState === "submitting" || !readyToSubmit}
       >
         {submitState === "submitting" ? (
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         ) : (
           <ShieldCheck className="mr-2 h-4 w-4" />
         )}
-        ยืนยันการออกปฏิบัติงาน
+        {readyToSubmit ? "ยืนยันการออกปฏิบัติงาน" : "กรุณาลงลายเซ็นก่อน"}
       </Button>
 
       <p className="text-center text-xs text-muted-foreground">

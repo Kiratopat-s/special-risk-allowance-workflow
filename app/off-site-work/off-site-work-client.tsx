@@ -527,8 +527,8 @@ export function OffSiteWorkClient({
               </p>
               {item.leaderFirstName || item.leaderUser ? (
                 <p className="flex items-center gap-2 text-xs">
-                  <UserCheck className="h-3.5 w-3.5 text-blue-500" />
-                  <span className="text-blue-700">
+                  <UserCheck className="h-3.5 w-3.5 text-blue-500 dark:text-blue-400" />
+                  <span className="text-blue-500 dark:text-blue-400">
                     {item.leaderFirstName} {item.leaderLastName}
                   </span>
                 </p>
@@ -842,8 +842,8 @@ export function OffSiteWorkClient({
               {form.leaderType === "internal" ? (
                 <div className="space-y-2">
                   {selectedLeaderUser ? (
-                    <div className="flex items-center justify-between rounded-lg border bg-blue-50 px-3 py-2 text-sm">
-                      <span className="font-medium text-blue-900">
+                    <div className="flex items-center justify-between rounded-lg border bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-sm">
+                      <span className="font-medium text-blue-900 dark:text-blue-100">
                         {selectedLeaderUser.firstName}{" "}
                         {selectedLeaderUser.lastName}
                         {selectedLeaderUser.employeeId
@@ -1051,8 +1051,8 @@ export function OffSiteWorkClient({
                 </p>
               </div>
               {selected.leaderFirstName || selected.leaderUser ? (
-                <div className="rounded-lg border bg-blue-50 p-3 space-y-1">
-                  <p className="text-xs font-medium text-blue-700 flex items-center gap-1">
+                <div className="rounded-lg border bg-blue-50 dark:bg-blue-950/30 p-3 space-y-1">
+                  <p className="text-xs font-medium text-blue-700 dark:text-blue-300 flex items-center gap-1">
                     <UserCheck className="h-3.5 w-3.5" />
                     หัวหน้า/ผู้ควบคุมงาน
                   </p>

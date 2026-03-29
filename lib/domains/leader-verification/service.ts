@@ -7,6 +7,7 @@
 import { leaderVerificationRepository } from "./repository";
 import { prisma } from "@/lib/db";
 import { success, error, type Result } from "@/lib/shared/types";
+import { sendLeaderVerifyEmail } from "@/lib/email";
 import type {
     LeaderVerificationEntity,
     LeaderVerificationWithRelations,
@@ -46,14 +47,25 @@ export const leaderVerificationService = {
         if (!offSiteWorkIds.length) return [];
 
         // Fetch OSWs with their leader data
-        const osws = await prisma.offSiteWork.findMany({
-            where: { id: { in: offSiteWorkIds }, deletedAt: null },
-            select: {
-                id: true,
-                leaderUserId: true,
-                leaderEmail: true,
-            },
-        });
+        const [osws, claim] = await Promise.all([
+            prisma.offSiteWork.findMany({
+                where: { id: { in: offSiteWorkIds }, deletedAt: null },
+                select: {
+                    id: true,
+                    innerRefDocumentId: true,
+                    leaderUserId: true,
+                    leaderEmail: true,
+                },
+            }),
+            prisma.expenseClaim.findUnique({
+                where: { id: expenseClaimId },
+                select: { claimant: { select: { firstName: true, lastName: true } } },
+            }),
+        ]);
+
+        const claimantName = claim?.claimant
+            ? `${claim.claimant.firstName} ${claim.claimant.lastName}`.trim()
+            : undefined;
 
         const records: CreateLeaderVerificationInput[] = [];
         for (const osw of osws) {
@@ -99,6 +111,20 @@ export const leaderVerificationService = {
                 .catch(() => undefined);
         }
 
+        // Fire-and-forget: send email to external leaders
+        for (const record of created) {
+            if (record.leaderEmail && !record.leaderUserId) {
+                const osw = osws.find((o) => o.id === record.offSiteWorkId);
+                sendLeaderVerifyEmail({
+                    to: record.leaderEmail,
+                    token: record.token,
+                    offSiteWorkRef: osw?.innerRefDocumentId ?? null,
+                    claimantName,
+                    expiresAt: record.expiresAt,
+                }).catch(() => undefined);
+            }
+        }
+
         return created;
     },
 
@@ -106,7 +132,7 @@ export const leaderVerificationService = {
      * Verify via external token link.
      * Updates the record and transitions the claim to WAIT_FOR_COLLECTION if all done.
      */
-    async verifyByToken(token: string): Promise<Result<VerifyResult>> {
+    async verifyByToken(token: string, signatureData?: Buffer | null): Promise<Result<VerifyResult>> {
         const record = await leaderVerificationRepository.findByToken(token);
 
         if (!record) {
@@ -124,7 +150,7 @@ export const leaderVerificationService = {
             return error("ลิงก์ยืนยันหมดอายุแล้ว กรุณาติดต่อผู้ดูแลเพื่อขอลิงก์ใหม่", "TOKEN_EXPIRED");
         }
 
-        await leaderVerificationRepository.verify(record.id);
+        await leaderVerificationRepository.verify(record.id, signatureData ?? null);
 
         const allDone = await checkAllDone(record.expenseClaimId);
         if (allDone) {
@@ -133,6 +159,9 @@ export const leaderVerificationService = {
                 data: { status: "WAIT_FOR_COLLECTION" },
             });
         }
+
+        // Notify claimant — fire-and-forget
+        notifyClaimant(record.expenseClaimId, allDone).catch(() => undefined);
 
         return success({ verified: true, allDone, expenseClaimId: record.expenseClaimId });
     },
@@ -143,7 +172,8 @@ export const leaderVerificationService = {
     async verifyAsInternalLeader(
         expenseClaimId: string,
         offSiteWorkId: string,
-        userId: string
+        userId: string,
+        signatureData?: Buffer | null
     ): Promise<Result<VerifyResult>> {
         const record = await leaderVerificationRepository.findByClaimAndOsw(
             expenseClaimId,
@@ -169,7 +199,7 @@ export const leaderVerificationService = {
             return error("ลิงก์ยืนยันหมดอายุแล้ว กรุณาติดต่อผู้ดูแลเพื่อขอลิงก์ใหม่", "TOKEN_EXPIRED");
         }
 
-        await leaderVerificationRepository.verify(record.id);
+        await leaderVerificationRepository.verify(record.id, signatureData ?? null);
 
         const allDone = await checkAllDone(expenseClaimId);
         if (allDone) {
@@ -178,6 +208,9 @@ export const leaderVerificationService = {
                 data: { status: "WAIT_FOR_COLLECTION" },
             });
         }
+
+        // Notify claimant — fire-and-forget
+        notifyClaimant(expenseClaimId, allDone).catch(() => undefined);
 
         return success({ verified: true, allDone, expenseClaimId });
     },
@@ -219,6 +252,37 @@ export const leaderVerificationService = {
         return success(updated as LeaderVerificationEntity);
     },
 };
+
+/**
+ * Fire-and-forget: send a notification to the claimant after a leader verifies.
+ * Fetches the claim's claimantId from DB to resolve the recipient.
+ */
+async function notifyClaimant(expenseClaimId: string, allDone: boolean): Promise<void> {
+    const claim = await prisma.expenseClaim.findUnique({
+        where: { id: expenseClaimId },
+        select: { userId: true },
+    });
+    if (!claim?.userId) return;
+
+    const ns = await getNotificationService();
+    if (allDone) {
+        await ns.send(
+            claim.userId,
+            "CLAIM_STATUS_CHANGED",
+            "หัวหน้ายืนยันครบทุกใบสั่งแล้ว",
+            "เอกสารเบิกค่าตอบแทนของคุณได้รับการยืนยันครบทุกใบสั่งปฏิบัติงานแล้ว และพร้อมรวบรวมเข้าสู่ระบบ",
+            `/expense-claim-document?view=${expenseClaimId}`,
+        );
+    } else {
+        await ns.send(
+            claim.userId,
+            "CLAIM_STATUS_CHANGED",
+            "หัวหน้ายืนยันใบสั่งปฏิบัติงานแล้ว",
+            "หัวหน้ายืนยันใบสั่งปฏิบัติงานของคุณ 1 รายการแล้ว — รอหัวหน้ารายอื่นยืนยันต่อ (ถ้ามี)",
+            `/expense-claim-document?view=${expenseClaimId}`,
+        );
+    }
+}
 
 /** Returns true when every verification record for the claim has been verified. */
 async function checkAllDone(expenseClaimId: string): Promise<boolean> {

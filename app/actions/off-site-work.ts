@@ -8,6 +8,7 @@
  * @module app/actions/off-site-work
  */
 
+import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { can } from "@/lib/auth/permissions";
 import { offSiteWorkService } from "@/lib/domains/off-site-work";
@@ -103,7 +104,9 @@ export async function createOffSiteWork(
     };
   }
 
-  return offSiteWorkService.create(data, session.user.dbUserId);
+  const result = await offSiteWorkService.create(data, session.user.dbUserId);
+  if (result.success) revalidatePath("/off-site-work");
+  return result;
 }
 
 /**
@@ -131,7 +134,9 @@ export async function updateOffSiteWork(
     };
   }
 
-  return offSiteWorkService.update(id, data, session.user.dbUserId);
+  const result = await offSiteWorkService.update(id, data, session.user.dbUserId);
+  if (result.success) revalidatePath("/off-site-work");
+  return result;
 }
 
 /**
@@ -158,5 +163,7 @@ export async function deleteOffSiteWork(
     };
   }
 
-  return offSiteWorkService.delete(id, session.user.dbUserId);
+  const result = await offSiteWorkService.delete(id, session.user.dbUserId);
+  if (result.success) revalidatePath("/off-site-work");
+  return result;
 }

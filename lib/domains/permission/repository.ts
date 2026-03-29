@@ -146,6 +146,29 @@ export const permissionRepository = {
         });
         return result.count;
     },
+
+    /**
+     * Find all active user IDs that have a specific permission code (via their roles).
+     * Used for broadcasting notifications to users with a specific capability.
+     */
+    async findUserIdsByPermissionCode(permissionCode: string): Promise<string[]> {
+        const rows = await prisma.userRole.findMany({
+            where: {
+                isActive: true,
+                role: {
+                    isActive: true,
+                    rolePermissions: {
+                        some: {
+                            permission: { code: permissionCode, isActive: true },
+                        },
+                    },
+                },
+            },
+            select: { userId: true },
+            distinct: ["userId"],
+        });
+        return rows.map((r) => r.userId);
+    },
 };
 
 // =============================================================================

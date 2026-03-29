@@ -91,7 +91,11 @@ export const expenseClaimDocumentRepository = {
 				osw.start_date AS "startDate",
 				osw.end_date AS "endDate",
 				osw.location,
-				osw.objective
+				osw.objective,
+				(osw.leader_user_id IS NOT NULL OR osw.leader_email IS NOT NULL) AS "hasLeader",
+				osw.leader_first_name AS "leaderFirstName",
+				osw.leader_last_name AS "leaderLastName",
+				osw.leader_email AS "leaderEmail"
 			FROM off_site_works osw
 			WHERE
 				osw.deleted_at IS NULL

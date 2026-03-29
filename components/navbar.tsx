@@ -45,7 +45,6 @@ export function Navbar() {
   // Check if user has admin access
   const hasAdminAccess =
     hasRole("super-admin") ||
-    hasRole("admin") ||
     canAny([
       { resource: "ROLE", action: "LIST" },
       { resource: "ROLE", action: "MANAGE" },

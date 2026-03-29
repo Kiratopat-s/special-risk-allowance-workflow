@@ -8,6 +8,7 @@
  * @module app/actions/expense-claim-document
  */
 
+import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { can } from "@/lib/auth/permissions";
 import { expenseClaimDocumentService } from "@/lib/domains/expense-claim-document";
@@ -148,7 +149,9 @@ export async function createExpenseClaimDocument(
         };
     }
 
-    return expenseClaimDocumentService.create(data, session.user.dbUserId, targetUserId);
+    const result = await expenseClaimDocumentService.create(data, session.user.dbUserId, targetUserId);
+    if (result.success) revalidatePath("/expense-claim-document");
+    return result;
 }
 
 /**
@@ -179,7 +182,9 @@ export async function updateExpenseClaimDocument(
         };
     }
 
-    return expenseClaimDocumentService.update(id, data, session.user.dbUserId);
+    const result = await expenseClaimDocumentService.update(id, data, session.user.dbUserId);
+    if (result.success) revalidatePath("/expense-claim-document");
+    return result;
 }
 
 /**
@@ -207,6 +212,8 @@ export async function deleteExpenseClaimDocument(id: string): Promise<Result<voi
         };
     }
 
-    return expenseClaimDocumentService.delete(id, session.user.dbUserId);
+    const result = await expenseClaimDocumentService.delete(id, session.user.dbUserId);
+    if (result.success) revalidatePath("/expense-claim-document");
+    return result;
 }
 

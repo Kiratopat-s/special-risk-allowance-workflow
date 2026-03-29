@@ -16,6 +16,7 @@
  */
 
 import { monthlyRequestCollectionRepository as repo } from "./repository";
+import { permissionRepository } from "@/lib/domains/permission/repository";
 import { actionLogService } from "@/lib/domains/action-log/service";
 import { notificationService } from "@/lib/domains/notification";
 import { ActionType } from "@/lib/shared/types";
@@ -88,16 +89,12 @@ export const monthlyRequestCollectionService = {
 
         const month = normalizeMonth(data.collectForMonth);
 
-        // Guard: no APPROVED MRC already exists for this month
-        const existing = await repo.findMany({
-            collectForMonthFrom: month,
-            collectForMonthTo: month,
-            status: "APPROVED",
-        });
-        if (existing.data.length > 0) {
+        // Guard: only one active (non-CANCELLED) MRC is allowed per month
+        const hasActive = await repo.findActiveForMonth(month);
+        if (hasActive) {
             return error(
-                "An approved monthly request collection already exists for this month",
-                "MRC_ALREADY_APPROVED"
+                "มีรายการรวบรวมคำขอรายเดือนที่ยังดำเนินการอยู่สำหรับเดือนนี้แล้ว — กรุณายกเลิกหรือรอให้รายการเดิมเสร็จสิ้นก่อน",
+                "MRC_MONTH_CONFLICT"
             );
         }
 
@@ -178,13 +175,19 @@ export const monthlyRequestCollectionService = {
 
         const updated = await repo.findById(id);
 
-        // Fire-and-forget: notify the collector that the MRC was submitted for review
-        void notificationService.send(
-            mrc.collectorId,
-            "MRC_SUBMITTED",
-            "การรวบรวมคำขอรายเดือนถูกส่งแล้ว",
-            `รายการรวบรวม เดือน${mrc.collectForMonth} ถูกส่งเพื่อตรวจสอบแล้ว`,
-            "/monthly-request-collection"
+        // Notify HPA reviewers that a new MRC needs their review
+        void permissionRepository.findUserIdsByPermissionCode("monthly-request:review:hpa").then(
+            (hpaIds) => {
+                if (hpaIds.length > 0) {
+                    notificationService.sendToMany(
+                        hpaIds,
+                        "MRC_SUBMITTED",
+                        "มีรายการรวบรวมคำขอรายเดือนรอการตรวจสอบ",
+                        "มีรายการรวบรวมคำขอรายเดือนใหม่รอการตรวจสอบในขั้นตอน HPA",
+                        "/monthly-request-collection"
+                    );
+                }
+            }
         );
 
         return success(updated!, "Submitted for review");
@@ -202,7 +205,7 @@ export const monthlyRequestCollectionService = {
         input: ReviewMrcStepInput,
         actorId: string
     ): Promise<Result<MonthlyRequestCollectionEntity>> {
-        const mrc = await repo.findById(id);
+        const mrc = await repo.findWithRelations(id);
         if (!mrc) return error("Monthly request collection not found", "MRC_NOT_FOUND");
 
         if (mrc.status !== "PENDING") {
@@ -235,12 +238,13 @@ export const monthlyRequestCollectionService = {
                 newData: { stage: input.stage, status: "REJECTED", remark: input.remark } as JsonValue,
             });
 
-            // Fire-and-forget: notify the collector that the MRC was rejected
-            void notificationService.send(
-                mrc.collectorId,
+            // Notify collector + all claimants of rejection
+            const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
+            void notificationService.sendToMany(
+                [...new Set([mrc.collectorId, ...claimantIds])],
                 "MRC_REJECTED",
                 "คำขอรายเดือนถูกปฏิเสธ",
-                `รายการรวบรวมคำขอรายเดือนของคุณถูกปฏิเสธในขั้นตอน ${input.stage}`,
+                `รายการรวบรวมคำขอรายเดือนถูกปฏิเสธในขั้นตอน ${input.stage}`,
                 "/monthly-request-collection"
             );
 
@@ -266,16 +270,17 @@ export const monthlyRequestCollectionService = {
                 newData: { stage: input.stage, status: "APPROVED" } as JsonValue,
             });
 
-            // Fire-and-forget: notify the collector of final approval
-            void notificationService.send(
-                mrc.collectorId,
+            // Notify collector + all claimants of final approval
+            const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
+            void notificationService.sendToMany(
+                [...new Set([mrc.collectorId, ...claimantIds])],
                 "MRC_APPROVED",
                 "คำขอรายเดือนได้รับการอนุมัติแล้ว",
-                "รายการรวบรวมคำขอรายเดือนของคุณได้รับการอนุมัติครบทุกขั้นตอนแล้ว",
+                "รายการรวบรวมคำขอรายเดือนได้รับการอนุมัติครบทุกขั้นตอนแล้ว",
                 "/monthly-request-collection"
             );
         } else {
-            // Advance to next stage
+            // Advance to next stage — notify the next-stage reviewers
             const nextStage = STAGE_ORDER[currentIndex + 1];
             await repo.createApprovalStep(id, nextStage);
 
@@ -288,13 +293,16 @@ export const monthlyRequestCollectionService = {
                 newData: { stage: input.stage, nextStage } as JsonValue,
             });
 
-            // Fire-and-forget: notify the collector of an intermediate step approval
-            void notificationService.send(
-                mrc.collectorId,
-                "MRC_STEP_APPROVED",
-                "ขั้นตอนการอนุมัติผ่านแล้ว",
-                `คำขอรายเดือนผ่านการตรวจสอบขั้น ${input.stage} แล้ว กำลังดำเนินการขั้นถัดไป`,
-                "/monthly-request-collection"
+            const stagePermCode =
+                nextStage === "RK_CHECK" ? "monthly-request:review:rk" : "monthly-request:review:ok";
+            void permissionRepository.findUserIdsByPermissionCode(stagePermCode).then(
+                (nextReviewerIds) => notificationService.sendToMany(
+                    [...new Set([mrc.collectorId, ...nextReviewerIds])],
+                    "MRC_STEP_APPROVED",
+                    "ขั้นตอนการอนุมัติผ่านแล้ว — รอดำเนินการขั้นถัดไป",
+                    `คำขอรายเดือนผ่านขั้น ${input.stage} แล้ว กรุณาดำเนินการในขั้นตอน ${nextStage}`,
+                    "/monthly-request-collection"
+                )
             );
         }
 
@@ -305,7 +313,8 @@ export const monthlyRequestCollectionService = {
     /**
      * Admin cancels a collection.
      * Allowed only when status=DRAFT or status=PENDING with no APPROVED steps.
-     * Reverts linked expense claims to PENDING.
+     * Reverts linked expense claims to WAIT_FOR_COLLECTION and unlinks them
+     * from the MRC so admin can collect them again in a future MRC.
      */
     async cancel(id: string, actorId: string): Promise<Result<void>> {
         const mrc = await repo.findWithRelations(id);
@@ -323,7 +332,7 @@ export const monthlyRequestCollectionService = {
         }
 
         await repo.updateStatus(id, "CANCELLED", new Date());
-        await repo.bulkUpdateLinkedClaimsStatus(id, "PENDING");
+        await repo.rollbackLinkedClaimsOnCancel(id);
 
         await actionLogService.log({
             userId: actorId,
@@ -335,12 +344,13 @@ export const monthlyRequestCollectionService = {
             newData: { status: "CANCELLED" } as JsonValue,
         });
 
-        // Fire-and-forget: notify the collector of cancellation
-        void notificationService.send(
-            mrc.collectorId,
+        // Notify collector + all claimants — their ECDs have been returned to WAIT_FOR_COLLECTION
+        const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
+        void notificationService.sendToMany(
+            [...new Set([mrc.collectorId, ...claimantIds])],
             "MRC_CANCELLED",
-            "คำขอรายเดือนถูกยกเลิก",
-            "รายการรวบรวมคำขอรายเดือนถูกยกเลิกแล้ว",
+            "รายการรวบรวมคำขอรายเดือนถูกยกเลิก",
+            "รายการรวบรวมคำขอรายเดือนถูกยกเลิกแล้ว เอกสารเบิกจ่ายที่เกี่ยวข้องกลับสู่สถานะรอรวบรวม",
             "/monthly-request-collection"
         );
 

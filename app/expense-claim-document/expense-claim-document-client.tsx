@@ -8,8 +8,10 @@ import {
   useTransition,
 } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
+  AlertTriangle,
   CalendarDays,
   Check,
   Eye,
@@ -199,6 +201,12 @@ export function ExpenseClaimDocumentClient({
     useState<ExpenseClaimDocumentWithRelations | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  // No-leader dialog state
+  const [noLeaderDialogOpen, setNoLeaderDialogOpen] = useState(false);
+  const [noLeaderOsws, setNoLeaderOsws] = useState<EligibleOffSiteWorkOption[]>(
+    [],
+  );
+
   const [form, setForm] = useState<FormState>({
     expenseMonth: toMonthInput(new Date()),
     claimantPositionAtSubmission: currentUserClaimantPositionAtSubmission,
@@ -267,6 +275,14 @@ export function ExpenseClaimDocumentClient({
     if (!form.claimantPositionAtSubmission.trim()) return false;
     return true;
   }, [form]);
+
+  const hasLeaderlessSelectedOsw = useMemo(
+    () =>
+      eligibleOffSiteWorks.some(
+        (o) => selectedOffSiteWorkIds.includes(o.id) && !o.hasLeader,
+      ),
+    [eligibleOffSiteWorks, selectedOffSiteWorkIds],
+  );
 
   const filteredEligibleOptions = useMemo(() => {
     const keyword = offSiteSearch.trim().toLowerCase();
@@ -432,6 +448,16 @@ export function ExpenseClaimDocumentClient({
   };
 
   const submitCreate = (status: ClaimDocumentStatus) => {
+    // Hard-block: when submitting (not saving draft), every selected OSW must have a leader.
+    if (status !== "DRAFT" && hasLeaderlessSelectedOsw) {
+      const noLeader = eligibleOffSiteWorks.filter(
+        (o) => selectedOffSiteWorkIds.includes(o.id) && !o.hasLeader,
+      );
+      setNoLeaderOsws(noLeader);
+      setNoLeaderDialogOpen(true);
+      return;
+    }
+
     startTransition(async () => {
       const result = await createExpenseClaimDocument({
         expenseMonth: toMonthDate(form.expenseMonth),
@@ -715,6 +741,16 @@ export function ExpenseClaimDocumentClient({
 
             {mode === "create" ? (
               <>
+                {hasLeaderlessSelectedOsw && (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>
+                      ใบสั่งปฏิบัติงานที่เลือกบางรายการยังไม่มีหัวหน้า
+                      กรุณากำหนดหัวหน้าก่อนส่ง
+                    </span>
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="offsite-search">OffSiteWork Relateds</Label>
                   <Input
@@ -755,17 +791,35 @@ export function ExpenseClaimDocumentClient({
                               >
                                 {checked ? <Check className="h-3 w-3" /> : null}
                               </div>
-                              <div className="min-w-0 text-sm">
-                                <p className="font-medium">{offsite.id}</p>
+                              <div className="min-w-0 flex-1 text-sm">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="font-medium">
+                                    {offsite.innerRefDocumentId || offsite.id}
+                                  </p>
+                                  {!offsite.hasLeader && (
+                                    <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                                      ยังไม่มีหัวหน้า
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="truncate text-xs text-muted-foreground">
-                                  {offsite.innerRefDocumentId ||
-                                    "ไม่มีเลขอ้างอิง"}{" "}
-                                  | {offsite.location || "-"}
+                                  {offsite.location || "-"}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
                                   {dateDisplay(offsite.startDate)} -{" "}
                                   {dateDisplay(offsite.endDate)}
                                 </p>
+                                {offsite.hasLeader &&
+                                  (offsite.leaderFirstName ||
+                                    offsite.leaderLastName) && (
+                                    <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                                      หัวหน้า: {offsite.leaderFirstName}{" "}
+                                      {offsite.leaderLastName}
+                                      {offsite.leaderEmail
+                                        ? ` (${offsite.leaderEmail})`
+                                        : ""}
+                                    </p>
+                                  )}
                               </div>
                             </button>
                           );
@@ -949,8 +1003,8 @@ export function ExpenseClaimDocumentClient({
               </Button>
               <Button
                 className="w-full sm:w-auto"
-                onClick={() => submitCreate("PENDING")}
-                disabled={!formValid || isPending}
+                onClick={() => submitCreate("PENDING_LEADER_VERIFY")}
+                disabled={!formValid || isPending || hasLeaderlessSelectedOsw}
               >
                 {isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -966,6 +1020,62 @@ export function ExpenseClaimDocumentClient({
               Update
             </Button>
           )}
+        </DialogFooter>
+      </Dialog>
+
+      {/* No-leader dialog — rendered after create/edit dialog so it stacks on top */}
+      <Dialog
+        open={noLeaderDialogOpen}
+        onClose={() => setNoLeaderDialogOpen(false)}
+        className="max-w-md"
+      >
+        <DialogClose onClose={() => setNoLeaderDialogOpen(false)} />
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-amber-500" />
+            ใบสั่งปฏิบัติงานยังไม่มีหัวหน้า
+          </DialogTitle>
+          <DialogDescription>
+            ไม่สามารถส่งเอกสารได้จนกว่าใบสั่งต่อไปนี้จะได้รับการกำหนดหัวหน้า
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          <ul className="space-y-2">
+            {noLeaderOsws.map((o) => (
+              <li
+                key={o.id}
+                className="rounded-lg border bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-sm"
+              >
+                <p className="font-medium font-mono text-xs">
+                  {o.innerRefDocumentId ?? o.id}
+                </p>
+                {o.location && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {o.location}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-4 text-sm text-muted-foreground">
+            กรุณาไปที่หน้า{" "}
+            <Link
+              href="/off-site-work"
+              className="font-medium text-sky-600 dark:text-sky-400 underline underline-offset-2"
+              onClick={() => setNoLeaderDialogOpen(false)}
+            >
+              จัดการใบสั่งปฏิบัติงาน
+            </Link>{" "}
+            แล้วกำหนดหัวหน้าให้ครบก่อนส่ง หรือบันทึกเป็นร่างไว้ก่อน
+          </p>
+        </DialogBody>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setNoLeaderDialogOpen(false)}
+          >
+            ปิด
+          </Button>
         </DialogFooter>
       </Dialog>
 

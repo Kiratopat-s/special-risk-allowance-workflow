@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { can } from "@/lib/auth/permissions";
+import { redirect } from "next/navigation";
 import { listMonthlyRequestCollections } from "@/app/actions/monthly-request-collection";
 import { MrcClient } from "./monthly-request-collection-client";
 import type { MonthlyRequestCollectionWithRelations } from "@/lib/domains/monthly-request-collection";
@@ -32,6 +33,10 @@ export default async function MrcPage() {
     can(userId, "MONTHLY_REQUEST", "REVIEW_RK"),
     can(userId, "MONTHLY_REQUEST", "REVIEW_OK"),
   ]);
+
+  if (!canManage && !canHpa && !canRk && !canDrt) {
+    redirect("/");
+  }
 
   const result = await listMonthlyRequestCollections({ page: 1, pageSize: 20 });
   const data = result.success

@@ -72,6 +72,22 @@ export const monthlyRequestCollectionRepository = {
         }) as Promise<MonthlyRequestCollectionEntity | null>;
     },
 
+    /**
+     * Returns true if any non-CANCELLED MRC already exists for the given month.
+     * Used to enforce the "one active MRC per month" business rule.
+     */
+    async findActiveForMonth(month: Date): Promise<boolean> {
+        const start = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1));
+        const end = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+        const count = await prisma.monthlyRequestCollection.count({
+            where: {
+                collectForMonth: { gte: start, lte: end },
+                status: { not: "CANCELLED" },
+            },
+        });
+        return count > 0;
+    },
+
     async findWithRelations(id: string): Promise<MonthlyRequestCollectionWithRelations | null> {
         return prisma.monthlyRequestCollection.findFirst({
             where: { id },
@@ -152,9 +168,13 @@ export const monthlyRequestCollectionRepository = {
     /**
      * Find expense claims for a specific month that can be picked in the MRC UI.
      *
-     * - create mode: only unlinked PENDING claims
-     * - edit mode: the same set plus claims already linked to the current MRC,
-     *   even though those linked claims are usually already marked COLLECTED
+     * Eligibility rules:
+     * 1. Unlinked claims (monthlyRequestCollectionId IS NULL) with a collectable status.
+     * 2. Claims still FK-linked to a CANCELLED MRC — treated as available again.
+     *    This is a safety net for legacy rows that were not unlinked when their MRC
+     *    was cancelled with the old cancel logic.
+     * 3. (edit mode only) Claims already linked to the MRC being edited, regardless
+     *    of their current status.
      */
     async findEligibleExpenseClaimsForMonth(
         month: Date,
@@ -168,10 +188,17 @@ export const monthlyRequestCollectionRepository = {
                 cancelledAt: null,
                 expenseMonth: { gte: monthStart, lte: monthEnd },
                 OR: [
+                    // 1. Completely unlinked and in a collectable status
                     {
                         status: { in: ["PENDING", "PENDING_LEADER_VERIFY", "WAIT_FOR_COLLECTION"] },
                         monthlyRequestCollectionId: null,
                     },
+                    // 2. Still FK-linked to a cancelled MRC (legacy rows not yet unlinked)
+                    {
+                        status: { in: ["PENDING", "PENDING_LEADER_VERIFY", "WAIT_FOR_COLLECTION"] },
+                        monthlyRequestCollection: { status: "CANCELLED" },
+                    },
+                    // 3. Already part of the MRC being edited
                     ...(existingMrcId
                         ? [
                             {
@@ -236,12 +263,13 @@ export const monthlyRequestCollectionRepository = {
         const toAttach = expenseClaimIds.filter((cId) => !currentIds.includes(cId));
 
         await prisma.$transaction([
-            // Detach
+            // Detach — restore to WAIT_FOR_COLLECTION because the claim must have
+            // passed leader verification to have been selectable in the first place.
             ...(toDetach.length > 0
                 ? [
                     prisma.expenseClaim.updateMany({
                         where: { id: { in: toDetach } },
-                        data: { monthlyRequestCollectionId: null, collectedAt: null, status: "PENDING" },
+                        data: { monthlyRequestCollectionId: null, collectedAt: null, status: "WAIT_FOR_COLLECTION" },
                     }),
                 ]
                 : []),
@@ -342,6 +370,21 @@ export const monthlyRequestCollectionRepository = {
         await prisma.expenseClaim.updateMany({
             where: { monthlyRequestCollectionId: mrcId, cancelledAt: null },
             data: { status },
+        });
+    },
+
+    /**
+     * Roll back all non-cancelled ECDs linked to this MRC to WAIT_FOR_COLLECTION
+     * and unlink them so that admin can collect them again in a future MRC.
+     */
+    async rollbackLinkedClaimsOnCancel(mrcId: string): Promise<void> {
+        await prisma.expenseClaim.updateMany({
+            where: { monthlyRequestCollectionId: mrcId, cancelledAt: null },
+            data: {
+                status: "WAIT_FOR_COLLECTION",
+                monthlyRequestCollectionId: null,
+                collectedAt: null,
+            },
         });
     },
 };

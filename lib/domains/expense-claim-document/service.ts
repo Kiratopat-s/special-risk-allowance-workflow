@@ -10,6 +10,7 @@ import { expenseClaimDocumentRepository } from "./repository";
 import { actionLogService } from "@/lib/domains/action-log/service";
 import { leaderVerificationService } from "@/lib/domains/leader-verification";
 import { leaderVerificationRepository } from "@/lib/domains/leader-verification/repository";
+import { prisma } from "@/lib/db";
 import { ActionType } from "@/lib/shared/types";
 import { success, error, type Result } from "@/lib/shared/types";
 import type { Prisma } from "@/lib/generated/prisma/client";
@@ -96,6 +97,30 @@ export const expenseClaimDocumentService = {
         }
 
         const normalizedMonth = normalizeMonth(data.expenseMonth);
+
+        // Guard: when submitting (not draft), every linked OSW must have a leader assigned.
+        if (
+            data.status !== "DRAFT" &&
+            data.offSiteWorkIds &&
+            data.offSiteWorkIds.length > 0
+        ) {
+            const linkedOsws = await prisma.offSiteWork.findMany({
+                where: { id: { in: data.offSiteWorkIds }, deletedAt: null },
+                select: { id: true, innerRefDocumentId: true, leaderUserId: true, leaderEmail: true },
+            });
+            const noLeader = linkedOsws.filter(
+                (o) => !o.leaderUserId && !o.leaderEmail
+            );
+            if (noLeader.length > 0) {
+                const refs = noLeader
+                    .map((o) => o.innerRefDocumentId ?? o.id)
+                    .join(", ");
+                return error(
+                    `ใบสั่งปฏิบัติงานต่อไปนี้ยังไม่มีการกำหนดหัวหน้า: ${refs} — กรุณากำหนดหัวหน้าก่อนส่งเอกสาร`,
+                    "OSW_MISSING_LEADER"
+                );
+            }
+        }
 
         const claim = await expenseClaimDocumentRepository.create(
             {
