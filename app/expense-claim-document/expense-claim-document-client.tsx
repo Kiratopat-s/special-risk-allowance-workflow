@@ -506,7 +506,6 @@ export function ExpenseClaimDocumentClient({
         (selected.remark || "") !== form.remark
           ? form.remark.trim() || null
           : undefined,
-      status: selected.status !== form.status ? form.status : undefined,
       countDates:
         decimalText(selected.countDates) !== form.countDates
           ? form.countDates.trim() || null
@@ -935,32 +934,12 @@ export function ExpenseClaimDocumentClient({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="status">สถานะ</Label>
-                  <select
-                    id="status"
-                    aria-label="สถานะเอกสาร"
-                    title="สถานะเอกสาร"
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
-                    value={form.status}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        status: e.target.value as ClaimDocumentStatus,
-                      }))
-                    }
-                  >
-                    <option value="DRAFT">DRAFT</option>
-                    <option value="PENDING">PENDING</option>
-                    <option value="PENDING_LEADER_VERIFY">
-                      PENDING_LEADER_VERIFY
-                    </option>
-                    <option value="WAIT_FOR_COLLECTION">
-                      WAIT_FOR_COLLECTION
-                    </option>
-                    <option value="APPROVED">APPROVED</option>
-                    <option value="REJECTED">REJECTED</option>
-                    <option value="CANCELLED">CANCELLED</option>
-                  </select>
+                  <Label>สถานะ</Label>
+                  <div className="flex h-9 items-center">
+                    <Badge variant={claimStatusVariant(form.status)}>
+                      {STATUS_LABEL[form.status] ?? form.status}
+                    </Badge>
+                  </div>
                 </div>
               </>
             )}
