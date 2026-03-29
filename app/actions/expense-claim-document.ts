@@ -62,7 +62,13 @@ export async function listEligibleOffSiteWorksForClaim(
 }
 
 /**
- * List expense claim documents with permission-aware visibility
+ * List expense claim documents with permission-aware visibility.
+ *
+ * Scope resolution:
+ *   LIST:ALL  → return all documents (collector, hpa, rk, drt)
+ *   LIST:OWN  → return only the caller’s own documents (employee)
+ *   READ:OWN  → fallback, same as LIST:OWN
+ *   else      → PERMISSION_DENIED
  */
 export async function listExpenseClaimDocuments(
     filters?: ExpenseClaimDocumentFilterCriteria
@@ -72,10 +78,18 @@ export async function listExpenseClaimDocuments(
         return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
     }
 
-    const canList = await can(session.user.dbUserId, "EXPENSE_CLAIM", "LIST");
-    if (!canList) {
-        const canReadOwn = await can(session.user.dbUserId, "EXPENSE_CLAIM", "READ", {
-            targetOwnerId: session.user.dbUserId,
+    const userId = session.user.dbUserId;
+
+    // Check whether the caller can list their own documents at minimum.
+    // Passing targetOwnerId = userId makes OWN scope resolve correctly.
+    const canListOwn = await can(userId, "EXPENSE_CLAIM", "LIST", {
+        targetOwnerId: userId,
+    });
+
+    if (!canListOwn) {
+        // Fallback: READ:OWN is sufficient to view own claims (no LIST permission assigned).
+        const canReadOwn = await can(userId, "EXPENSE_CLAIM", "READ", {
+            targetOwnerId: userId,
         });
         if (!canReadOwn) {
             return {
@@ -84,14 +98,22 @@ export async function listExpenseClaimDocuments(
                 code: "PERMISSION_DENIED",
             };
         }
-
-        return expenseClaimDocumentService.list({
-            ...(filters ?? {}),
-            userId: session.user.dbUserId,
-        });
+        return expenseClaimDocumentService.list({ ...(filters ?? {}), userId });
     }
 
-    return expenseClaimDocumentService.list(filters ?? {});
+    // Distinguish LIST:ALL from LIST:OWN by using a NIL-UUID sentinel.
+    // OWN scope will deny (sentinel ≠ userId); ALL scope will allow.
+    const canListAll = await can(userId, "EXPENSE_CLAIM", "LIST", {
+        targetOwnerId: "00000000-0000-0000-0000-000000000000",
+    });
+
+    if (canListAll) {
+        // ALL scope — collector / hpa / rk / drt see every document.
+        return expenseClaimDocumentService.list(filters ?? {});
+    }
+
+    // OWN scope — employee sees only their own documents.
+    return expenseClaimDocumentService.list({ ...(filters ?? {}), userId });
 }
 
 /**
