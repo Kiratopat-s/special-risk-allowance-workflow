@@ -225,9 +225,9 @@ export const monthlyRequestCollectionService = {
         await repo.reviewApprovalStep(id, input.stage, newStepStatus, actorId, input.remark);
 
         if (!input.approved) {
-            // Rejection → MRC REJECTED, revert claims to PENDING
+            // Rejection → MRC REJECTED, roll back ECDs to WAIT_FOR_COLLECTION + unlink
             await repo.updateStatus(id, "REJECTED");
-            await repo.bulkUpdateLinkedClaimsStatus(id, "PENDING");
+            await repo.rollbackLinkedClaims(id);
 
             await actionLogService.log({
                 userId: actorId,
@@ -332,7 +332,7 @@ export const monthlyRequestCollectionService = {
         }
 
         await repo.updateStatus(id, "CANCELLED", new Date());
-        await repo.rollbackLinkedClaimsOnCancel(id);
+        await repo.rollbackLinkedClaims(id);
 
         await actionLogService.log({
             userId: actorId,

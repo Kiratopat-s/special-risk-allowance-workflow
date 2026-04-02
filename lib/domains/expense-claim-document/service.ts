@@ -223,31 +223,38 @@ export const expenseClaimDocumentService = {
 
         // Recalculate leader verifications if offSiteWorkIds changed
         if (data.offSiteWorkIds !== undefined) {
+            // Always clear existing verifications first
             await leaderVerificationRepository.deleteAllByClaimId(id);
-            if (data.offSiteWorkIds.length > 0) {
-                const verifications = await leaderVerificationService.createForClaim(
-                    id,
-                    data.offSiteWorkIds
-                );
-                if (verifications.length > 0) {
-                    await expenseClaimDocumentRepository.updateStatus(
+
+            if (existing.status !== "DRAFT") {
+                // For non-DRAFT documents: re-create verifications and auto-transition status
+                if (data.offSiteWorkIds.length > 0) {
+                    const verifications = await leaderVerificationService.createForClaim(
                         id,
-                        "PENDING_LEADER_VERIFY"
+                        data.offSiteWorkIds
                     );
+                    if (verifications.length > 0) {
+                        await expenseClaimDocumentRepository.updateStatus(
+                            id,
+                            "PENDING_LEADER_VERIFY"
+                        );
+                    } else if (
+                        existing.status === "PENDING_LEADER_VERIFY" ||
+                        existing.status === "WAIT_FOR_COLLECTION"
+                    ) {
+                        // No leaders anymore — revert to PENDING
+                        await expenseClaimDocumentRepository.updateStatus(id, "PENDING");
+                    }
                 } else if (
                     existing.status === "PENDING_LEADER_VERIFY" ||
                     existing.status === "WAIT_FOR_COLLECTION"
                 ) {
-                    // No leaders anymore — revert to PENDING
+                    // OSWs cleared — revert to PENDING
                     await expenseClaimDocumentRepository.updateStatus(id, "PENDING");
                 }
-            } else if (
-                existing.status === "PENDING_LEADER_VERIFY" ||
-                existing.status === "WAIT_FOR_COLLECTION"
-            ) {
-                // OSWs cleared — revert to PENDING
-                await expenseClaimDocumentRepository.updateStatus(id, "PENDING");
             }
+            // For DRAFT: verifications cleared, OSW links updated by repository update above.
+            // Status stays DRAFT — verifications are created later when submitDraft is called.
         }
 
         await actionLogService.log({
@@ -266,6 +273,79 @@ export const expenseClaimDocumentService = {
         });
 
         return success(updated, "Expense claim document updated successfully");
+    },
+
+    /**
+     * Submit a DRAFT claim document.
+     * Checks that all linked OSWs have leaders, creates verification records,
+     * and transitions status to PENDING_LEADER_VERIFY (or PENDING if no OSWs).
+     */
+    async submitDraft(
+        id: string,
+        actorId: string,
+        context?: RequestContext
+    ): Promise<Result<ExpenseClaimDocumentEntity>> {
+        const claim = await expenseClaimDocumentRepository.findWithRelations(id);
+
+        if (!claim) {
+            return error("Expense claim document not found", "CLAIM_NOT_FOUND");
+        }
+
+        if (claim.status !== "DRAFT") {
+            return error(
+                `ไม่สามารถส่งเอกสารที่ไม่อยู่ในสถานะร่าง (สถานะปัจจุบัน: ${claim.status})`,
+                "INVALID_STATUS"
+            );
+        }
+
+        if (claim.userId !== actorId) {
+            return error("คุณไม่มีสิทธิ์ส่งเอกสารนี้", "FORBIDDEN");
+        }
+
+        // Guard: all linked OSWs must have a leader
+        const leaderlessLinks = claim.expenseClaimOffSiteWorks.filter(
+            (l) => !l.offSiteWork.leaderUserId && !l.offSiteWork.leaderEmail
+        );
+        if (leaderlessLinks.length > 0) {
+            const refs = leaderlessLinks
+                .map((l) => l.offSiteWork.innerRefDocumentId ?? l.offSiteWork.id)
+                .join(", ");
+            return error(
+                `ใบสั่งปฏิบัติงานต่อไปนี้ยังไม่มีการกำหนดหัวหน้า: ${refs} — กรุณากำหนดหัวหน้าก่อนส่งเอกสาร`,
+                "OSW_MISSING_LEADER"
+            );
+        }
+
+        const offSiteWorkIds = claim.expenseClaimOffSiteWorks.map(
+            (l) => l.offSiteWorkId
+        );
+
+        let newStatus: "PENDING_LEADER_VERIFY" | "PENDING" = "PENDING";
+        if (offSiteWorkIds.length > 0) {
+            const verifications = await leaderVerificationService.createForClaim(
+                id,
+                offSiteWorkIds
+            );
+            if (verifications.length > 0) {
+                newStatus = "PENDING_LEADER_VERIFY";
+            }
+        }
+
+        await expenseClaimDocumentRepository.updateStatus(id, newStatus);
+
+        await actionLogService.log({
+            userId: actorId,
+            actionType: ActionType.OTHER,
+            actionDescription: `Expense claim "${id}" submitted from DRAFT`,
+            targetEntityType: "ExpenseClaim",
+            targetEntityId: id,
+            previousData: { status: "DRAFT" } as unknown as JsonValue,
+            newData: { status: newStatus } as unknown as JsonValue,
+            ...context,
+        });
+
+        const updated = await expenseClaimDocumentRepository.findById(id);
+        return success(updated!, "Expense claim document submitted successfully");
     },
 
     /**

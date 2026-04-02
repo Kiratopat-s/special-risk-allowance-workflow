@@ -82,7 +82,7 @@ export const monthlyRequestCollectionRepository = {
         const count = await prisma.monthlyRequestCollection.count({
             where: {
                 collectForMonth: { gte: start, lte: end },
-                status: { not: "CANCELLED" },
+                status: { notIn: ["CANCELLED", "REJECTED"] },
             },
         });
         return count > 0;
@@ -375,9 +375,10 @@ export const monthlyRequestCollectionRepository = {
 
     /**
      * Roll back all non-cancelled ECDs linked to this MRC to WAIT_FOR_COLLECTION
-     * and unlink them so that admin can collect them again in a future MRC.
+     * and unlink them so that the collector can pick them up in a new MRC.
+     * Used on both rejection and cancellation.
      */
-    async rollbackLinkedClaimsOnCancel(mrcId: string): Promise<void> {
+    async rollbackLinkedClaims(mrcId: string): Promise<void> {
         await prisma.expenseClaim.updateMany({
             where: { monthlyRequestCollectionId: mrcId, cancelledAt: null },
             data: {

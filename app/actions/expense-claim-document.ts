@@ -210,6 +210,39 @@ export async function updateExpenseClaimDocument(
 }
 
 /**
+ * Submit a DRAFT expense claim document.
+ * Checks all linked OSWs have leaders, creates verifications, transitions to PENDING_LEADER_VERIFY.
+ */
+export async function submitDraftExpenseClaimDocument(
+    id: string
+): Promise<Result<ExpenseClaimDocumentEntity>> {
+    const session = await auth();
+    if (!session?.user?.dbUserId) {
+        return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
+    }
+
+    const existing = await expenseClaimDocumentRepository.findById(id);
+    if (!existing) {
+        return { success: false, error: "Expense claim document not found", code: "CLAIM_NOT_FOUND" };
+    }
+
+    const canUpdate = await can(session.user.dbUserId, "EXPENSE_CLAIM", "UPDATE", {
+        targetOwnerId: existing.userId,
+    });
+    if (!canUpdate) {
+        return {
+            success: false,
+            error: "Permission denied",
+            code: "PERMISSION_DENIED",
+        };
+    }
+
+    const result = await expenseClaimDocumentService.submitDraft(id, session.user.dbUserId);
+    if (result.success) revalidatePath("/expense-claim-document");
+    return result;
+}
+
+/**
  * Soft-delete expense claim document by cancellation
  */
 export async function deleteExpenseClaimDocument(id: string): Promise<Result<void>> {

@@ -20,6 +20,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Send,
   Trash2,
   User,
   Wallet,
@@ -44,6 +45,7 @@ import {
   getExpenseClaimDocument,
   listEligibleOffSiteWorksForClaim,
   listExpenseClaimDocuments,
+  submitDraftExpenseClaimDocument,
   updateExpenseClaimDocument,
 } from "@/app/actions/expense-claim-document";
 import type {
@@ -350,27 +352,47 @@ export function ExpenseClaimDocumentClient({
     [page, search],
   );
 
-  const loadEligibleOffSiteWorks = useCallback(async (monthValue: string) => {
-    setIsLoadingEligibleOffSites(true);
-    const result = await listEligibleOffSiteWorksForClaim(monthValue);
-    if (!result.success) {
-      toast.error("ไม่สามารถโหลด Off-site Work ได้", {
-        description: result.error,
-      });
-      setEligibleOffSiteWorks([]);
-      setSelectedOffSiteWorkIds([]);
-      setAvailableClaimDates([]);
-      setSelectedClaimDates([]);
-      setIsLoadingEligibleOffSites(false);
-      return;
-    }
+  const loadEligibleOffSiteWorks = useCallback(
+    async (monthValue: string, preSelectedIds?: string[]) => {
+      setIsLoadingEligibleOffSites(true);
+      const result = await listEligibleOffSiteWorksForClaim(monthValue);
+      if (!result.success) {
+        toast.error("ไม่สามารถโหลด Off-site Work ได้", {
+          description: result.error,
+        });
+        setEligibleOffSiteWorks([]);
+        setSelectedOffSiteWorkIds([]);
+        setAvailableClaimDates([]);
+        setSelectedClaimDates([]);
+        setIsLoadingEligibleOffSites(false);
+        return;
+      }
 
-    setEligibleOffSiteWorks(result.data);
-    setSelectedOffSiteWorkIds([]);
-    setAvailableClaimDates([]);
-    setSelectedClaimDates([]);
-    setIsLoadingEligibleOffSites(false);
-  }, []);
+      setEligibleOffSiteWorks(result.data);
+
+      if (preSelectedIds && preSelectedIds.length > 0) {
+        // Compute available + selected dates using the fetched options directly
+        // (state update is async so we can't rely on eligibleOffSiteWorks here)
+        const { allDates, weekdayDefaultDates } = getClaimDatePool(
+          preSelectedIds,
+          result.data,
+          monthValue,
+        );
+        setSelectedOffSiteWorkIds(preSelectedIds);
+        setAvailableClaimDates(allDates);
+        setSelectedClaimDates(
+          weekdayDefaultDates.length > 0 ? weekdayDefaultDates : allDates,
+        );
+      } else {
+        setSelectedOffSiteWorkIds([]);
+        setAvailableClaimDates([]);
+        setSelectedClaimDates([]);
+      }
+
+      setIsLoadingEligibleOffSites(false);
+    },
+    [],
+  );
 
   const openCreate = () => {
     const defaultMonth = toMonthInput(new Date());
@@ -402,6 +424,18 @@ export function ExpenseClaimDocumentClient({
       countDates: decimalText(item.countDates),
       amount: decimalText(item.amount),
     });
+    setOffSiteSearch("");
+    if (item.status === "DRAFT") {
+      const linkedIds = item.expenseClaimOffSiteWorks.map(
+        (l) => l.offSiteWorkId,
+      );
+      void loadEligibleOffSiteWorks(toMonthInput(item.expenseMonth), linkedIds);
+    } else {
+      setEligibleOffSiteWorks([]);
+      setSelectedOffSiteWorkIds([]);
+      setAvailableClaimDates([]);
+      setSelectedClaimDates([]);
+    }
     setMode("edit");
   };
 
@@ -492,7 +526,7 @@ export function ExpenseClaimDocumentClient({
   const toUpdatePayload = (): UpdateExpenseClaimDocumentInput => {
     if (!selected) return {};
 
-    return {
+    const base: UpdateExpenseClaimDocumentInput = {
       expenseMonth:
         toMonthInput(selected.expenseMonth) !== form.expenseMonth
           ? toMonthDate(form.expenseMonth)
@@ -506,6 +540,22 @@ export function ExpenseClaimDocumentClient({
         (selected.remark || "") !== form.remark
           ? form.remark.trim() || null
           : undefined,
+    };
+
+    if (selected.status === "DRAFT") {
+      // For DRAFT edits, always include OSW selection and derived dates/amounts
+      return {
+        ...base,
+        offSiteWorkIds: selectedOffSiteWorkIds,
+        selectedDates:
+          selectedClaimDates.length > 0 ? selectedClaimDates : undefined,
+        countDates: dateCount > 0 ? String(dateCount) : undefined,
+        amount: totalAmount > 0 ? String(totalAmount) : undefined,
+      };
+    }
+
+    return {
+      ...base,
       countDates:
         decimalText(selected.countDates) !== form.countDates
           ? form.countDates.trim() || null
@@ -549,6 +599,84 @@ export function ExpenseClaimDocumentClient({
       }
 
       toast.success("ยกเลิกเอกสารเรียบร้อย");
+      await refresh(page, search);
+      setMode(null);
+    });
+  };
+
+  // Retry-submit from card button (DRAFT items)
+  const submitRetry = (item: ExpenseClaimDocumentWithRelations) => {
+    // Client-side pre-check: show no-leader dialog if any linked OSW is leaderless
+    const noLeader = item.expenseClaimOffSiteWorks.filter(
+      (l) => !l.offSiteWork.leaderUserId && !l.offSiteWork.leaderEmail,
+    );
+    if (noLeader.length > 0) {
+      setNoLeaderOsws(
+        noLeader.map((l) => ({
+          id: l.offSiteWork.id,
+          innerRefDocumentId: l.offSiteWork.innerRefDocumentId,
+          startDate: l.offSiteWork.startDate,
+          endDate: l.offSiteWork.endDate,
+          location: l.offSiteWork.location,
+          objective: l.offSiteWork.objective,
+          hasLeader: false,
+          leaderFirstName: l.offSiteWork.leaderFirstName,
+          leaderLastName: l.offSiteWork.leaderLastName,
+          leaderEmail: l.offSiteWork.leaderEmail,
+        })),
+      );
+      setNoLeaderDialogOpen(true);
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await submitDraftExpenseClaimDocument(item.id);
+      if (!result.success) {
+        toast.error("ส่งเอกสารไม่สำเร็จ", { description: result.error });
+        return;
+      }
+      toast.success("ส่งเอกสารเรียบร้อย");
+      await refresh(page, search);
+    });
+  };
+
+  // Submit from edit dialog for DRAFT: update OSWs first then submit
+  const submitAndUpdate = () => {
+    if (!selected) return;
+
+    // Client-side leader check against current OSW picker selection
+    if (hasLeaderlessSelectedOsw) {
+      const noLeader = eligibleOffSiteWorks.filter(
+        (o) => selectedOffSiteWorkIds.includes(o.id) && !o.hasLeader,
+      );
+      setNoLeaderOsws(noLeader);
+      setNoLeaderDialogOpen(true);
+      return;
+    }
+
+    startTransition(async () => {
+      // Step 1: save updated OSW links
+      const updateResult = await updateExpenseClaimDocument(
+        selected.id,
+        toUpdatePayload(),
+      );
+      if (!updateResult.success) {
+        toast.error("อัปเดตเอกสารไม่สำเร็จ", {
+          description: updateResult.error,
+        });
+        return;
+      }
+
+      // Step 2: submit the draft
+      const submitResult = await submitDraftExpenseClaimDocument(selected.id);
+      if (!submitResult.success) {
+        toast.error("ส่งเอกสารไม่สำเร็จ", {
+          description: submitResult.error,
+        });
+        return;
+      }
+
+      toast.success("ส่งเอกสารเรียบร้อย");
       await refresh(page, search);
       setMode(null);
     });
@@ -650,6 +778,19 @@ export function ExpenseClaimDocumentClient({
                 ดู
               </Button>
               <div className="flex gap-1">
+                {item.status === "DRAFT" && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-emerald-600 hover:text-emerald-700"
+                    disabled={isPending}
+                    onClick={() => submitRetry(item)}
+                    title="ส่งเอกสาร"
+                  >
+                    <Send className="mr-1 h-4 w-4" />
+                    ส่ง
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -716,9 +857,14 @@ export function ExpenseClaimDocumentClient({
                   setForm((prev) => ({ ...prev, expenseMonth: nextMonth }));
                   if (mode === "create") {
                     void loadEligibleOffSiteWorks(nextMonth);
+                  } else if (mode === "edit" && selected?.status === "DRAFT") {
+                    void loadEligibleOffSiteWorks(nextMonth);
                   }
                 }}
-                disabled={mode !== "create"}
+                disabled={
+                  mode !== "create" &&
+                  !(mode === "edit" && selected?.status === "DRAFT")
+                }
               />
             </div>
 
@@ -738,7 +884,8 @@ export function ExpenseClaimDocumentClient({
               />
             </div>
 
-            {mode === "create" ? (
+            {mode === "create" ||
+            (mode === "edit" && selected?.status === "DRAFT") ? (
               <>
                 {hasLeaderlessSelectedOsw && (
                   <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
@@ -983,6 +1130,30 @@ export function ExpenseClaimDocumentClient({
               <Button
                 className="w-full sm:w-auto"
                 onClick={() => submitCreate("PENDING_LEADER_VERIFY")}
+                disabled={!formValid || isPending || hasLeaderlessSelectedOsw}
+              >
+                {isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Submit
+              </Button>
+            </>
+          ) : mode === "edit" && selected?.status === "DRAFT" ? (
+            <>
+              <Button
+                variant="secondary"
+                className="w-full sm:w-auto"
+                onClick={submitUpdate}
+                disabled={!formValid || isPending}
+              >
+                {isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Save Draft
+              </Button>
+              <Button
+                className="w-full sm:w-auto"
+                onClick={submitAndUpdate}
                 disabled={!formValid || isPending || hasLeaderlessSelectedOsw}
               >
                 {isPending ? (
