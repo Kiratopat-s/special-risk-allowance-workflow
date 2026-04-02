@@ -9,8 +9,25 @@
  * at the root scope ("/").
  */
 
+// Activate immediately — don't wait for old tabs to close.
+// Critical for dev and for ensuring push events are received.
+self.addEventListener("install", () => {
+  console.log("[SW] Installing…");
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  console.log("[SW] Activating…");
+  event.waitUntil(self.clients.claim());
+});
+
 self.addEventListener("push", (event) => {
-  if (!event.data) return;
+  console.log("[SW] Push event received");
+
+  if (!event.data) {
+    console.warn("[SW] Push event has no data");
+    return;
+  }
 
   let payload;
   try {
@@ -22,13 +39,14 @@ self.addEventListener("push", (event) => {
   const title = payload.title ?? "การแจ้งเตือนใหม่";
   const options = {
     body: payload.body ?? "",
-    icon: "/favicon.ico",
-    badge: "/favicon.ico",
+    icon: "/logo/pea_logo_big.png",
+    badge: "/logo/pea_logo_big.png",
     tag: payload.id ?? "notification",
     data: { link: payload.link ?? "/" },
     requireInteraction: false,
   };
 
+  console.log("[SW] Showing notification:", title);
   event.waitUntil(self.registration.showNotification(title, options));
 });
 

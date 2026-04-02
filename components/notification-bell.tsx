@@ -11,7 +11,8 @@
  * @module components/notification-bell
  */
 
-import { Bell, Check, CheckCheck } from "lucide-react";
+import { Bell, BellRing, Check, CheckCheck, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -23,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useNotifications } from "@/lib/hooks/use-notifications";
+import { usePushSubscription } from "@/lib/hooks/use-push-subscription";
 import { cn } from "@/lib/utils";
 
 function formatRelativeTime(date: Date): string {
@@ -40,6 +42,11 @@ function formatRelativeTime(date: Date): string {
 export function NotificationBell() {
   const { notifications, unreadCount, isLoading, markRead, markAllRead } =
     useNotifications();
+  const {
+    permission,
+    isLoading: isPushLoading,
+    subscribe,
+  } = usePushSubscription();
 
   const badgeCount = Math.min(unreadCount, 99);
 
@@ -69,6 +76,48 @@ export function NotificationBell() {
         sideOffset={8}
         forceMount
       >
+        {/* Push permission prompt — shown only when permission is "default" */}
+        {permission === "default" && (
+          <>
+            <div className="flex items-center gap-2.5 px-3 py-2.5">
+              <BellRing className="h-4 w-4 shrink-0 text-primary" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium">เปิดการแจ้งเตือน Push</p>
+                <p className="text-[11px] text-muted-foreground">
+                  รับการแจ้งเตือนแม้ไม่ได้เปิดเว็บ
+                </p>
+              </div>
+              <Button
+                size="sm"
+                className="h-7 px-2.5 text-xs shrink-0"
+                disabled={isPushLoading}
+                onClick={async () => {
+                  const result = await subscribe();
+                  if (result.ok) {
+                    toast.success("เปิดการแจ้งเตือน Push สำเร็จ");
+                  } else if (result.reason === "push_blocked") {
+                    toast.error("เบราว์เซอร์บล็อก Push Notification", {
+                      description:
+                        "ถ้าใช้ Brave ให้เปิด Settings → Privacy → Use Google services for push messaging",
+                    });
+                  } else if (result.reason === "denied") {
+                    toast.error("คุณปิดสิทธิ์การแจ้งเตือนแล้ว", {
+                      description:
+                        "เปลี่ยนได้ที่การตั้งค่าเบราว์เซอร์ → Site Settings → Notifications",
+                    });
+                  }
+                }}
+              >
+                {isPushLoading ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  "เปิด"
+                )}
+              </Button>
+            </div>
+            <DropdownMenuSeparator />
+          </>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between px-3 py-2">
           <DropdownMenuLabel className="p-0 text-sm font-semibold">

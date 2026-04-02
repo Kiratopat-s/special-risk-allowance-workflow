@@ -121,6 +121,10 @@ export const notificationRepository = {
         await prisma.pushSubscription.deleteMany({ where: { endpoint } });
     },
 
+    async deletePushSubscriptionByEndpoint(endpoint: string, userId: string): Promise<void> {
+        await prisma.pushSubscription.deleteMany({ where: { endpoint, userId } });
+    },
+
     async deletePushSubscriptionById(id: string, userId: string): Promise<void> {
         await prisma.pushSubscription.deleteMany({ where: { id, userId } });
     },

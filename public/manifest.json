@@ -1,0 +1,16 @@
+{
+  "name": "Special Risk Allowance Workflow",
+  "short_name": "SRAW",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/logo/pea_logo_big.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

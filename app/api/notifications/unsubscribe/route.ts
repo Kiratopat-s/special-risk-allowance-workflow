@@ -34,7 +34,7 @@ export async function DELETE(req: NextRequest) {
         );
     }
 
-    const result = await notificationService.removePushSubscription(endpoint);
+    const result = await notificationService.removePushSubscription(endpoint, session.user.dbUserId);
 
     if (!result.success) {
         return NextResponse.json({ error: result.error }, { status: 500 });

@@ -66,17 +66,19 @@ export const notificationService = {
             };
             const payload = toPayload(viewModel);
 
+            console.log(`[notification-service] Sending notification to user ${userId.slice(0, 8)}… (type: ${type})`);
+
             // SSE — fire and forget
             getBroker()
                 .then((broker) => broker.push(userId, payload))
-                .catch(() => undefined);
+                .catch((err) => console.error("[notification-service] SSE push failed:", err));
 
             // Web Push — fire and forget
             getWebPush()
                 .then((sendFn) => sendFn(userId, payload))
-                .catch(() => undefined);
-        } catch {
-            // Never let notification failures bubble up to the caller
+                .catch((err) => console.error("[notification-service] Web Push failed:", err));
+        } catch (err) {
+            console.error("[notification-service] send() failed:", err);
         }
     },
 
@@ -156,8 +158,8 @@ export const notificationService = {
         return success(undefined);
     },
 
-    async removePushSubscription(endpoint: string): Promise<Result<void>> {
-        await notificationRepository.deletePushSubscription(endpoint);
+    async removePushSubscription(endpoint: string, userId: string): Promise<Result<void>> {
+        await notificationRepository.deletePushSubscriptionByEndpoint(endpoint, userId);
         return success(undefined);
     },
 };

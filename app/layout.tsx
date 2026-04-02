@@ -18,7 +18,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Special Risk Allowance Workflow",
-  description: "Next.js 16 Enterprise Starter with Keycloak SSO",
+  description: "Special Risk Allowance Workflow for PEA employees",
+  manifest: "/manifest.json",
 };
 
 export default function RootLayout({

@@ -4,6 +4,9 @@
  * Works for a single-server deployment.
  * Keys are userId strings; values are sets of writer functions.
  *
+ * The subscribers Map is attached to globalThis so it survives
+ * Next.js dev-mode hot module reloads (HMR).
+ *
  * @module lib/notification-broker
  */
 
@@ -11,7 +14,13 @@ import type { NotificationPayload } from "@/lib/domains/notification/types";
 
 type SseWriter = (data: string) => void;
 
-const subscribers = new Map<string, Set<SseWriter>>();
+const globalForBroker = globalThis as unknown as {
+    __notificationSubscribers?: Map<string, Set<SseWriter>>;
+};
+
+const subscribers =
+    globalForBroker.__notificationSubscribers ??
+    (globalForBroker.__notificationSubscribers = new Map<string, Set<SseWriter>>());
 
 export const notificationBroker = {
     /**
@@ -39,7 +48,10 @@ export const notificationBroker = {
      */
     push(userId: string, payload: NotificationPayload): void {
         const set = subscribers.get(userId);
-        if (!set || set.size === 0) return;
+        if (!set || set.size === 0) {
+            console.log(`[SSE] No active connections for user ${userId.slice(0, 8)}… (${subscribers.size} total users subscribed)`);
+            return;
+        }
 
         const data = `data: ${JSON.stringify(payload)}\n\n`;
         for (const writer of set) {
@@ -49,6 +61,7 @@ export const notificationBroker = {
                 // writer may have closed between check and write — ignore
             }
         }
+        console.log(`[SSE] Pushed to ${set.size} connection(s) for user ${userId.slice(0, 8)}…`);
     },
 
     /** Current subscriber count for a user (useful for diagnostics). */

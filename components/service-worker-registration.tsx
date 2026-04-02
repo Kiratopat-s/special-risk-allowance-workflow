@@ -3,84 +3,74 @@
 /**
  * ServiceWorkerRegistration
  *
- * Mounts once (client only) and:
+ * Mounts once (client only, authenticated users only) and:
  * 1. Registers /sw.js as a service worker.
- * 2. Fetches the VAPID public key from the API.
- * 3. Creates (or retrieves) a PushSubscription and saves it to the backend.
+ * 2. If permission is already "granted", auto-subscribes to push.
+ *
+ * Push subscription for new users is triggered via the permission prompt
+ * in NotificationBell (user gesture required).
  *
  * This component renders nothing visible — it purely handles registration.
- * Place it inside a layout that's rendered when the user is authenticated.
  */
 
 import { useEffect } from "react";
-
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}
+import { useSession } from "next-auth/react";
+import { subscribeToPush } from "@/lib/hooks/use-push-subscription";
 
 export function ServiceWorkerRegistration() {
+  const { status } = useSession();
+
   useEffect(() => {
+    // Only run for authenticated users
+    if (status !== "authenticated") return;
+
     if (
       typeof window === "undefined" ||
       !("serviceWorker" in navigator) ||
       !("PushManager" in window)
     ) {
+      console.warn("[SW] Browser does not support service workers or Push API");
       return;
     }
 
-    async function registerPush() {
+    async function register() {
       try {
         // 1. Register the service worker
         const registration = await navigator.serviceWorker.register("/sw.js", {
           scope: "/",
         });
+        console.log("[SW] Service worker registered:", registration.scope);
 
-        // Wait for the SW to be ready before subscribing
+        // Wait for the SW to be active
         await navigator.serviceWorker.ready;
+        console.log("[SW] Service worker ready");
 
-        // 2. Check current notification permission — don't prompt, just skip if denied
-        if (Notification.permission === "denied") return;
-
-        // 3. Fetch the VAPID public key
-        const keyRes = await fetch("/api/notifications/vapid-public-key");
-        if (!keyRes.ok) return;
-        const { publicKey } = (await keyRes.json()) as { publicKey: string };
-
-        // 4. Subscribe (reuses existing subscription if one already exists)
-        const subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey)
-            .buffer as ArrayBuffer,
-        });
-
-        const json = subscription.toJSON();
-        if (!json.keys?.p256dh || !json.keys?.auth) return;
-
-        // 5. Save subscription to the backend (upsert — safe to call every page load)
-        await fetch("/api/notifications/subscribe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            endpoint: subscription.endpoint,
-            p256dh: json.keys.p256dh,
-            auth: json.keys.auth,
-            userAgent: navigator.userAgent,
-          }),
-        });
-      } catch {
-        // Silently ignore — push notifications are a progressive enhancement
+        // 2. If permission is already granted, auto-subscribe to push
+        //    (handles returning users / page reloads)
+        if (Notification.permission === "granted") {
+          console.log("[Push] Permission already granted — auto-subscribing");
+          try {
+            await subscribeToPush();
+          } catch {
+            // Push service may be blocked (e.g. Brave) — not critical
+            console.warn(
+              "[Push] Auto-subscribe failed (push service may be blocked)",
+            );
+          }
+        } else {
+          console.log(
+            "[Push] Permission is",
+            JSON.stringify(Notification.permission),
+            "— waiting for user to enable via bell prompt",
+          );
+        }
+      } catch (err) {
+        console.error("[SW] Registration failed:", err);
       }
     }
 
-    void registerPush();
-  }, []);
+    void register();
+  }, [status]);
 
   return null;
 }
