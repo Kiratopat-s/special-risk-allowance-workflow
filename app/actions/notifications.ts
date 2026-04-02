@@ -90,7 +90,7 @@ export async function sendSystemNotification(
     const userId = session?.user?.dbUserId;
     if (!userId) return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
 
-    const isAdmin = await hasRole(userId, "ADMIN");
+    const isAdmin = await hasRole(userId, "super-admin");
     if (!isAdmin) {
         return { success: false, error: "Permission denied", code: "PERMISSION_DENIED" };
     }
