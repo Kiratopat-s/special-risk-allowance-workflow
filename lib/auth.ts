@@ -174,7 +174,11 @@ const config: NextAuthConfig = {
                     }
                 } catch (error) {
                     console.error("Error refreshing access token", error);
+                    // Clear tokens so stale credentials are not reused
                     token.error = "RefreshAccessTokenError";
+                    token.accessToken = undefined;
+                    token.refreshToken = undefined;
+                    token.expiresAt = undefined;
                 }
             }
 
@@ -206,6 +210,15 @@ const config: NextAuthConfig = {
         },
         async authorized({ auth, request: { nextUrl } }) {
             const isLoggedIn = !!auth?.user;
+            const hasTokenError = (auth as { error?: string } | null)?.error === "RefreshAccessTokenError";
+
+            // Force re-authentication when the refresh token is invalid
+            if (hasTokenError) {
+                const signInUrl = new URL("/api/auth/signin", nextUrl.origin);
+                signInUrl.searchParams.set("callbackUrl", nextUrl.href);
+                return Response.redirect(signInUrl);
+            }
+
             const isOnProfile = nextUrl.pathname.startsWith("/profile");
 
             if (isOnProfile) {
