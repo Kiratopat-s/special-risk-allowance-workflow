@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 /**
  * GET /api/notifications/vapid-public-key
  *
- * Returns the VAPID public key needed by the browser to subscribe to push.
+ * Returns the VAPID (Voluntary Application Server Identification) public key needed by the browser to subscribe to push notifications.
  * Does not require authentication — the key is public by design.
  */
 export function GET() {

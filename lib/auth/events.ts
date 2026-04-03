@@ -120,7 +120,7 @@ export const authEvents = {
             if (!userProfile) {
                 console.error("Invalid Keycloak profile - missing required fields");
                 return null;
-            }
+            };
 
             // Sync user from Keycloak (creates or updates)
             const syncResult = await userService.syncFromKeycloak(userProfile, {

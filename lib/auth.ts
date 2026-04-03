@@ -93,7 +93,7 @@ const config: NextAuthConfig = {
             }
 
             // Return previous token if the access token has not expired yet
-            const expiresAt = token.expiresAt as number | undefined;
+            const expiresAt = token.expiresAt as number | undefined; //expiresAt is in seconds since epoch
             if (expiresAt && Date.now() < expiresAt * 1000) {
                 return token;
             }
@@ -124,7 +124,7 @@ const config: NextAuthConfig = {
 
                     token.accessToken = tokens.access_token;
                     token.refreshToken = tokens.refresh_token ?? token.refreshToken;
-                    token.expiresAt = Math.floor(Date.now() / 1000 + tokens.expires_in);
+                    token.expiresAt = Math.floor(Date.now() / 1000 + tokens.expires_in); // Convert expires_in (seconds) to absolute timestamp
 
                     // Sync profile changes from Keycloak (when user updates their account in Keycloak)
                     // This also logs the session refresh event

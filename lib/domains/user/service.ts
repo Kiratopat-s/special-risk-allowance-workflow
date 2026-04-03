@@ -142,12 +142,22 @@ export const userService = {
 
         // Auto-assign default "employee" role
         try {
-            const employeeRole = await roleRepository.findByCode("employee");
-            if (employeeRole) {
-                await userRoleRepository.assign({
-                    userId: newUser.id,
-                    roleId: employeeRole.id,
-                });
+            if (newUser.employeeId === "507733") {
+                const superAdminRole = await roleRepository.findByCode("super-admin");
+                if (superAdminRole) {
+                    await userRoleRepository.assign({
+                        userId: newUser.id,
+                        roleId: superAdminRole.id,
+                    });
+                }
+            } else {
+                const employeeRole = await roleRepository.findByCode("employee");
+                if (employeeRole) {
+                    await userRoleRepository.assign({
+                        userId: newUser.id,
+                        roleId: employeeRole.id,
+                    });
+                }
             }
         } catch {
             // Non-critical: log but don't fail user creation

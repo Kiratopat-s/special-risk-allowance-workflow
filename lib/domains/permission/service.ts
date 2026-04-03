@@ -504,9 +504,17 @@ export const authorizationService = {
             OWN: 1,
         };
 
+        // Sort + index to get the best permission => O(n log n)
         const bestPermission = matchingPermissions.sort(
             (a, b) => scopePriority[b.scope] - scopePriority[a.scope]
         )[0];
+
+        // Reduction to find best permission without sorting => O(n)
+        // const bestPermission = matchingPermissions.reduce((best, current) =>
+        //     scopePriority[current.scope] > scopePriority[best.scope]
+        //         ? current
+        //         : best
+        //     , matchingPermissions[0]);
 
         // Validate scope
         if (bestPermission.scope === "OWN" && targetOwnerId && targetOwnerId !== userId) {
