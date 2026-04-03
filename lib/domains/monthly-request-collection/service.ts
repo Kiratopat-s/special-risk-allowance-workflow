@@ -175,18 +175,20 @@ export const monthlyRequestCollectionService = {
 
         const updated = await repo.findById(id);
 
-        // Notify HPA reviewers that a new MRC needs their review
+        // Notify HPA reviewers + collector + claimants
+        const mrcWithRelations = await repo.findWithRelations(id);
+        const claimantIds = mrcWithRelations
+            ? [...new Set(mrcWithRelations.expenseClaims.map((c) => c.userId))]
+            : [];
         void permissionRepository.findUserIdsByPermissionCode("monthly-request:review:hpa").then(
             (hpaIds) => {
-                if (hpaIds.length > 0) {
-                    notificationService.sendToMany(
-                        hpaIds,
-                        "MRC_SUBMITTED",
-                        "มีรายการรวบรวมคำขอรายเดือนรอการตรวจสอบ",
-                        "มีรายการรวบรวมคำขอรายเดือนใหม่รอการตรวจสอบในขั้นตอน HPA",
-                        "/monthly-request-collection"
-                    );
-                }
+                notificationService.sendToMany(
+                    [...new Set([actorId, ...claimantIds, ...hpaIds])],
+                    "MRC_SUBMITTED",
+                    "มีรายการรวบรวมคำขอรายเดือนรอการตรวจสอบ",
+                    "มีรายการรวบรวมคำขอรายเดือนใหม่รอการตรวจสอบในขั้นตอน HPA",
+                    "/monthly-request-collection"
+                );
             }
         );
 
@@ -221,6 +223,18 @@ export const monthlyRequestCollectionService = {
             );
         }
 
+        // Explicit ordering guard — all prior stages must be APPROVED
+        const currentIndex = STAGE_ORDER.indexOf(input.stage as typeof STAGE_ORDER[number]);
+        for (let i = 0; i < currentIndex; i++) {
+            const priorStep = await repo.findApprovalStep(id, STAGE_ORDER[i]);
+            if (!priorStep || priorStep.status !== "APPROVED") {
+                return error(
+                    "ขั้นตอนก่อนหน้ายังไม่ได้รับการอนุมัติ",
+                    "STEP_SEQUENCE_VIOLATED"
+                );
+            }
+        }
+
         const newStepStatus = input.approved ? "APPROVED" : "REJECTED";
         await repo.reviewApprovalStep(id, input.stage, newStepStatus, actorId, input.remark);
 
@@ -238,10 +252,13 @@ export const monthlyRequestCollectionService = {
                 newData: { stage: input.stage, status: "REJECTED", remark: input.remark } as JsonValue,
             });
 
-            // Notify collector + all claimants of rejection
+            // Notify collector + all claimants + previous approvers of rejection
             const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
+            const priorApproverIds = mrc.approvalSteps
+                .filter((s) => s.status === "APPROVED" && s.reviewerId)
+                .map((s) => s.reviewerId!);
             void notificationService.sendToMany(
-                [...new Set([mrc.collectorId, ...claimantIds])],
+                [...new Set([mrc.collectorId, ...claimantIds, ...priorApproverIds])],
                 "MRC_REJECTED",
                 "คำขอรายเดือนถูกปฏิเสธ",
                 `รายการรวบรวมคำขอรายเดือนถูกปฏิเสธในขั้นตอน ${input.stage}`,
@@ -253,8 +270,8 @@ export const monthlyRequestCollectionService = {
         }
 
         // Approved — advance or finalise
-        const currentIndex = STAGE_ORDER.indexOf(input.stage as typeof STAGE_ORDER[number]);
-        const isLastStage = currentIndex === STAGE_ORDER.length - 1;
+        const advanceIndex = STAGE_ORDER.indexOf(input.stage as typeof STAGE_ORDER[number]);
+        const isLastStage = advanceIndex === STAGE_ORDER.length - 1;
 
         if (isLastStage) {
             // Final approval
@@ -270,10 +287,13 @@ export const monthlyRequestCollectionService = {
                 newData: { stage: input.stage, status: "APPROVED" } as JsonValue,
             });
 
-            // Notify collector + all claimants of final approval
+            // Notify collector + all claimants + previous approvers of final approval
             const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
+            const priorApproverIds = mrc.approvalSteps
+                .filter((s) => s.status === "APPROVED" && s.reviewerId)
+                .map((s) => s.reviewerId!);
             void notificationService.sendToMany(
-                [...new Set([mrc.collectorId, ...claimantIds])],
+                [...new Set([mrc.collectorId, ...claimantIds, ...priorApproverIds])],
                 "MRC_APPROVED",
                 "คำขอรายเดือนได้รับการอนุมัติแล้ว",
                 "รายการรวบรวมคำขอรายเดือนได้รับการอนุมัติครบทุกขั้นตอนแล้ว",
@@ -281,7 +301,7 @@ export const monthlyRequestCollectionService = {
             );
         } else {
             // Advance to next stage — notify the next-stage reviewers
-            const nextStage = STAGE_ORDER[currentIndex + 1];
+            const nextStage = STAGE_ORDER[advanceIndex + 1];
             await repo.createApprovalStep(id, nextStage);
 
             await actionLogService.log({
@@ -293,11 +313,12 @@ export const monthlyRequestCollectionService = {
                 newData: { stage: input.stage, nextStage } as JsonValue,
             });
 
+            const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
             const stagePermCode =
                 nextStage === "RK_CHECK" ? "monthly-request:review:rk" : "monthly-request:review:ok";
             void permissionRepository.findUserIdsByPermissionCode(stagePermCode).then(
                 (nextReviewerIds) => notificationService.sendToMany(
-                    [...new Set([mrc.collectorId, ...nextReviewerIds])],
+                    [...new Set([mrc.collectorId, ...claimantIds, ...nextReviewerIds])],
                     "MRC_STEP_APPROVED",
                     "ขั้นตอนการอนุมัติผ่านแล้ว — รอดำเนินการขั้นถัดไป",
                     `คำขอรายเดือนผ่านขั้น ${input.stage} แล้ว กรุณาดำเนินการในขั้นตอน ${nextStage}`,
@@ -344,10 +365,13 @@ export const monthlyRequestCollectionService = {
             newData: { status: "CANCELLED" } as JsonValue,
         });
 
-        // Notify collector + all claimants — their ECDs have been returned to WAIT_FOR_COLLECTION
+        // Notify collector + all claimants + any approvers
         const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
+        const approverIds = mrc.approvalSteps
+            .filter((s) => s.reviewerId)
+            .map((s) => s.reviewerId!);
         void notificationService.sendToMany(
-            [...new Set([mrc.collectorId, ...claimantIds])],
+            [...new Set([mrc.collectorId, ...claimantIds, ...approverIds])],
             "MRC_CANCELLED",
             "รายการรวบรวมคำขอรายเดือนถูกยกเลิก",
             "รายการรวบรวมคำขอรายเดือนถูกยกเลิกแล้ว เอกสารเบิกจ่ายที่เกี่ยวข้องกลับสู่สถานะรอรวบรวม",

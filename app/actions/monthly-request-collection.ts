@@ -15,7 +15,7 @@
 
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
-import { can } from "@/lib/auth/permissions";
+import { can, canExact, hasRole } from "@/lib/auth/permissions";
 import {
     monthlyRequestCollectionService,
     monthlyRequestCollectionRepository,
@@ -108,13 +108,60 @@ export async function listMonthlyRequestCollections(
         };
     }
 
+    // MANAGE holders see everything
+    const userId = session.user.dbUserId;
+    const canManageList = await can(userId, "MONTHLY_REQUEST", "MANAGE");
     const result = await monthlyRequestCollectionService.list(filters ?? {});
     if (!result.success) return result;
+
+    if (canManageList) {
+        return {
+            ...result,
+            data: {
+                ...result.data,
+                data: result.data.data.map(serializeMrc),
+            },
+        };
+    }
+
+    // Non-MANAGE: determine user's review capabilities for PENDING filtering
+    const [isSuperAdmin, exactHpa, exactRk, exactOk] = await Promise.all([
+        hasRole(userId, "super-admin"),
+        canExact(userId, "MONTHLY_REQUEST", "REVIEW_HPA"),
+        canExact(userId, "MONTHLY_REQUEST", "REVIEW_RK"),
+        canExact(userId, "MONTHLY_REQUEST", "REVIEW_OK"),
+    ]);
+
+    const isReviewer = exactHpa || exactRk || exactOk;
+
+    const visibleData = result.data.data.filter((mrc) => {
+        // DRAFT: own only
+        if (mrc.status === "DRAFT") {
+            return mrc.collectorId === userId;
+        }
+        // PENDING: stage-based visibility for reviewers
+        if (mrc.status === "PENDING") {
+            if (isSuperAdmin) return true;
+            if (mrc.collectorId === userId) return true;
+            // Non-reviewer LIST holders see all PENDING (read-only viewers)
+            if (!isReviewer) return true;
+            // Reviewer: only see MRCs that have reached their stage
+            const stepStatus = (stage: string) =>
+                mrc.approvalSteps.find((s) => s.stage === stage)?.status;
+            if (exactHpa) return true; // HPA is first step, always visible
+            if (exactRk && stepStatus("HPA_CHECK") === "APPROVED") return true;
+            if (exactOk && stepStatus("HPA_CHECK") === "APPROVED" && stepStatus("RK_CHECK") === "APPROVED") return true;
+            return false;
+        }
+        // APPROVED, REJECTED, CANCELLED: visible to all LIST holders
+        return true;
+    });
+
     return {
         ...result,
         data: {
             ...result.data,
-            data: result.data.data.map(serializeMrc),
+            data: visibleData.map(serializeMrc),
         },
     };
 }
@@ -140,6 +187,14 @@ export async function getMonthlyRequestCollection(
     if (!isOwn) {
         const canRead = await can(session.user.dbUserId, "MONTHLY_REQUEST", "READ");
         if (!canRead) {
+            return { success: false, error: "Permission denied", code: "PERMISSION_DENIED" };
+        }
+    }
+
+    // DRAFT MRCs are only visible to collector + MANAGE holders
+    if (mrc.status === "DRAFT" && !isOwn) {
+        const canManageDraft = await can(session.user.dbUserId, "MONTHLY_REQUEST", "MANAGE");
+        if (!canManageDraft) {
             return { success: false, error: "Permission denied", code: "PERMISSION_DENIED" };
         }
     }
@@ -277,17 +332,17 @@ export async function reviewMonthlyRequestCollectionStep(
 
     const userId = session.user.dbUserId;
 
-    // Super-admin / admin bypass via MANAGE
-    const isAdmin = await can(userId, "MONTHLY_REQUEST", "MANAGE");
+    // Only super-admin role can bypass per-stage permission checks
+    const isSuperAdmin = await hasRole(userId, "super-admin");
 
-    // Per-stage permission check
+    // Per-stage permission check (exact match — no MANAGE escalation)
     let hasStageAccess = false;
     if (input.stage === "HPA_CHECK") {
-        hasStageAccess = isAdmin || await can(userId, "MONTHLY_REQUEST", "REVIEW_HPA");
+        hasStageAccess = isSuperAdmin || await canExact(userId, "MONTHLY_REQUEST", "REVIEW_HPA");
     } else if (input.stage === "RK_CHECK") {
-        hasStageAccess = isAdmin || await can(userId, "MONTHLY_REQUEST", "REVIEW_RK");
+        hasStageAccess = isSuperAdmin || await canExact(userId, "MONTHLY_REQUEST", "REVIEW_RK");
     } else if (input.stage === "OK_APPROVE") {
-        hasStageAccess = isAdmin || await can(userId, "MONTHLY_REQUEST", "REVIEW_OK");
+        hasStageAccess = isSuperAdmin || await canExact(userId, "MONTHLY_REQUEST", "REVIEW_OK");
     }
 
     if (!hasStageAccess) {
@@ -302,6 +357,29 @@ export async function reviewMonthlyRequestCollectionStep(
             error: "กรุณาลงลายมือชื่อก่อนอนุมัติเอกสาร",
             code: "SIGNATURE_REQUIRED",
         };
+    }
+
+    // Pre-flight ordering check — all prior stages in HPA→RK→OK must be APPROVED
+    const STAGE_ORDER: readonly string[] = ["HPA_CHECK", "RK_CHECK", "OK_APPROVE"];
+    const stageIdx = STAGE_ORDER.indexOf(input.stage);
+    if (stageIdx > 0) {
+        const mrc = await monthlyRequestCollectionRepository.findById(id);
+        if (!mrc || mrc.status !== "PENDING") {
+            return { success: false, error: "ไม่พบรายการหรือสถานะไม่ถูกต้อง", code: "MRC_NOT_PENDING" };
+        }
+        for (let i = 0; i < stageIdx; i++) {
+            const priorStep = await monthlyRequestCollectionRepository.findApprovalStep(
+                id,
+                STAGE_ORDER[i] as "HPA_CHECK" | "RK_CHECK" | "OK_APPROVE"
+            );
+            if (!priorStep || priorStep.status !== "APPROVED") {
+                return {
+                    success: false,
+                    error: "ขั้นตอนก่อนหน้ายังไม่ได้รับการอนุมัติ",
+                    code: "STEP_SEQUENCE_VIOLATED",
+                };
+            }
+        }
     }
 
     const result = await monthlyRequestCollectionService.reviewStep(id, input, userId);

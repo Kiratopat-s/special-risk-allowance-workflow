@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { can } from "@/lib/auth/permissions";
+import { can, canExact, hasRole } from "@/lib/auth/permissions";
 import { redirect } from "next/navigation";
 import { listMonthlyRequestCollections } from "@/app/actions/monthly-request-collection";
 import { MrcClient } from "./monthly-request-collection-client";
@@ -27,12 +27,19 @@ export default async function MrcPage() {
   const session = await auth();
   const userId = session?.user?.dbUserId ?? "";
 
-  const [canManage, canHpa, canRk, canDrt] = await Promise.all([
-    can(userId, "MONTHLY_REQUEST", "MANAGE"),
-    can(userId, "MONTHLY_REQUEST", "REVIEW_HPA"),
-    can(userId, "MONTHLY_REQUEST", "REVIEW_RK"),
-    can(userId, "MONTHLY_REQUEST", "REVIEW_OK"),
-  ]);
+  const [canManage, isSuperAdmin, exactHpa, exactRk, exactDrt] =
+    await Promise.all([
+      can(userId, "MONTHLY_REQUEST", "MANAGE"),
+      hasRole(userId, "super-admin"),
+      canExact(userId, "MONTHLY_REQUEST", "REVIEW_HPA"),
+      canExact(userId, "MONTHLY_REQUEST", "REVIEW_RK"),
+      canExact(userId, "MONTHLY_REQUEST", "REVIEW_OK"),
+    ]);
+
+  // Super-admin can act on any stage; otherwise only exact permission holders
+  const canHpa = exactHpa || isSuperAdmin;
+  const canRk = exactRk || isSuperAdmin;
+  const canDrt = exactDrt || isSuperAdmin;
 
   if (!canManage && !canHpa && !canRk && !canDrt) {
     redirect("/");

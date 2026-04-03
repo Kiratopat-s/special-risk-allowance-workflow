@@ -6,7 +6,7 @@
  * @module lib/auth/permissions
  */
 
-import { authorizationService } from "@/lib/domains/permission";
+import { authorizationService, userRoleRepository } from "@/lib/domains/permission";
 import type { PermissionResource, PermissionAction } from "@/lib/shared/types";
 
 // =============================================================================
@@ -55,6 +55,21 @@ export async function can(
         targetOwnerId: options?.targetOwnerId,
     });
     return result.allowed;
+}
+
+/**
+ * Check if user has a specific permission (exact match, no MANAGE escalation).
+ * Unlike `can()`, this does NOT treat MANAGE as a wildcard for all actions.
+ */
+export async function canExact(
+    userId: string,
+    resource: PermissionResource,
+    action: PermissionAction,
+): Promise<boolean> {
+    const permissions = await userRoleRepository.getAllUserPermissions(userId);
+    return permissions.some(
+        (p) => p.resource === resource && p.action === action
+    );
 }
 
 /**
