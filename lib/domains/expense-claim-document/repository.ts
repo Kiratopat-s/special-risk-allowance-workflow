@@ -8,6 +8,7 @@
 
 import { prisma } from "@/lib/db";
 import { Prisma } from "@/lib/generated/prisma/client";
+import { sanitizeStrings } from "@/lib/shared/sanitize";
 import type {
     ExpenseClaimDocumentEntity,
     ExpenseClaimDocumentWithRelations,
@@ -192,6 +193,9 @@ export const expenseClaimDocumentRepository = {
         userId: string,
         createdById: string
     ): Promise<ExpenseClaimDocumentEntity> {
+        // Strip null bytes (0x00) from all string fields — PostgreSQL rejects them
+        data = sanitizeStrings(data);
+
         const createData = {
             expenseMonth: new Date(data.expenseMonth),
             userId,
@@ -227,6 +231,9 @@ export const expenseClaimDocumentRepository = {
         id: string,
         data: UpdateExpenseClaimDocumentInput
     ): Promise<ExpenseClaimDocumentEntity> {
+        // Strip null bytes (0x00) from all string fields — PostgreSQL rejects them
+        data = sanitizeStrings(data);
+
         const updateData: Record<string, unknown> = {};
 
         if (data.expenseMonth !== undefined) {

@@ -15,6 +15,7 @@ import type {
   OffSiteWorkFilterCriteria,
 } from "./types";
 import type { PaginatedResult } from "@/lib/shared/types";
+import { sanitizeStrings } from "@/lib/shared/sanitize";
 
 const userSelect = {
   id: true,
@@ -75,6 +76,9 @@ export const offSiteWorkRepository = {
     data: CreateOffSiteWorkInput,
     postedByUserId: string
   ): Promise<OffSiteWorkEntity> {
+    // Strip null bytes (0x00) from all string fields — PostgreSQL rejects them
+    data = sanitizeStrings(data);
+
     // Prisma's JSON field type is strict; we cast through Object to satisfy type requirements
     const createData = {
       id: data.id,
@@ -107,6 +111,9 @@ export const offSiteWorkRepository = {
     id: string,
     data: UpdateOffSiteWorkInput
   ): Promise<OffSiteWorkEntity> {
+    // Strip null bytes (0x00) from all string fields — PostgreSQL rejects them
+    data = sanitizeStrings(data);
+
     // Build update data object with proper typing
     const updateData: Record<string, unknown> = {};
 

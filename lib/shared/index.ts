@@ -7,3 +7,4 @@
 export * from "./types";
 export * from "./format";
 export * from "./claim-status";
+export * from "./sanitize";
