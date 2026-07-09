@@ -31,6 +31,7 @@
   "29": "Next.js README",
   "30": "Providers Session",
   "31": "PWA Manifest",
+  "32": "Avatar Components",
   "33": "File Icon Asset",
   "34": "Prisma Repository Client",
   "35": "Package Metadata",
@@ -51,5 +52,6 @@
   "50": "Editor Settings",
   "51": "Route Exports",
   "52": "Prisma Config",
-  "53": "Service Worker"
+  "53": "Service Worker",
+  "54": "Community 54"
 }
