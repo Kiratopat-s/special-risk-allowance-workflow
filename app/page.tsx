@@ -8,9 +8,9 @@ import {
   Building2,
   CheckCircle2,
   ClipboardList,
+  Code2,
   ExternalLink,
   FileText,
-  Github,
   MapPin,
   PenLine,
   ShieldCheck,
@@ -157,7 +157,7 @@ export default async function Home() {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <Github className="mr-2 h-4 w-4" />
+                    <Code2 className="mr-2 h-4 w-4" />
                     View Source
                   </Link>
                 </Button>
@@ -303,7 +303,7 @@ export default async function Home() {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      <Github className="mr-1.5 h-3.5 w-3.5" />
+                      <Code2 className="mr-1.5 h-3.5 w-3.5" />
                       GitHub
                       <ExternalLink className="ml-1.5 h-3 w-3 opacity-40" />
                     </Link>
