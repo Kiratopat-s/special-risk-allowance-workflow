@@ -7,7 +7,6 @@ import {
   CalendarDays,
   ClipboardList,
   Eye,
-  Loader2,
   Plus,
   Printer,
   Send,
@@ -17,6 +16,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import {
   Dialog,
   DialogBody,
@@ -46,6 +46,7 @@ import type { Pagination } from "@/lib/shared/types";
 import { monthDisplay, decimalText, toMonthInput } from "@/lib/shared/format";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import {
   ApprovalTimeline,
   MrcStatusBadge,
@@ -369,15 +370,14 @@ export function MrcClient({
   // ---------------------------------------------------------------------------
 
   const renderClaimTable = () => (
-    <div className="space-y-3">
+    <div className="space-y-3" aria-busy={isLoadingClaims || undefined}>
       <div className="flex items-center justify-between">
         <Label className="text-sm font-medium">
           รายการเบิกค่าใช้จ่าย (เดือน {monthDisplay(`${collectMonth}-01`)})
         </Label>
-        {isLoadingClaims && (
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        )}
       </div>
+
+      {isLoadingClaims && <TableSkeleton columns={7} rows={4} />}
 
       {!isLoadingClaims && eligibleClaims.length === 0 && (
         <p className="text-sm text-muted-foreground py-4 text-center border rounded-lg">
@@ -385,7 +385,7 @@ export function MrcClient({
         </p>
       )}
 
-      {eligibleClaims.length > 0 && (
+      {!isLoadingClaims && eligibleClaims.length > 0 && (
         <>
           <div className="rounded-lg border overflow-hidden">
             <table className="w-full text-sm">
@@ -553,7 +553,10 @@ export function MrcClient({
           <p>ยังไม่มีรายการรวบรวม</p>
         </div>
       ) : (
-        <div className="rounded-xl border overflow-hidden">
+        <div
+          aria-busy={isPending || undefined}
+          className="rounded-xl border overflow-hidden"
+        >
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/50">
@@ -573,7 +576,17 @@ export function MrcClient({
                 return (
                   <tr
                     key={item.id}
-                    className="border-b last:border-0 hover:bg-muted/30 transition-colors"
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`ดูรายละเอียดรายการรวบรวม ${item.id}`}
+                    onClick={() => openView(item)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openView(item);
+                      }
+                    }}
+                    className="cursor-pointer border-b transition-colors last:border-0 hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none"
                   >
                     <td className="py-3 px-4 font-medium">
                       {monthDisplay(item.collectForMonth)}
@@ -596,8 +609,12 @@ export function MrcClient({
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
-                          onClick={() => openView(item)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openView(item);
+                          }}
                           title="ดูรายละเอียด"
+                          aria-label={`ดูรายละเอียด ${item.id}`}
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
@@ -609,11 +626,13 @@ export function MrcClient({
                             className="h-8 w-8"
                             asChild
                             title="พิมพ์"
+                            aria-label={`พิมพ์ ${item.id}`}
                           >
                             <a
                               href={`/monthly-request-collection/${item.id}/print`}
                               target="_blank"
                               rel="noreferrer"
+                              onClick={(event) => event.stopPropagation()}
                             >
                               <Printer className="h-4 w-4" />
                             </a>
@@ -626,8 +645,12 @@ export function MrcClient({
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => openEdit(item)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openEdit(item);
+                              }}
                               title="แก้ไข"
+                              aria-label={`แก้ไข ${item.id}`}
                             >
                               <CalendarDays className="h-4 w-4" />
                             </Button>
@@ -635,9 +658,13 @@ export function MrcClient({
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-primary hover:text-primary"
-                              onClick={() => submitForReview(item.id)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                submitForReview(item.id);
+                              }}
                               title="ส่งตรวจ"
                               disabled={isPending}
+                              aria-label={`ส่งตรวจ ${item.id}`}
                             >
                               <Send className="h-4 w-4" />
                             </Button>
@@ -649,8 +676,14 @@ export function MrcClient({
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 text-primary hover:text-primary"
-                            onClick={() => openReview(item, actionableStage)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openReview(item, actionableStage);
+                            }}
                             title={`ดำเนินการ: ${stageLabel(actionableStage)}`}
+                            aria-label={`ดำเนินการ ${stageLabel(
+                              actionableStage,
+                            )} สำหรับ ${item.id}`}
                           >
                             <ThumbsUp className="h-4 w-4" />
                           </Button>
@@ -661,8 +694,12 @@ export function MrcClient({
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 text-destructive hover:text-destructive"
-                            onClick={() => openCancel(item)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openCancel(item);
+                            }}
                             title="ยกเลิก"
+                            aria-label={`ยกเลิก ${item.id}`}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -724,13 +761,14 @@ export function MrcClient({
           >
             ยกเลิก
           </Button>
-          <Button
+          <LoadingButton
             onClick={submitCreate}
             disabled={isPending || selectedClaimIds.length === 0}
+            isLoading={isPending}
+            loadingText="กำลังบันทึก"
           >
-            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             บันทึก
-          </Button>
+          </LoadingButton>
         </DialogFooter>
       </Dialog>
 
@@ -752,13 +790,14 @@ export function MrcClient({
           >
             ยกเลิก
           </Button>
-          <Button
+          <LoadingButton
             onClick={submitEdit}
             disabled={isPending || selectedClaimIds.length === 0}
+            isLoading={isPending}
+            loadingText="กำลังบันทึก"
           >
-            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             บันทึก
-          </Button>
+          </LoadingButton>
         </DialogFooter>
       </Dialog>
 
@@ -940,14 +979,15 @@ export function MrcClient({
           >
             ยกเลิก
           </Button>
-          <Button
+          <LoadingButton
             onClick={doReview}
             disabled={isPending || (!reviewApproved && !reviewRemark.trim())}
             variant={reviewApproved ? "default" : "destructive"}
+            isLoading={isPending}
+            loadingText={reviewApproved ? "กำลังอนุมัติ" : "กำลังปฏิเสธ"}
           >
-            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {reviewApproved ? "ยืนยันการอนุมัติ" : "ยืนยันการปฏิเสธ"}
-          </Button>
+          </LoadingButton>
         </DialogFooter>
       </Dialog>
 

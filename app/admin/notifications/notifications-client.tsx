@@ -10,8 +10,9 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Bell, Loader2, Send, Users, X } from "lucide-react";
+import { Bell, Send, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -164,23 +165,24 @@ export function NotificationsAdminClient({ users }: Props) {
             />
           </div>
 
-          <Button
+          <LoadingButton
             className="w-full gap-2"
             onClick={handleSend}
+            isLoading={isPending}
+            loadingText={
+              selectedIds.size > 0
+                ? `กำลังส่ง (${selectedIds.size} คน)`
+                : "กำลังส่ง"
+            }
             disabled={
-              isPending ||
               !title.trim() ||
               !body.trim() ||
               selectedIds.size === 0
             }
           >
-            {isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
+            <Send className="h-4 w-4" />
             ส่งการแจ้งเตือน {selectedIds.size > 0 && `(${selectedIds.size} คน)`}
-          </Button>
+          </LoadingButton>
         </div>
 
         {/* Right: User picker */}

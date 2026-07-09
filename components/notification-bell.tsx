@@ -11,9 +11,10 @@
  * @module components/notification-bell
  */
 
-import { Bell, BellRing, Check, CheckCheck, Loader2 } from "lucide-react";
+import { Bell, BellRing, Check, CheckCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { NotificationListSkeleton } from "@/components/ui/skeleton";
 import { useNotifications } from "@/lib/hooks/use-notifications";
 import { usePushSubscription } from "@/lib/hooks/use-push-subscription";
 import { cn } from "@/lib/utils";
@@ -87,10 +89,11 @@ export function NotificationBell() {
                   รับการแจ้งเตือนแม้ไม่ได้เปิดเว็บ
                 </p>
               </div>
-              <Button
+              <LoadingButton
                 size="sm"
                 className="h-7 px-2.5 text-xs shrink-0"
-                disabled={isPushLoading}
+                isLoading={isPushLoading}
+                loadingText="เปิด"
                 onClick={async () => {
                   const result = await subscribe();
                   if (result.ok) {
@@ -108,12 +111,8 @@ export function NotificationBell() {
                   }
                 }}
               >
-                {isPushLoading ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  "เปิด"
-                )}
-              </Button>
+                เปิด
+              </LoadingButton>
             </div>
             <DropdownMenuSeparator />
           </>
@@ -146,9 +145,7 @@ export function NotificationBell() {
         {/* Notification list */}
         <ScrollArea className="max-h-80">
           {isLoading ? (
-            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-              กำลังโหลด...
-            </div>
+            <NotificationListSkeleton />
           ) : notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
               <Bell className="h-8 w-8 opacity-30" />

@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import {
   Dialog,
   DialogBody,
@@ -63,6 +64,7 @@ import {
 import { claimStatusVariant } from "@/lib/shared/claim-status";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LeaderVerificationSection } from "./leader-verification-section";
 
@@ -735,11 +737,28 @@ export function ExpenseClaimDocumentClient({
         </div>
       </section>
 
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <section
+        aria-busy={isPending || undefined}
+        className="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+      >
         {items.map((item) => (
           <article
             key={item.id}
-            className="rounded-2xl border bg-card p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+            role="button"
+            tabIndex={0}
+            aria-label={`ดูรายละเอียดเอกสาร ${item.id}`}
+            onClick={() => {
+              setSelected(item);
+              setMode("view");
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setSelected(item);
+                setMode("view");
+              }
+            }}
+            className="cursor-pointer rounded-2xl border border-border/60 bg-card p-4 shadow-sm outline-none transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/30 hover:shadow-md focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
           >
             <div className="mb-3 flex items-start justify-between gap-2">
               <div>
@@ -769,7 +788,8 @@ export function ExpenseClaimDocumentClient({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
+                onClick={(event) => {
+                  event.stopPropagation();
                   setSelected(item);
                   setMode("view");
                 }}
@@ -784,7 +804,10 @@ export function ExpenseClaimDocumentClient({
                     size="sm"
                     className="text-emerald-600 hover:text-emerald-700"
                     disabled={isPending}
-                    onClick={() => submitRetry(item)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      submitRetry(item);
+                    }}
                     title="ส่งเอกสาร"
                   >
                     <Send className="mr-1 h-4 w-4" />
@@ -794,7 +817,11 @@ export function ExpenseClaimDocumentClient({
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => openEdit(item)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openEdit(item);
+                  }}
+                  aria-label={`แก้ไขเอกสาร ${item.id}`}
                 >
                   <Pencil className="h-4 w-4" />
                 </Button>
@@ -802,10 +829,12 @@ export function ExpenseClaimDocumentClient({
                   variant="ghost"
                   size="icon"
                   className="text-destructive hover:text-destructive"
-                  onClick={() => {
+                  onClick={(event) => {
+                    event.stopPropagation();
                     setSelected(item);
                     setMode("delete");
                   }}
+                  aria-label={`ยกเลิกเอกสาร ${item.id}`}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -905,11 +934,25 @@ export function ExpenseClaimDocumentClient({
                     value={offSiteSearch}
                     onChange={(e) => setOffSiteSearch(e.target.value)}
                   />
-                  <div className="max-h-52 overflow-y-auto rounded-md border p-2">
+                  <div
+                    aria-busy={isLoadingEligibleOffSites || undefined}
+                    className="max-h-52 overflow-y-auto rounded-md border p-2"
+                  >
                     {isLoadingEligibleOffSites ? (
-                      <div className="py-6 text-center text-sm text-muted-foreground">
-                        <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin" />
-                        กำลังโหลด Off-site Work
+                      <div className="space-y-2 p-1">
+                        {Array.from({ length: 3 }).map((_, index) => (
+                          <div
+                            key={index}
+                            className="flex items-start gap-2 rounded-md border px-2 py-2"
+                          >
+                            <Skeleton className="mt-0.5 h-4 w-4 rounded" />
+                            <div className="min-w-0 flex-1 space-y-2">
+                              <Skeleton className="h-4 w-36" />
+                              <Skeleton className="h-3 w-full" />
+                              <Skeleton className="h-3 w-28" />
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     ) : filteredEligibleOptions.length === 0 ? (
                       <p className="py-6 text-center text-sm text-muted-foreground">
@@ -1116,59 +1159,57 @@ export function ExpenseClaimDocumentClient({
 
           {mode === "create" ? (
             <>
-              <Button
+              <LoadingButton
                 variant="secondary"
                 className="w-full sm:w-auto"
                 onClick={() => submitCreate("DRAFT")}
                 disabled={!formValid || isPending}
+                isLoading={isPending}
+                loadingText="Saving Draft"
               >
-                {isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
                 Save Draft
-              </Button>
-              <Button
+              </LoadingButton>
+              <LoadingButton
                 className="w-full sm:w-auto"
                 onClick={() => submitCreate("PENDING_LEADER_VERIFY")}
                 disabled={!formValid || isPending || hasLeaderlessSelectedOsw}
+                isLoading={isPending}
+                loadingText="Submitting"
               >
-                {isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
                 Submit
-              </Button>
+              </LoadingButton>
             </>
           ) : mode === "edit" && selected?.status === "DRAFT" ? (
             <>
-              <Button
+              <LoadingButton
                 variant="secondary"
                 className="w-full sm:w-auto"
                 onClick={submitUpdate}
                 disabled={!formValid || isPending}
+                isLoading={isPending}
+                loadingText="Saving Draft"
               >
-                {isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
                 Save Draft
-              </Button>
-              <Button
+              </LoadingButton>
+              <LoadingButton
                 className="w-full sm:w-auto"
                 onClick={submitAndUpdate}
                 disabled={!formValid || isPending || hasLeaderlessSelectedOsw}
+                isLoading={isPending}
+                loadingText="Submitting"
               >
-                {isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
                 Submit
-              </Button>
+              </LoadingButton>
             </>
           ) : (
-            <Button onClick={submitUpdate} disabled={!formValid || isPending}>
-              {isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
+            <LoadingButton
+              onClick={submitUpdate}
+              disabled={!formValid || isPending}
+              isLoading={isPending}
+              loadingText="Updating"
+            >
               Update
-            </Button>
+            </LoadingButton>
           )}
         </DialogFooter>
       </Dialog>

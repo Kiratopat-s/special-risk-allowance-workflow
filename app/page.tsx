@@ -181,12 +181,12 @@ export default async function Home() {
               {MODULES.map(({ icon: Icon, label, title, desc }) => (
                 <div
                   key={label}
-                  className="group relative overflow-hidden rounded-2xl border border-border/60 bg-card p-6 transition-all duration-300 hover:-translate-y-0.5 hover:border-border hover:shadow-[0_8px_40px_-8px_oklch(0_0_0/0.12)] dark:hover:shadow-[0_8px_40px_-8px_oklch(1_0_0/0.08)]"
+                  className="group relative overflow-hidden rounded-2xl border border-border/60 bg-card p-6 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/30 hover:shadow-[0_8px_40px_-8px_oklch(0_0_0/0.12)] dark:hover:shadow-[0_8px_40px_-8px_oklch(1_0_0/0.08)]"
                 >
                   {/* top-edge glow on hover */}
                   <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-foreground/20 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
 
-                  <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 bg-background text-foreground transition-colors group-hover:border-border group-hover:bg-muted">
+                  <div className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 bg-background text-foreground transition-colors group-hover:border-primary/30 group-hover:bg-background">
                     <Icon className="h-5 w-5" />
                   </div>
                   <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -270,7 +270,7 @@ export default async function Home() {
               <h2 className="text-2xl font-bold tracking-tight">Built by</h2>
             </div>
 
-            <div className="group rounded-2xl border border-border/60 bg-card p-8 transition-all duration-300 hover:border-border hover:shadow-[0_8px_40px_-8px_oklch(0_0_0/0.12)] dark:hover:shadow-[0_8px_40px_-8px_oklch(1_0_0/0.08)]">
+            <div className="group rounded-2xl border border-border/60 bg-card p-8 transition-all duration-300 hover:border-primary/30 hover:bg-accent/30 hover:shadow-[0_8px_40px_-8px_oklch(0_0_0/0.12)] dark:hover:shadow-[0_8px_40px_-8px_oklch(1_0_0/0.08)]">
               <div className="flex flex-col items-center gap-5">
                 <div className="h-20 w-20 overflow-hidden rounded-full border-2 border-border">
                   {/* eslint-disable-next-line @next/next/no-img-element */}

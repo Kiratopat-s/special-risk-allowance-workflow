@@ -11,7 +11,6 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
   CheckCircle2,
   ClipboardList,
-  Loader2,
   MapPin,
   PenLine,
   RotateCcw,
@@ -20,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Badge } from "@/components/ui/badge";
 import { verifyAsLeader } from "@/app/actions/leader-verify";
 import type { LeaderVerificationWithRelations } from "@/lib/domains/leader-verification";
@@ -295,7 +295,7 @@ function VerificationCard({
 
   return (
     <div
-      className={`rounded-xl border bg-card p-5 shadow-sm space-y-4 transition-opacity ${
+      className={`rounded-xl border border-border/60 bg-card p-5 shadow-sm space-y-4 transition-all hover:border-primary/30 hover:bg-accent/30 ${
         done ? "opacity-60" : ""
       }`}
     >
@@ -363,22 +363,20 @@ function VerificationCard({
 
       {/* Action */}
       {!done && (
-        <Button
+        <LoadingButton
           className="w-full"
           disabled={isPending || isExpired || submitSig === null}
+          isLoading={isPending}
+          loadingText="กำลังยืนยัน"
           onClick={() => submitSig && handleVerify(submitSig)}
         >
-          {isPending ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <ShieldCheck className="mr-2 h-4 w-4" />
-          )}
+          <ShieldCheck className="mr-2 h-4 w-4" />
           {isExpired
             ? "ลิงก์หมดอายุ — ติดต่อผู้ยื่น"
             : submitSig
             ? "ยืนยันการออกปฏิบัติงาน"
             : "กรุณาลงลายเซ็นก่อน"}
-        </Button>
+        </LoadingButton>
       )}
     </div>
   );

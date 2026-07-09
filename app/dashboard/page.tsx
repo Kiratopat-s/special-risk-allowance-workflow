@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import type { Session } from "next-auth";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { authorizationService } from "@/lib/domains/permission";
-import { cn } from "@/lib/utils";
 import { listOffSiteWorks } from "@/app/actions/off-site-work";
 import { OffSiteWorkClient } from "@/app/off-site-work/off-site-work-client";
 import { listExpenseClaimDocuments } from "@/app/actions/expense-claim-document";
@@ -27,6 +26,13 @@ import { PendingVerificationsClient } from "@/app/leader-verify/pending/pending-
 import { getMySignatureState } from "@/app/actions/user-signature";
 import { SignatureClient } from "@/app/signature/signature-client";
 import type { PermissionAction, PermissionResource } from "@/lib/shared/types";
+import {
+  CardGridSkeleton,
+  DetailPanelSkeleton,
+  TableSkeleton,
+  ToolbarSkeleton,
+} from "@/components/ui/skeleton";
+import { DashboardTabNav } from "./dashboard-tab-nav";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 type AuthSession = Session | null;
@@ -257,6 +263,45 @@ async function renderSignatureTab(session: AuthSession) {
   );
 }
 
+async function DashboardTabContent({
+  activeTab,
+  session,
+  claimId,
+  monthlyAccess,
+}: {
+  activeTab: DashboardTabId;
+  session: AuthSession;
+  claimId: string | null;
+  monthlyAccess: MonthlyAccess;
+}) {
+  if (activeTab === "off-site-work") return renderOffSiteWorkTab();
+  if (activeTab === "expense-claims") {
+    return renderExpenseClaimsTab(session, claimId);
+  }
+  if (activeTab === "monthly-requests") {
+    return renderMonthlyRequestsTab(monthlyAccess);
+  }
+  if (activeTab === "leader-queue") return renderLeaderQueueTab();
+  return renderSignatureTab(session);
+}
+
+function DashboardTabSkeleton({ tab }: { tab: DashboardTabId }) {
+  if (tab === "monthly-requests") {
+    return <TableSkeleton columns={6} rows={6} />;
+  }
+
+  if (tab === "signature") {
+    return <DetailPanelSkeleton />;
+  }
+
+  return (
+    <div className="space-y-6">
+      <ToolbarSkeleton />
+      <CardGridSkeleton />
+    </div>
+  );
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -365,17 +410,6 @@ export default async function DashboardPage({
   }
 
   const activeTab = requestedTab;
-  const content =
-    activeTab === "off-site-work"
-      ? await renderOffSiteWorkTab()
-      : activeTab === "expense-claims"
-        ? await renderExpenseClaimsTab(session, claimId)
-        : activeTab === "monthly-requests"
-          ? await renderMonthlyRequestsTab(monthlyAccess)
-          : activeTab === "leader-queue"
-            ? await renderLeaderQueueTab()
-            : await renderSignatureTab(session);
-
   return (
     <div className="container mx-auto max-w-7xl px-4 py-8">
       <div className="space-y-6">
@@ -386,37 +420,31 @@ export default async function DashboardPage({
           </p>
         </div>
 
-        <nav
-          aria-label="Dashboard tabs"
-          className="overflow-x-auto border-b border-border"
-        >
-          <div className="flex min-w-max gap-1">
-            {visibleTabs.map((tab) => {
-              const isActive = tab.id === activeTab;
-              const Icon = tab.icon;
-              return (
-                <Link
-                  key={tab.id}
-                  href={dashboardHref(tab.id, {
-                    claimId: tab.id === "expense-claims" ? claimId : null,
-                  })}
-                  className={cn(
-                    "-mb-px inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                    isActive
-                      ? "border-primary text-foreground"
-                      : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span>{tab.label}</span>
-                  <span className="sr-only">{tab.description}</span>
-                </Link>
-              );
-            })}
-          </div>
-        </nav>
+        <DashboardTabNav
+          activeTab={activeTab}
+          tabs={visibleTabs.map((tab) => ({
+            id: tab.id,
+            label: tab.label,
+            description: tab.description,
+            href: dashboardHref(tab.id, {
+              claimId: tab.id === "expense-claims" ? claimId : null,
+            }),
+          }))}
+        />
 
-        <section>{content}</section>
+        <section aria-live="polite">
+          <Suspense
+            key={`${activeTab}:${claimId ?? ""}`}
+            fallback={<DashboardTabSkeleton tab={activeTab} />}
+          >
+            <DashboardTabContent
+              activeTab={activeTab}
+              session={session}
+              claimId={claimId}
+              monthlyAccess={monthlyAccess}
+            />
+          </Suspense>
+        </section>
       </div>
     </div>
   );

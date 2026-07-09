@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import {
   Card,
   CardContent,
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { DetailPanelSkeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogHeader,
@@ -26,7 +28,6 @@ import {
   Search,
   Shield,
   ChevronRight,
-  Loader2,
   Lock,
 } from "lucide-react";
 import {
@@ -81,7 +82,10 @@ export function RolesClient({
   const [rolePermissions, setRolePermissions] = useState<string[]>([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showDetailPanel, setShowDetailPanel] = useState(false);
-  const [isPending, startTransition] = useTransition();
+  const [pendingAction, setPendingAction] = useState<
+    "load-role" | "save-permissions" | "create-role" | null
+  >(null);
+  const [, startTransition] = useTransition();
 
   const filteredRoles = roles.filter(
     (r) =>
@@ -93,14 +97,19 @@ export function RolesClient({
   const handleSelectRole = (role: RoleEntity) => {
     setSelectedRole(role);
     setShowDetailPanel(true);
+    setPendingAction("load-role");
     startTransition(async () => {
-      const result = await getRole(role.id);
-      if (result.success) {
-        setRolePermissions(result.data.permissions.map((p) => p.id));
-      } else {
-        toast.error("Failed to load role", {
-          description: result.error,
-        });
+      try {
+        const result = await getRole(role.id);
+        if (result.success) {
+          setRolePermissions(result.data.permissions.map((p) => p.id));
+        } else {
+          toast.error("Failed to load role", {
+            description: result.error,
+          });
+        }
+      } finally {
+        setPendingAction(null);
       }
     });
   };
@@ -115,24 +124,28 @@ export function RolesClient({
 
   const handleSavePermissions = () => {
     if (!selectedRole) return;
+    setPendingAction("save-permissions");
     startTransition(async () => {
-      const result = await setRolePermissionsAction(
-        selectedRole.id,
-        rolePermissions,
-      );
-      if (result.success) {
-        toast.success("Permissions updated", {
-          description: `Updated permissions for ${selectedRole.name}`,
-        });
-        // Refresh the role to get the updated data
-        const updated = await getRole(selectedRole.id);
-        if (updated.success) {
-          setRolePermissions(updated.data.permissions.map((p) => p.id));
+      try {
+        const result = await setRolePermissionsAction(
+          selectedRole.id,
+          rolePermissions,
+        );
+        if (result.success) {
+          toast.success("Permissions updated", {
+            description: `Updated permissions for ${selectedRole.name}`,
+          });
+          const updated = await getRole(selectedRole.id);
+          if (updated.success) {
+            setRolePermissions(updated.data.permissions.map((p) => p.id));
+          }
+        } else {
+          toast.error("Failed to update permissions", {
+            description: result.error,
+          });
         }
-      } else {
-        toast.error("Failed to update permissions", {
-          description: result.error,
-        });
+      } finally {
+        setPendingAction(null);
       }
     });
   };
@@ -143,18 +156,23 @@ export function RolesClient({
     const description = formData.get("description") as string;
     const level = parseInt(formData.get("level") as string) || 0;
 
+    setPendingAction("create-role");
     startTransition(async () => {
-      const result = await createRole({ code, name, description, level });
-      if (result.success) {
-        setRoles((prev) => [...prev, result.data]);
-        setShowCreateDialog(false);
-        toast.success("Role created", {
-          description: `Created role: ${name}`,
-        });
-      } else {
-        toast.error("Failed to create role", {
-          description: result.error,
-        });
+      try {
+        const result = await createRole({ code, name, description, level });
+        if (result.success) {
+          setRoles((prev) => [...prev, result.data]);
+          setShowCreateDialog(false);
+          toast.success("Role created", {
+            description: `Created role: ${name}`,
+          });
+        } else {
+          toast.error("Failed to create role", {
+            description: result.error,
+          });
+        }
+      } finally {
+        setPendingAction(null);
       }
     });
   };
@@ -188,10 +206,10 @@ export function RolesClient({
             <button
               key={role.id}
               onClick={() => handleSelectRole(role)}
-              className={`w-full text-left rounded-lg border p-4 transition-colors hover:bg-muted/50 ${
+              className={`w-full text-left rounded-lg border p-4 transition-colors ${
                 selectedRole?.id === role.id
                   ? "border-primary bg-primary/5"
-                  : "border-border"
+                  : "border-border/60 hover:border-primary/30 hover:bg-accent/30"
               }`}
             >
               <div className="flex items-center justify-between">
@@ -252,10 +270,8 @@ export function RolesClient({
               </div>
             </CardHeader>
             <CardContent>
-              {isPending ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                </div>
+              {pendingAction === "load-role" ? (
+                <DetailPanelSkeleton className="border-0 p-0 shadow-none" />
               ) : (
                 <div className="space-y-6">
                   {/* Permission groups */}
@@ -275,6 +291,7 @@ export function RolesClient({
                                 type="checkbox"
                                 checked={rolePermissions.includes(perm.id)}
                                 onChange={() => handleTogglePermission(perm.id)}
+                                disabled={pendingAction === "save-permissions"}
                                 className="h-3.5 w-3.5 rounded border-input accent-primary"
                               />
                               <span className="truncate">{perm.name}</span>
@@ -293,16 +310,14 @@ export function RolesClient({
 
                   {/* Save */}
                   <div className="flex justify-end border-t pt-4">
-                    <Button
+                    <LoadingButton
                       size="sm"
                       onClick={handleSavePermissions}
-                      disabled={isPending}
+                      isLoading={pendingAction === "save-permissions"}
+                      loadingText="Saving"
                     >
-                      {isPending && (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      )}
                       Save Permissions
-                    </Button>
+                    </LoadingButton>
                   </div>
                 </div>
               )}
@@ -375,13 +390,18 @@ export function RolesClient({
               variant="outline"
               size="sm"
               onClick={() => setShowCreateDialog(false)}
+              disabled={pendingAction === "create-role"}
             >
               Cancel
             </Button>
-            <Button type="submit" size="sm" disabled={isPending}>
-              {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            <LoadingButton
+              type="submit"
+              size="sm"
+              isLoading={pendingAction === "create-role"}
+              loadingText="Creating"
+            >
               Create
-            </Button>
+            </LoadingButton>
           </DialogFooter>
         </form>
       </Dialog>

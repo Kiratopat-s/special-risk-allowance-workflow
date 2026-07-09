@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -47,6 +48,7 @@ import { shortDateDisplay, toDateInputValue } from "@/lib/shared/format";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface OffSiteWorkClientProps {
   initialItems: OffSiteWorkWithRelations[];
@@ -492,11 +494,28 @@ export function OffSiteWorkClient({
         </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <section
+        aria-busy={isPending || undefined}
+        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+      >
         {items.map((item) => (
           <article
             key={item.id}
-            className="group rounded-2xl border bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+            role="button"
+            tabIndex={0}
+            aria-label={`ดูรายละเอียดคำสั่ง ${item.id}`}
+            onClick={() => {
+              setSelected(item);
+              setMode("view");
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setSelected(item);
+                setMode("view");
+              }
+            }}
+            className="group cursor-pointer rounded-2xl border border-border/60 bg-card p-4 shadow-sm outline-none transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/30 hover:shadow-md focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
           >
             <div className="mb-3 flex items-start justify-between gap-2">
               <div>
@@ -547,7 +566,8 @@ export function OffSiteWorkClient({
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => {
+                onClick={(event) => {
+                  event.stopPropagation();
                   setSelected(item);
                   setMode("view");
                 }}
@@ -559,7 +579,11 @@ export function OffSiteWorkClient({
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => openEdit(item)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openEdit(item);
+                  }}
+                  aria-label={`แก้ไขคำสั่ง ${item.id}`}
                 >
                   <Pencil className="h-4 w-4" />
                 </Button>
@@ -567,10 +591,12 @@ export function OffSiteWorkClient({
                   variant="ghost"
                   size="icon"
                   className="text-destructive hover:text-destructive"
-                  onClick={() => {
+                  onClick={(event) => {
+                    event.stopPropagation();
                     setSelected(item);
                     setMode("delete");
                   }}
+                  aria-label={`ลบคำสั่ง ${item.id}`}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -719,7 +745,19 @@ export function OffSiteWorkClient({
               </div>
 
               {/* Search results */}
-              {empResults.length > 0 ? (
+              {empSearchPending ? (
+                <ul
+                  aria-busy="true"
+                  className="max-h-40 overflow-y-auto rounded-lg border divide-y text-sm"
+                >
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <li key={index} className="px-3 py-2">
+                      <Skeleton className="mb-2 h-4 w-40" />
+                      <Skeleton className="h-3 w-28" />
+                    </li>
+                  ))}
+                </ul>
+              ) : empResults.length > 0 ? (
                 <ul className="max-h-40 overflow-y-auto rounded-lg border divide-y text-sm">
                   {empResults.map((u) => {
                     const already = form.employeeList.some(
@@ -787,6 +825,7 @@ export function OffSiteWorkClient({
                         size="icon"
                         className="h-6 w-6 text-destructive hover:text-destructive"
                         onClick={() => removeEmployee(emp.userId)}
+                        aria-label={`ลบ ${emp.firstName} ${emp.lastName} ออกจากรายการ`}
                       >
                         <X className="h-3.5 w-3.5" />
                       </Button>
@@ -885,7 +924,19 @@ export function OffSiteWorkClient({
                           )}
                         </Button>
                       </div>
-                      {leaderResults.length > 0 ? (
+                      {leaderSearchPending ? (
+                        <ul
+                          aria-busy="true"
+                          className="max-h-40 overflow-y-auto rounded-lg border divide-y text-sm"
+                        >
+                          {Array.from({ length: 3 }).map((_, index) => (
+                            <li key={index} className="px-3 py-2">
+                              <Skeleton className="mb-2 h-4 w-40" />
+                              <Skeleton className="h-3 w-28" />
+                            </li>
+                          ))}
+                        </ul>
+                      ) : leaderResults.length > 0 ? (
                         <ul className="max-h-40 overflow-y-auto rounded-lg border divide-y text-sm">
                           {leaderResults.map((u) => (
                             <li key={u.id}>
@@ -1000,15 +1051,14 @@ export function OffSiteWorkClient({
           >
             ยกเลิก
           </Button>
-          <Button
+          <LoadingButton
             disabled={!validForm || isPending}
+            isLoading={isPending}
+            loadingText={mode === "create" ? "กำลังบันทึก" : "กำลังอัปเดต"}
             onClick={mode === "create" ? submitCreate : submitEdit}
           >
-            {isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : null}
             {mode === "create" ? "บันทึก" : "อัปเดต"}
-          </Button>
+          </LoadingButton>
         </DialogFooter>
       </Dialog>
 

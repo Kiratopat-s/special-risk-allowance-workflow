@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/form";
 import { Separator } from "@/components/ui/separator";
 import { UserAvatar } from "@/components/user-avatar";
+import { FormSkeleton, PageHeaderSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { Loader2, ArrowLeft, Save } from "lucide-react";
 import {
   updateKeycloakProfile,
@@ -187,10 +188,21 @@ export default function EditProfilePage() {
   if (status === "loading") {
     return (
       <div className="container max-w-7xl mx-auto px-4 py-12">
-        <div className="max-w-2xl mx-auto">
-          <Card>
-            <CardContent className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <div className="max-w-2xl mx-auto space-y-8">
+          <Skeleton className="h-9 w-36" />
+          <PageHeaderSkeleton actions={false} />
+          <Card aria-busy="true">
+            <CardHeader>
+              <div className="flex items-center gap-4">
+                <Skeleton className="h-14 w-14 rounded-full" />
+                <div className="space-y-2">
+                  <Skeleton className="h-5 w-40" />
+                  <Skeleton className="h-4 w-56" />
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <FormSkeleton fields={10} />
             </CardContent>
           </Card>
         </div>

@@ -22,11 +22,12 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
 import { usePermissions } from "@/lib/hooks/use-permissions";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function Navbar() {
   const { data: session, status } = useSession();
   const isLoading = status === "loading";
-  const { canAny, hasRole } = usePermissions();
+  const { canAny, hasRole, isLoading: permissionsLoading } = usePermissions();
 
   const getInitials = (name?: string | null) => {
     if (!name) return "U";
@@ -69,13 +70,14 @@ export function Navbar() {
           <ThemeToggle />
           {session?.user && <NotificationBell />}
           {isLoading ? (
-            <div className="h-8 w-8 animate-pulse rounded-full bg-muted" />
+            <Skeleton className="h-8 w-8 rounded-full" />
           ) : session?.user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   className="relative h-9 w-9 rounded-full"
+                  aria-label="Open user menu"
                 >
                   <Avatar className="h-9 w-9">
                     <AvatarImage
@@ -118,14 +120,18 @@ export function Navbar() {
                     <span>Settings</span>
                   </Link>
                 </DropdownMenuItem>
-                {hasAdminAccess && (
+                {permissionsLoading ? (
+                  <DropdownMenuItem disabled>
+                    <Skeleton className="h-4 w-24" />
+                  </DropdownMenuItem>
+                ) : hasAdminAccess ? (
                   <DropdownMenuItem asChild>
                     <Link href="/admin" className="flex items-center">
                       <ShieldCheck className="mr-2 h-4 w-4" />
                       <span>Admin</span>
                     </Link>
                   </DropdownMenuItem>
-                )}
+                ) : null}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"

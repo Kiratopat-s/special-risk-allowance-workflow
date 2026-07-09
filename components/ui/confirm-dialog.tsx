@@ -10,7 +10,7 @@
  */
 
 import type { ReactNode } from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import {
   Dialog,
   DialogBody,
@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "./dialog";
 import { Button } from "./button";
+import { LoadingButton } from "./loading-button";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -75,15 +76,15 @@ export function ConfirmDialog({
         >
           {cancelLabel}
         </Button>
-        <Button
+        <LoadingButton
           variant={variant}
           className="w-full sm:w-auto"
           onClick={onConfirm}
-          disabled={isPending}
+          isLoading={isPending}
+          loadingText={confirmLabel}
         >
-          {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {confirmLabel}
-        </Button>
+        </LoadingButton>
       </DialogFooter>
     </Dialog>
   );

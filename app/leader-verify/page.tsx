@@ -13,6 +13,7 @@ import type { Metadata } from "next";
 import { auth } from "@/lib/auth";
 import { getMyActiveSignatureDataUrl } from "@/app/actions/leader-verify";
 import { LeaderVerifyClient } from "./leader-verify-client";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export const metadata: Metadata = {
   title: "ยืนยันการออกปฏิบัติงานนอกสถานที่",
@@ -52,7 +53,19 @@ export default async function LeaderVerifyPage({
             </Link>
           </div>
         )}
-        <Suspense>
+        <Suspense
+          fallback={
+            <div
+              aria-busy="true"
+              className="space-y-4 rounded-xl border bg-card p-6 shadow-sm"
+            >
+              <Skeleton className="h-6 w-64" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-9 w-full" />
+            </div>
+          }
+        >
           <LeaderVerifyClient
             token={token}
             existingSignatureDataUrl={existingSignatureDataUrl}

@@ -11,7 +11,6 @@
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
   CheckCircle2,
-  Loader2,
   PenLine,
   RotateCcw,
   ShieldAlert,
@@ -19,6 +18,8 @@ import {
   Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   getVerificationByToken,
   verifyByToken,
@@ -279,9 +280,17 @@ export function LeaderVerifyClient({
 
   if (loadState === "loading") {
     return (
-      <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
-        <Loader2 className="h-8 w-8 animate-spin" />
-        <p>กำลังโหลดข้อมูล...</p>
+      <div
+        aria-busy="true"
+        className="space-y-4 rounded-2xl border bg-card p-8 shadow-md"
+      >
+        <div className="space-y-2">
+          <Skeleton className="h-6 w-64" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-4/5" />
+        </div>
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-10 w-full" />
       </div>
     );
   }
@@ -521,18 +530,16 @@ export function LeaderVerifyClient({
       ) : null}
 
       {/* Action */}
-      <Button
+      <LoadingButton
         className="w-full"
         onClick={() => handleVerify(submitSig)}
         disabled={submitState === "submitting" || !readyToSubmit}
+        isLoading={submitState === "submitting"}
+        loadingText="กำลังยืนยัน"
       >
-        {submitState === "submitting" ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        ) : (
-          <ShieldCheck className="mr-2 h-4 w-4" />
-        )}
+        <ShieldCheck className="mr-2 h-4 w-4" />
         {readyToSubmit ? "ยืนยันการออกปฏิบัติงาน" : "กรุณาลงลายเซ็นก่อน"}
-      </Button>
+      </LoadingButton>
 
       <p className="text-center text-xs text-muted-foreground">
         ลิงก์หมดอายุ: {dateDisplay(info.expiresAt)}

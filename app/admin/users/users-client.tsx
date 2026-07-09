@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
@@ -21,7 +22,6 @@ import {
   Search,
   UserPlus,
   X,
-  Loader2,
   User,
   AlertTriangle,
   Globe,
@@ -278,7 +278,10 @@ export function UsersClient({
       </div>
 
       {/* User Table */}
-      <div className="rounded-lg border border-border overflow-hidden">
+      <div
+        aria-busy={isPending || undefined}
+        className="rounded-lg border border-border overflow-hidden"
+      >
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
@@ -450,14 +453,15 @@ export function UsersClient({
           >
             Cancel
           </Button>
-          <Button
+          <LoadingButton
             size="sm"
             onClick={handleAssignRole}
             disabled={isPending || !selectedRoleId}
+            isLoading={isPending}
+            loadingText="Assigning"
           >
-            {isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
             Assign Role
-          </Button>
+          </LoadingButton>
         </DialogFooter>
       </Dialog>
 
@@ -528,15 +532,15 @@ export function UsersClient({
           >
             Cancel
           </Button>
-          <Button
+          <LoadingButton
             variant="destructive"
             size="sm"
             onClick={handleConfirmRevocation}
-            disabled={isPending}
+            isLoading={isPending}
+            loadingText="Removing"
           >
-            {isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
             Yes, Remove Role
-          </Button>
+          </LoadingButton>
         </DialogFooter>
       </Dialog>
     </div>

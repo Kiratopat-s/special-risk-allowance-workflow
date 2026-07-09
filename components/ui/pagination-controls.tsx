@@ -45,6 +45,7 @@ export function PaginationControls({
           variant="outline"
           disabled={!pagination.hasPrevious || isPending}
           onClick={onPrevious}
+          aria-label="Previous page"
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
@@ -53,6 +54,7 @@ export function PaginationControls({
           variant="outline"
           disabled={!pagination.hasNext || isPending}
           onClick={onNext}
+          aria-label="Next page"
         >
           <ChevronRight className="h-4 w-4" />
         </Button>

@@ -7,7 +7,6 @@ import {
   Clock,
   Download,
   Edit3,
-  Loader2,
   PenLine,
   RotateCcw,
   Star,
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import {
   Card,
   CardContent,
@@ -427,7 +427,7 @@ export function SignatureClient({
               {inactive.map((sig) => (
                 <div
                   key={sig.id}
-                  className="rounded-xl border bg-card p-3 space-y-3 shadow-sm"
+                  className="rounded-xl border border-border/60 bg-card p-3 space-y-3 shadow-sm transition-all hover:border-primary/30 hover:bg-accent/30 hover:shadow-md"
                 >
                   <div className="rounded-md border bg-white flex items-center justify-center h-16">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -526,14 +526,15 @@ export function SignatureClient({
           >
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={isPending}>
-            {isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <PenLine className="mr-2 h-4 w-4" />
-            )}
+          <LoadingButton
+            onClick={handleSave}
+            disabled={isPending}
+            isLoading={isPending}
+            loadingText="Saving"
+          >
+            <PenLine className="mr-2 h-4 w-4" />
             Save Signature
-          </Button>
+          </LoadingButton>
         </DialogFooter>
       </Dialog>
 
@@ -555,14 +556,14 @@ export function SignatureClient({
           >
             Cancel
           </Button>
-          <Button
+          <LoadingButton
             variant="destructive"
             onClick={handleDelete}
-            disabled={isPending}
+            isLoading={isPending}
+            loadingText="Deleting"
           >
-            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Delete
-          </Button>
+          </LoadingButton>
         </DialogFooter>
       </Dialog>
     </div>

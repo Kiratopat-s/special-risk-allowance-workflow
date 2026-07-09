@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
@@ -23,7 +24,6 @@ import {
   Plus,
   Pencil,
   Trash2,
-  Loader2,
   Building2,
   Users,
   ToggleLeft,
@@ -288,7 +288,10 @@ export function DepartmentsClient({
       </div>
 
       {/* Departments Table */}
-      <div className="rounded-lg border border-border overflow-hidden">
+      <div
+        aria-busy={isPending || undefined}
+        className="rounded-lg border border-border overflow-hidden"
+      >
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
@@ -394,6 +397,7 @@ export function DepartmentsClient({
                       size="sm"
                       onClick={() => openEditDialog(dept)}
                       title="Edit department"
+                      aria-label={`Edit ${dept.name}`}
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -403,6 +407,7 @@ export function DepartmentsClient({
                       onClick={() => openDeleteDialog(dept)}
                       title="Delete department"
                       className="text-destructive hover:text-destructive"
+                      aria-label={`Delete ${dept.name}`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -517,14 +522,15 @@ export function DepartmentsClient({
           >
             Cancel
           </Button>
-          <Button
+          <LoadingButton
             size="sm"
             onClick={dialogMode === "create" ? handleCreate : handleUpdate}
             disabled={isPending || !isFormValid}
+            isLoading={isPending}
+            loadingText={dialogMode === "create" ? "Creating" : "Updating"}
           >
-            {isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
             {dialogMode === "create" ? "Create" : "Update"}
-          </Button>
+          </LoadingButton>
         </DialogFooter>
       </Dialog>
 
@@ -590,15 +596,15 @@ export function DepartmentsClient({
           >
             Cancel
           </Button>
-          <Button
+          <LoadingButton
             variant="destructive"
             size="sm"
             onClick={handleDelete}
-            disabled={isPending}
+            isLoading={isPending}
+            loadingText="Deleting"
           >
-            {isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
             Yes, Delete Department
-          </Button>
+          </LoadingButton>
         </DialogFooter>
       </Dialog>
     </div>
