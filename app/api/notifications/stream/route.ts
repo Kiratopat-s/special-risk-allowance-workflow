@@ -15,7 +15,7 @@ const HEARTBEAT_MS = 25_000;
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
     const session = await auth();
     const userId = session?.user?.dbUserId;
 
@@ -23,38 +23,66 @@ export async function GET() {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    let cleanup: (() => void) | undefined;
-    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let cleanupStream: (() => void) | undefined;
 
     const stream = new ReadableStream({
         start(controller) {
+            let isClosed = false;
             const encoder = new TextEncoder();
+            const heartbeatRef: { current?: ReturnType<typeof setInterval> } = {};
+            const abortHandler = () => cleanupStream?.();
 
-            // Send an initial "connected" comment so the client knows the stream is live
-            controller.enqueue(encoder.encode(": connected\n\n"));
+            cleanupStream = () => {
+                if (isClosed) return;
+                isClosed = true;
+                clearInterval(heartbeatRef.current);
+                cleanup?.();
+                request.signal.removeEventListener("abort", abortHandler);
 
-            // Register SSE writer with the broker
-            cleanup = notificationBroker.subscribe(userId, (data: string) => {
+                try {
+                    controller.close();
+                } catch {
+                    // The stream may already be closed by the runtime.
+                }
+            };
+
+            const enqueue = (data: string): boolean => {
+                if (isClosed) return false;
+
                 try {
                     controller.enqueue(encoder.encode(data));
+                    return true;
                 } catch {
-                    // Controller may have been closed — broker will clean up on the next push
+                    cleanupStream?.();
+                    return false;
                 }
-            });
+            };
+
+            // Register SSE writer with the broker
+            const writer = (data: string) => enqueue(data);
+            const cleanup = notificationBroker.subscribe(userId, writer);
+
+            request.signal.addEventListener("abort", abortHandler, { once: true });
+
+            if (request.signal.aborted) {
+                cleanupStream();
+                return;
+            }
+
+            // Send an initial "connected" comment so the client knows the stream is live
+            if (!enqueue(": connected\n\n")) {
+                notificationBroker.remove(userId, writer);
+                return;
+            }
 
             // Periodic heartbeat to keep intermediary proxies from closing the connection
-            heartbeat = setInterval(() => {
-                try {
-                    controller.enqueue(encoder.encode(": heartbeat\n\n"));
-                } catch {
-                    clearInterval(heartbeat);
-                }
+            heartbeatRef.current = setInterval(() => {
+                enqueue(": heartbeat\n\n");
             }, HEARTBEAT_MS);
         },
 
         cancel() {
-            clearInterval(heartbeat);
-            cleanup?.();
+            cleanupStream?.();
         },
     });
 

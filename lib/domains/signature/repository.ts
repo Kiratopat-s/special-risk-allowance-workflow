@@ -5,7 +5,20 @@
  */
 
 import { prisma } from "@/lib/db";
-import type { SignatureEntity, CreateSignatureInput, UpdateSignatureInput } from "./types";
+import type {
+    SignatureEntity,
+    SignatureHistoryItem,
+    CreateSignatureInput,
+    UpdateSignatureInput,
+} from "./types";
+
+const signatureHistorySelect = {
+    id: true,
+    isActive: true,
+    activatedAt: true,
+    createdAt: true,
+    updatedAt: true,
+} as const;
 
 export const signatureRepository = {
     // -------------------------------------------------------------------------
@@ -21,11 +34,12 @@ export const signatureRepository = {
 
     /**
      * All non-deleted signatures for a user, newest first.
-     * Does NOT include the binary payload – use findById for that.
+     * Does NOT include the binary payload – use findSignatureDataOwnedById for that.
      */
-    async findHistoryByUserId(userId: string): Promise<SignatureEntity[]> {
+    async findHistoryByUserId(userId: string): Promise<SignatureHistoryItem[]> {
         return prisma.signature.findMany({
             where: { userId, deletedAt: null },
+            select: signatureHistorySelect,
             orderBy: { createdAt: "desc" },
         });
     },
@@ -38,6 +52,18 @@ export const signatureRepository = {
         return prisma.signature.findFirst({
             where: { id, userId, deletedAt: null },
         });
+    },
+
+    /** Return only the binary payload for an owned, non-deleted signature. */
+    async findSignatureDataOwnedById(
+        id: string,
+        userId: string
+    ): Promise<Uint8Array | null> {
+        const result = await prisma.signature.findFirst({
+            where: { id, userId, deletedAt: null },
+            select: { signatureData: true },
+        });
+        return (result?.signatureData as Uint8Array | undefined) ?? null;
     },
 
     // -------------------------------------------------------------------------

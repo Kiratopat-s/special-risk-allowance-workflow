@@ -38,6 +38,15 @@ export interface SignatureHistoryItem {
 }
 
 // ---------------------------------------------------------------------------
+// Lightweight list item returned to pages (no binary/base64 payload)
+// ---------------------------------------------------------------------------
+
+export interface SignatureListItem extends SignatureHistoryItem {
+    /** Authenticated route that streams the PNG bytes for this signature. */
+    imageUrl: string;
+}
+
+// ---------------------------------------------------------------------------
 // View model returned to the client (base64 data URL instead of raw bytes)
 // ---------------------------------------------------------------------------
 
@@ -56,6 +65,6 @@ export interface SignatureViewModel {
 // ---------------------------------------------------------------------------
 
 export interface SignaturePageState {
-    active: SignatureViewModel | null;
-    history: SignatureViewModel[];
+    active: SignatureListItem | null;
+    history: SignatureListItem[];
 }

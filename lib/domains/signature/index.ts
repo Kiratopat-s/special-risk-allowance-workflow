@@ -9,6 +9,7 @@ export type {
     CreateSignatureInput,
     UpdateSignatureInput,
     SignatureHistoryItem,
+    SignatureListItem,
     SignatureViewModel,
     SignaturePageState,
 } from "./types";

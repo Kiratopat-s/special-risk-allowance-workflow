@@ -12,7 +12,7 @@
 
 import type { NotificationPayload } from "@/lib/domains/notification/types";
 
-type SseWriter = (data: string) => void;
+type SseWriter = (data: string) => boolean;
 
 const globalForBroker = globalThis as unknown as {
     __notificationSubscribers?: Map<string, Set<SseWriter>>;
@@ -42,6 +42,14 @@ export const notificationBroker = {
         };
     },
 
+    remove(userId: string, writer: SseWriter): void {
+        const set = subscribers.get(userId);
+        if (!set) return;
+
+        set.delete(writer);
+        if (set.size === 0) subscribers.delete(userId);
+    },
+
     /**
      * Fan-out a payload to all open SSE connections for a user.
      * Silently ignores errors from individual writers.
@@ -54,18 +62,41 @@ export const notificationBroker = {
         }
 
         const data = `data: ${JSON.stringify(payload)}\n\n`;
-        for (const writer of set) {
+        let delivered = 0;
+        let pruned = 0;
+
+        for (const writer of Array.from(set)) {
+            let isOpen = false;
             try {
-                writer(data);
+                isOpen = writer(data);
             } catch {
-                // writer may have closed between check and write — ignore
+                isOpen = false;
+            }
+
+            if (isOpen) {
+                delivered += 1;
+            } else {
+                set.delete(writer);
+                pruned += 1;
             }
         }
-        console.log(`[SSE] Pushed to ${set.size} connection(s) for user ${userId.slice(0, 8)}…`);
+
+        if (set.size === 0) {
+            subscribers.delete(userId);
+        }
+
+        console.log(`[SSE] Pushed to ${delivered} connection(s) for user ${userId.slice(0, 8)}…${pruned > 0 ? ` pruned ${pruned} stale writer(s)` : ""}`);
     },
 
     /** Current subscriber count for a user (useful for diagnostics). */
     count(userId: string): number {
         return subscribers.get(userId)?.size ?? 0;
+    },
+
+    /** Total open SSE writers across all users (useful for diagnostics). */
+    totalCount(): number {
+        let total = 0;
+        for (const set of subscribers.values()) total += set.size;
+        return total;
     },
 };

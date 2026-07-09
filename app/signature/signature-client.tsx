@@ -43,8 +43,8 @@ import {
   getMySignatureState,
 } from "@/app/actions/user-signature";
 import type {
+  SignatureListItem,
   SignaturePageState,
-  SignatureViewModel,
 } from "@/lib/domains/signature/types";
 
 // ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ export function SignatureClient({
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Delete dialog
-  const [deleteTarget, setDeleteTarget] = useState<SignatureViewModel | null>(
+  const [deleteTarget, setDeleteTarget] = useState<SignatureListItem | null>(
     null,
   );
 
@@ -252,7 +252,7 @@ export function SignatureClient({
   }, [editingId, refreshState]);
 
   const handleActivate = useCallback(
-    (sig: SignatureViewModel) => {
+    (sig: SignatureListItem) => {
       startTransition(async () => {
         const result = await activateMySignature(sig.id);
         if (result.success) {
@@ -267,7 +267,7 @@ export function SignatureClient({
   );
 
   const confirmDelete = useCallback(
-    (sig: SignatureViewModel) => setDeleteTarget(sig),
+    (sig: SignatureListItem) => setDeleteTarget(sig),
     [],
   );
 
@@ -285,11 +285,24 @@ export function SignatureClient({
     });
   }, [deleteTarget, refreshState]);
 
-  const handleDownload = useCallback((sig: SignatureViewModel) => {
-    const a = document.createElement("a");
-    a.href = sig.dataUrl;
-    a.download = `signature_${sig.id.slice(0, 8)}.png`;
-    a.click();
+  const handleDownload = useCallback(async (sig: SignatureListItem) => {
+    try {
+      const response = await fetch(sig.imageUrl);
+      if (!response.ok) {
+        toast.error("Could not download signature");
+        return;
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `signature_${sig.id.slice(0, 8)}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    } catch {
+      toast.error("Could not download signature");
+    }
   }, []);
 
   // -------------------------------------------------------------------------
@@ -338,7 +351,7 @@ export function SignatureClient({
               <div className="rounded-lg border bg-white p-4 flex items-center justify-center min-h-25">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={active.dataUrl}
+                  src={active.imageUrl}
                   alt="Active signature"
                   className="max-h-25 max-w-full object-contain"
                 />
@@ -356,7 +369,7 @@ export function SignatureClient({
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handleDownload(active)}
+                  onClick={() => void handleDownload(active)}
                   disabled={isPending}
                 >
                   <Download className="mr-1.5 h-3.5 w-3.5" />
@@ -419,7 +432,7 @@ export function SignatureClient({
                   <div className="rounded-md border bg-white flex items-center justify-center h-16">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={sig.dataUrl}
+                      src={sig.imageUrl}
                       alt="Signature"
                       className="max-h-full max-w-full object-contain p-1"
                     />

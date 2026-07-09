@@ -10,7 +10,7 @@ import {
   PenLine,
 } from "lucide-react";
 import { auth } from "@/lib/auth";
-import { can, canAny, canExact, hasRole } from "@/lib/auth/permissions";
+import { authorizationService } from "@/lib/domains/permission";
 import { cn } from "@/lib/utils";
 import { listOffSiteWorks } from "@/app/actions/off-site-work";
 import { OffSiteWorkClient } from "@/app/off-site-work/off-site-work-client";
@@ -26,6 +26,7 @@ import {
 import { PendingVerificationsClient } from "@/app/leader-verify/pending/pending-client";
 import { getMySignatureState } from "@/app/actions/user-signature";
 import { SignatureClient } from "@/app/signature/signature-client";
+import type { PermissionAction, PermissionResource } from "@/lib/shared/types";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 type AuthSession = Session | null;
@@ -52,6 +53,11 @@ interface MonthlyAccess {
   canHpa: boolean;
   canRk: boolean;
   canDrt: boolean;
+}
+
+interface PermissionCheck {
+  resource: PermissionResource;
+  action: PermissionAction;
 }
 
 const TAB_META: Record<DashboardTabId, DashboardTabMeta> = {
@@ -282,40 +288,53 @@ export default async function DashboardPage({
     redirect(dashboardHref("expense-claims", { claimId }));
   }
 
-  const [
-    hasOffSiteWorkAccess,
-    hasExpenseClaimAccess,
-    hasSignatureAccess,
-    canManageMonthly,
-    isSuperAdmin,
-    exactHpa,
-    exactRk,
-    exactDrt,
-  ] = await Promise.all([
-    canAny(userId, [
-      { resource: "OFF_SITE_WORK", action: "READ" },
-      { resource: "OFF_SITE_WORK", action: "LIST" },
-      { resource: "OFF_SITE_WORK", action: "CREATE" },
-      { resource: "OFF_SITE_WORK", action: "MANAGE" },
-    ]),
-    canAny(userId, [
-      { resource: "EXPENSE_CLAIM", action: "READ" },
-      { resource: "EXPENSE_CLAIM", action: "LIST" },
-      { resource: "EXPENSE_CLAIM", action: "CREATE" },
-      { resource: "EXPENSE_CLAIM", action: "MANAGE" },
-    ]),
-    canAny(userId, [
-      { resource: "SIGNATURE", action: "READ" },
-      { resource: "SIGNATURE", action: "CREATE" },
-      { resource: "SIGNATURE", action: "UPDATE" },
-      { resource: "SIGNATURE", action: "MANAGE" },
-    ]),
-    can(userId, "MONTHLY_REQUEST", "MANAGE"),
-    hasRole(userId, "super-admin"),
-    canExact(userId, "MONTHLY_REQUEST", "REVIEW_HPA"),
-    canExact(userId, "MONTHLY_REQUEST", "REVIEW_RK"),
-    canExact(userId, "MONTHLY_REQUEST", "REVIEW_OK"),
+  const effectivePermissions =
+    await authorizationService.getEffectivePermissions(userId);
+  const permissions = effectivePermissions.success
+    ? effectivePermissions.data.permissions
+    : [];
+  const roles = effectivePermissions.success ? effectivePermissions.data.roles : [];
+
+  const hasPermission = (resource: PermissionResource, action: PermissionAction) =>
+    permissions.some(
+      (permission) =>
+        permission.resource === resource &&
+        (permission.action === action || permission.action === "MANAGE"),
+    );
+  const hasExactPermission = (
+    resource: PermissionResource,
+    action: PermissionAction,
+  ) =>
+    permissions.some(
+      (permission) =>
+        permission.resource === resource && permission.action === action,
+    );
+  const hasAnyPermission = (checks: PermissionCheck[]) =>
+    checks.some((check) => hasPermission(check.resource, check.action));
+
+  const hasOffSiteWorkAccess = hasAnyPermission([
+    { resource: "OFF_SITE_WORK", action: "READ" },
+    { resource: "OFF_SITE_WORK", action: "LIST" },
+    { resource: "OFF_SITE_WORK", action: "CREATE" },
+    { resource: "OFF_SITE_WORK", action: "MANAGE" },
   ]);
+  const hasExpenseClaimAccess = hasAnyPermission([
+    { resource: "EXPENSE_CLAIM", action: "READ" },
+    { resource: "EXPENSE_CLAIM", action: "LIST" },
+    { resource: "EXPENSE_CLAIM", action: "CREATE" },
+    { resource: "EXPENSE_CLAIM", action: "MANAGE" },
+  ]);
+  const hasSignatureAccess = hasAnyPermission([
+    { resource: "SIGNATURE", action: "READ" },
+    { resource: "SIGNATURE", action: "CREATE" },
+    { resource: "SIGNATURE", action: "UPDATE" },
+    { resource: "SIGNATURE", action: "MANAGE" },
+  ]);
+  const canManageMonthly = hasPermission("MONTHLY_REQUEST", "MANAGE");
+  const isSuperAdmin = roles.some((role) => role.code === "super-admin");
+  const exactHpa = hasExactPermission("MONTHLY_REQUEST", "REVIEW_HPA");
+  const exactRk = hasExactPermission("MONTHLY_REQUEST", "REVIEW_RK");
+  const exactDrt = hasExactPermission("MONTHLY_REQUEST", "REVIEW_OK");
 
   const monthlyAccess = {
     canManage: canManageMonthly,

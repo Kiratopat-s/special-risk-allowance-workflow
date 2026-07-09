@@ -1,36 +1,255 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Special Risk Allowance Workflow
 
-## Getting Started
+Special Risk Allowance Workflow is a Next.js application for managing PEA special-risk allowance operations from off-site work records through expense claims, leader verification, monthly collection, multi-stage approval, signatures, and notifications.
 
-First, install dependencies with Bun:
+## What It Does
+
+- Records off-site work used as evidence for special-risk allowance claims.
+- Creates and tracks individual expense claim documents for selected work dates.
+- Requests leader verification from internal leaders or external leaders through one-time links.
+- Collects eligible expense claims into monthly request collections.
+- Runs monthly collections through a three-stage approval flow: `HPA_CHECK`, `RK_CHECK`, then `OK_APPROVE`.
+- Stores active user signatures and prints them into approval documents.
+- Provides role-based access control, audit logging, in-app notifications, web push, and SMTP email for verification links.
+
+## Tech Stack
+
+- Next.js 16 App Router and React 19
+- TypeScript with strict mode
+- Tailwind CSS v4 and shadcn-style UI primitives
+- Auth.js v5 with Keycloak
+- Prisma 7 with PostgreSQL and `@prisma/adapter-pg`
+- Bun 1.3.14 for dependency management and scripts
+- Nodemailer for email and Web Push API for browser notifications
+
+## Project Structure
+
+```text
+app/                         Route pages, layouts, API routes, and server actions
+components/                  Shared React components and UI primitives
+lib/auth.ts                  Auth.js Keycloak configuration and session mapping
+lib/auth/                    Auth events and permission helpers
+lib/db/                      Prisma singleton and database exports
+lib/domains/                 Repository-service domain modules
+lib/generated/prisma/        Generated Prisma client, ignored by git
+lib/hooks/                   Client hooks for permissions, session, and notifications
+lib/shared/                  Shared types, result helpers, formatting, and sanitizers
+prisma/                      Schema, migrations, seed script, and Prisma config
+public/                      PWA manifest, service worker, fonts, logos, and static assets
+graphify-out/                Derived code graph artifacts
+```
+
+Domain modules follow the same shape:
+
+```text
+lib/domains/<domain>/
+  index.ts
+  types.ts
+  repository.ts
+  service.ts
+```
+
+Application code should call services from `lib/domains/*`. Repositories own database queries, services own business rules, and service methods use the shared `Result<T>` pattern.
+
+## Core Domains
+
+- `user` - Keycloak-synced users, profile data, login/logout events, and status changes.
+- `department` - Organization hierarchy and department lookup.
+- `permission` - RBAC permissions, roles, scopes, guards, and seed data.
+- `off-site-work` - Off-site work records and attached source files.
+- `expense-claim-document` - Claim creation, submission, status changes, and collection readiness.
+- `leader-verification` - Internal leader queues and public token verification links.
+- `monthly-request-collection` - Monthly claim collection, approval steps, and printable documents.
+- `signature` - User signature capture, activation, and retrieval.
+- `notification` - Persisted notifications and push subscriptions.
+- `action-log` - Audit trail records.
+
+## Default Roles
+
+The seed script creates these system roles:
+
+| Role | Purpose |
+| --- | --- |
+| `employee` | Creates own off-site work, expense claims, and signatures. |
+| `collector` | Collects claims into monthly request collections and manages MRC records. |
+| `hpa` | Reviews monthly request collections at the `HPA_CHECK` stage. |
+| `rk` | Reviews monthly request collections at the `RK_CHECK` stage. |
+| `drt` | Performs final approval at the `OK_APPROVE` stage. |
+| `super-admin` | Full system administration. |
+
+## Requirements
+
+- Bun `1.3.14` or compatible
+- PostgreSQL
+- A Keycloak realm and client for Auth.js
+- Optional SMTP credentials for external leader verification email
+- Optional VAPID keys for browser push notifications
+
+## Environment Variables
+
+Create a local `.env` file. Environment files are ignored by git.
+
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/sraw?schema=public"
+
+NEXTAUTH_URL="http://localhost:3000"
+AUTH_SECRET="replace-with-a-strong-secret"
+AUTH_KEYCLOAK_ID="keycloak-client-id"
+AUTH_KEYCLOAK_SECRET="keycloak-client-secret"
+AUTH_KEYCLOAK_ISSUER="https://keycloak.example.com/realms/your-realm"
+
+EMAIL_HOST=""
+EMAIL_PORT="587"
+EMAIL_USER=""
+EMAIL_PASS=""
+EMAIL_FROM="Special Risk Allowance Workflow <noreply@example.com>"
+
+VAPID_PUBLIC_KEY=""
+VAPID_PRIVATE_KEY=""
+VAPID_SUBJECT="mailto:admin@example.com"
+```
+
+Notes:
+
+- `DATABASE_URL`, `AUTH_SECRET`, and the `AUTH_KEYCLOAK_*` values are required for a functional authenticated app.
+- `NEXTAUTH_URL` should match the public base URL. For local HTTPS, set it to the `bun devh` URL.
+- Email is skipped when SMTP values are missing.
+- Push notifications are disabled when VAPID keys are missing.
+
+## Local Setup
+
+Install dependencies:
 
 ```bash
 bun install
 ```
 
-Then run the development server:
+Generate the Prisma client:
+
+```bash
+bunx prisma generate
+```
+
+Apply local migrations:
+
+```bash
+bunx prisma migrate dev
+```
+
+Seed default permissions and roles:
+
+```bash
+bunx prisma db seed
+```
+
+Start the development server:
 
 ```bash
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+For local HTTPS on `local.sraw.space`, use:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+bun devh
+```
 
-## Learn More
+Make sure `local.sraw.space` resolves to your local machine and update `NEXTAUTH_URL` accordingly.
 
-To learn more about Next.js, take a look at the following resources:
+## Common Commands
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Command | Description |
+| --- | --- |
+| `bun install` | Install dependencies from `bun.lock`. |
+| `bun dev` | Start the Next.js development server. |
+| `bun devh` | Start development with experimental HTTPS on `local.sraw.space`. |
+| `bun run lint` | Run ESLint with Next.js and TypeScript rules. |
+| `bun run build` | Create a production build. |
+| `bun run start` | Serve the production build. |
+| `bunx prisma generate` | Regenerate the Prisma client. |
+| `bunx prisma migrate dev --name <name>` | Create and apply a local migration. |
+| `bunx prisma migrate deploy` | Apply migrations in production. |
+| `bunx prisma db seed` | Seed default roles, permissions, and role-permission mappings. |
+| `bunx prisma studio` | Inspect and edit local data. |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Workflow Overview
 
-## Deploy on Vercel
+1. Users authenticate through Keycloak. Profile claims are synchronized into the local `User` table.
+2. Employees create off-site work records and prepare expense claim documents.
+3. Submitted claims create leader verification records when linked off-site work has leaders.
+4. Internal leaders verify through their queue; external leaders verify through a public one-time token link.
+5. Verified or pending claims become eligible for collector-managed monthly request collections.
+6. Monthly collections move through `HPA_CHECK`, `RK_CHECK`, and `OK_APPROVE` approval steps.
+7. Approved documents can be printed with stored signatures and audit context.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Database Notes
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Prisma schema lives in `prisma/schema.prisma`.
+- Migrations live in `prisma/migrations/`.
+- The Prisma client is generated into `lib/generated/prisma/` and is intentionally ignored by git.
+- Database access should stay inside domain repositories.
+- Use migrations for schema changes; do not edit the database manually for application schema updates.
+
+After schema changes, run:
+
+```bash
+bunx prisma migrate dev --name <descriptive_name>
+bunx prisma generate
+```
+
+## Authentication And Authorization
+
+Authentication is configured in `lib/auth.ts` using Keycloak. The JWT callback maps Keycloak claims into the session, including profile, employee, position, department, and local database user identifiers.
+
+Authorization is handled through permission helpers in `lib/auth/permissions.ts`. Check permissions at server-action boundaries and prefer resource/action checks over hardcoded role checks unless the feature is explicitly role-only.
+
+## Notifications
+
+The notification system stores in-app notification records and can deliver browser push notifications when users subscribe through the service worker. SMTP email is used for external leader verification links.
+
+Operational behavior:
+
+- Missing SMTP config logs a warning and skips email delivery.
+- Missing VAPID config logs a warning and skips web push delivery.
+- Invalid push subscriptions are removed automatically when push services return unrecoverable status codes.
+
+## Quality Checks
+
+No automated test framework is configured yet. Before opening a PR or deploying, run:
+
+```bash
+bun run lint
+bun run build
+```
+
+For risky changes, manually verify the affected workflow, especially:
+
+- Keycloak sign-in and profile synchronization
+- Permission-gated server actions
+- Prisma migrations and seed behavior
+- Expense claim submission and leader verification
+- Monthly collection approval steps
+- Signature capture and print pages
+- Notifications, email, and push subscriptions
+
+## Deployment
+
+At deployment time:
+
+1. Provide all required environment variables.
+2. Run migrations with `bunx prisma migrate deploy`.
+3. Generate the Prisma client with `bunx prisma generate`.
+4. Build the app with `bun run build`.
+5. Start it with `bun run start` or deploy through the chosen Next.js hosting platform.
+
+Run `bunx prisma db seed` when provisioning a new database or when the default permission/role seed data changes.
+
+## Troubleshooting
+
+- `Cannot find module "@/lib/generated/prisma/..."`: run `bunx prisma generate`.
+- Authentication redirects or callback errors: verify `NEXTAUTH_URL`, Keycloak client settings, issuer URL, and callback URLs.
+- Permission denied for a user who should have access: confirm the user has a seeded role and matching permission scope.
+- Email links are not sent: check `EMAIL_HOST`, `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_FROM`, and `NEXTAUTH_URL`.
+- Push notifications do not arrive: check VAPID keys, service worker registration, browser permission, and stored push subscriptions.

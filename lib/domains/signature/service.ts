@@ -9,9 +9,11 @@ import { success, error } from "@/lib/shared/types";
 import type { Result } from "@/lib/shared/types";
 import type {
     SignatureEntity,
+    SignatureHistoryItem,
     CreateSignatureInput,
     UpdateSignatureInput,
     SignatureViewModel,
+    SignatureListItem,
     SignaturePageState,
 } from "./types";
 
@@ -25,6 +27,17 @@ function toViewModel(sig: SignatureEntity): SignatureViewModel {
         createdAt: sig.createdAt,
         updatedAt: sig.updatedAt,
         dataUrl: `data:image/png;base64,${Buffer.from(sig.signatureData).toString("base64")}`,
+    };
+}
+
+function toListItem(sig: SignatureHistoryItem): SignatureListItem {
+    return {
+        id: sig.id,
+        isActive: sig.isActive,
+        activatedAt: sig.activatedAt,
+        createdAt: sig.createdAt,
+        updatedAt: sig.updatedAt,
+        imageUrl: `/api/signatures/${encodeURIComponent(sig.id)}/image`,
     };
 }
 
@@ -45,10 +58,10 @@ export const signatureService = {
 
     async getPageState(userId: string): Promise<Result<SignaturePageState>> {
         const history = await signatureRepository.findHistoryByUserId(userId);
-        const viewModels = history.map(toViewModel);
+        const items = history.map(toListItem);
         return success({
-            active: viewModels.find((v) => v.isActive) ?? null,
-            history: viewModels,
+            active: items.find((v) => v.isActive) ?? null,
+            history: items,
         });
     },
 

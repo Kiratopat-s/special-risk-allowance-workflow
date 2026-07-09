@@ -62,16 +62,48 @@ export function useNotifications() {
         let disposed = false;
         let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
+        function clearReconnectTimer() {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = undefined;
+            }
+        }
+
+        function scheduleReconnect() {
+            if (disposed) return;
+
+            clearReconnectTimer();
+            const delay = backoffRef.current;
+            timeoutId = setTimeout(() => {
+                timeoutId = undefined;
+                backoffRef.current = Math.min(
+                    backoffRef.current * 2,
+                    MAX_BACKOFF_MS
+                );
+                connect();
+            }, delay);
+        }
+
         function connect() {
             if (disposed) return;
+            if (esRef.current && esRef.current.readyState !== EventSource.CLOSED) {
+                return;
+            }
+
+            clearReconnectTimer();
 
             const es = new EventSource("/api/notifications/stream");
             esRef.current = es;
 
+            es.onopen = () => {
+                if (esRef.current === es) {
+                    backoffRef.current = BASE_BACKOFF_MS;
+                }
+            };
+
             es.onmessage = (event: MessageEvent<string>) => {
                 try {
                     const payload: NotificationPayload = JSON.parse(event.data);
-                    backoffRef.current = BASE_BACKOFF_MS; // reset back-off on successful message
 
                     const vm: NotificationViewModel = {
                         id: payload.id,
@@ -112,14 +144,10 @@ export function useNotifications() {
                     readyState: source?.readyState,
                 });
                 es.close();
-                esRef.current = null;
-                if (!disposed) {
-                    // Exponential back-off
-                    timeoutId = setTimeout(() => {
-                        backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF_MS);
-                        connect();
-                    }, backoffRef.current);
+                if (esRef.current === es) {
+                    esRef.current = null;
                 }
+                scheduleReconnect();
             };
         }
 
@@ -127,7 +155,7 @@ export function useNotifications() {
 
         return () => {
             disposed = true;
-            clearTimeout(timeoutId);
+            clearReconnectTimer();
             esRef.current?.close();
             esRef.current = null;
         };
