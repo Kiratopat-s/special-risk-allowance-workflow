@@ -1,0 +1,18 @@
+---
+source_file: "lib/hooks/use-permissions.ts"
+type: "code"
+community: "Permission Gates"
+location: "L167"
+tags:
+  - graphify/code
+  - graphify/EXTRACTED
+  - community/Permission_Gates
+---
+
+# PermissionGate()
+
+## Connections
+- [[use-permissions.ts]] - `contains` [EXTRACTED]
+- [[usePermissionCheck()]] - `calls` [EXTRACTED]
+
+#graphify/code #graphify/EXTRACTED #community/Permission_Gates
