@@ -1,15 +1,5 @@
-import { auth } from "@/lib/auth";
-import { getMySignatureState } from "@/app/actions/user-signature";
-import { SignatureClient } from "./signature-client";
+import { redirect } from "next/navigation";
 
 export default async function SignaturePage() {
-  const session = await auth();
-  const result = await getMySignatureState();
-
-  return (
-    <SignatureClient
-      initialState={result.success ? result.data : null}
-      userName={session?.user?.name}
-    />
-  );
+  redirect("/dashboard?tab=signature");
 }

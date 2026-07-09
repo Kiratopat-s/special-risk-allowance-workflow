@@ -243,7 +243,7 @@ export function ExpenseClaimDocumentClient({
         if (!cancelled) {
           setSelected(existingItem);
           setMode("view");
-          router.replace("/expense-claim-document", { scroll: false });
+          router.replace("/dashboard?tab=expense-claims", { scroll: false });
         }
         return;
       }
@@ -258,7 +258,7 @@ export function ExpenseClaimDocumentClient({
             description: result.error,
           });
         }
-        router.replace("/expense-claim-document", { scroll: false });
+        router.replace("/dashboard?tab=expense-claims", { scroll: false });
       }
     };
 
@@ -1210,7 +1210,7 @@ export function ExpenseClaimDocumentClient({
           <p className="mt-4 text-sm text-muted-foreground">
             กรุณาไปที่หน้า{" "}
             <Link
-              href="/off-site-work"
+              href="/dashboard?tab=off-site-work"
               className="font-medium text-sky-600 dark:text-sky-400 underline underline-offset-2"
               onClick={() => setNoLeaderDialogOpen(false)}
             >

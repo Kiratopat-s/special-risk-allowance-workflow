@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -98,6 +99,10 @@ const TECH = [
 export default async function Home() {
   const session = await auth();
 
+  if (session?.user?.dbUserId) {
+    redirect("/dashboard");
+  }
+
   return (
     <>
       <CursorSpotlight />
@@ -136,21 +141,12 @@ export default async function Home() {
               </div>
 
               <div className="flex flex-col items-center gap-3 pt-2 sm:flex-row">
-                {session?.user ? (
-                  <Button asChild size="lg" className="group min-w-40">
-                    <Link href="/monthly-request-collection">
-                      เข้าสู่ระบบ
-                      <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button asChild size="lg" className="group min-w-40">
-                    <Link href="/api/auth/signin">
-                      เข้าสู่ระบบ
-                      <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-                    </Link>
-                  </Button>
-                )}
+                <Button asChild size="lg" className="group min-w-40">
+                  <Link href="/api/auth/signin?callbackUrl=/dashboard">
+                    เข้าสู่ระบบ
+                    <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                  </Link>
+                </Button>
                 <Button variant="outline" size="lg" asChild>
                   <Link
                     href="https://github.com/Kiratopat-s/special-risk-allowance-workflow"

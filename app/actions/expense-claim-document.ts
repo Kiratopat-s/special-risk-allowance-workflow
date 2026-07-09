@@ -172,7 +172,10 @@ export async function createExpenseClaimDocument(
     }
 
     const result = await expenseClaimDocumentService.create(data, session.user.dbUserId, targetUserId);
-    if (result.success) revalidatePath("/expense-claim-document");
+    if (result.success) {
+        revalidatePath("/expense-claim-document");
+        revalidatePath("/dashboard");
+    }
     return result;
 }
 
@@ -205,7 +208,10 @@ export async function updateExpenseClaimDocument(
     }
 
     const result = await expenseClaimDocumentService.update(id, data, session.user.dbUserId);
-    if (result.success) revalidatePath("/expense-claim-document");
+    if (result.success) {
+        revalidatePath("/expense-claim-document");
+        revalidatePath("/dashboard");
+    }
     return result;
 }
 
@@ -238,7 +244,10 @@ export async function submitDraftExpenseClaimDocument(
     }
 
     const result = await expenseClaimDocumentService.submitDraft(id, session.user.dbUserId);
-    if (result.success) revalidatePath("/expense-claim-document");
+    if (result.success) {
+        revalidatePath("/expense-claim-document");
+        revalidatePath("/dashboard");
+    }
     return result;
 }
 
@@ -268,7 +277,9 @@ export async function deleteExpenseClaimDocument(id: string): Promise<Result<voi
     }
 
     const result = await expenseClaimDocumentService.delete(id, session.user.dbUserId);
-    if (result.success) revalidatePath("/expense-claim-document");
+    if (result.success) {
+        revalidatePath("/expense-claim-document");
+        revalidatePath("/dashboard");
+    }
     return result;
 }
-

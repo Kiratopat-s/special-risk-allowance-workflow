@@ -17,11 +17,7 @@ import {
   LogOut,
   Settings,
   ShieldCheck,
-  MapPin,
-  FileText,
-  FolderOpen,
-  PenLine,
-  ClipboardList,
+  LayoutDashboard,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
@@ -52,40 +48,13 @@ export function Navbar() {
       { resource: "PERMISSION", action: "LIST" },
     ]);
 
-  // Check if user has off-site work access
-  const hasOffSiteWorkAccess = canAny([
-    { resource: "OFF_SITE_WORK", action: "READ" },
-    { resource: "OFF_SITE_WORK", action: "LIST" },
-    { resource: "OFF_SITE_WORK", action: "CREATE" },
-    { resource: "OFF_SITE_WORK", action: "MANAGE" },
-  ]);
-
-  const hasExpenseClaimAccess = canAny([
-    { resource: "EXPENSE_CLAIM", action: "READ" },
-    { resource: "EXPENSE_CLAIM", action: "LIST" },
-    { resource: "EXPENSE_CLAIM", action: "CREATE" },
-    { resource: "EXPENSE_CLAIM", action: "MANAGE" },
-  ]);
-
-  const hasMonthlyRequestAccess = canAny([
-    { resource: "MONTHLY_REQUEST", action: "READ" },
-    { resource: "MONTHLY_REQUEST", action: "LIST" },
-    { resource: "MONTHLY_REQUEST", action: "MANAGE" },
-    { resource: "MONTHLY_REQUEST", action: "SUBMIT" },
-    { resource: "MONTHLY_REQUEST", action: "APPROVE" },
-  ]);
-
-  const hasSignatureAccess = canAny([
-    { resource: "SIGNATURE", action: "READ" },
-    { resource: "SIGNATURE", action: "CREATE" },
-    { resource: "SIGNATURE", action: "UPDATE" },
-    { resource: "SIGNATURE", action: "MANAGE" },
-  ]);
-
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
       <div className="container flex h-16 max-w-7xl items-center justify-between px-4 mx-auto">
-        <Link href="/" className="flex items-center space-x-2">
+        <Link
+          href={session?.user ? "/dashboard" : "/"}
+          className="flex items-center space-x-2"
+        >
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
             <span className="text-sm font-bold text-primary-foreground">
               SR
@@ -132,6 +101,12 @@ export function Navbar() {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
+                  <Link href="/dashboard" className="flex items-center">
+                    <LayoutDashboard className="mr-2 h-4 w-4" />
+                    <span>Dashboard</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
                   <Link href="/profile" className="flex items-center">
                     <User className="mr-2 h-4 w-4" />
                     <span>Profile</span>
@@ -141,53 +116,6 @@ export function Navbar() {
                   <Link href="/profile/edit" className="flex items-center">
                     <Settings className="mr-2 h-4 w-4" />
                     <span>Settings</span>
-                  </Link>
-                </DropdownMenuItem>
-                {hasOffSiteWorkAccess && (
-                  <DropdownMenuItem asChild>
-                    <Link href="/off-site-work" className="flex items-center">
-                      <MapPin className="mr-2 h-4 w-4" />
-                      <span>คำสั่งออกนอกสถานที่</span>
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                {hasExpenseClaimAccess && (
-                  <DropdownMenuItem asChild>
-                    <Link
-                      href="/expense-claim-document"
-                      className="flex items-center"
-                    >
-                      <FileText className="mr-2 h-4 w-4" />
-                      <span>เอกสารเบิกค่าใช้จ่าย</span>
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                {hasMonthlyRequestAccess && (
-                  <DropdownMenuItem asChild>
-                    <Link
-                      href="/monthly-request-collection"
-                      className="flex items-center"
-                    >
-                      <FolderOpen className="mr-2 h-4 w-4" />
-                      <span>รวบรวมเบิกค่าตอบแทนเสี่ยงภัยฯ</span>
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                {hasSignatureAccess && (
-                  <DropdownMenuItem asChild>
-                    <Link href="/signature" className="flex items-center">
-                      <PenLine className="mr-2 h-4 w-4" />
-                      <span>My Signature</span>
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem asChild>
-                  <Link
-                    href="/leader-verify/pending"
-                    className="flex items-center"
-                  >
-                    <ClipboardList className="mr-2 h-4 w-4" />
-                    <span>คิวยืนยันการออกปฏิบัติงาน</span>
                   </Link>
                 </DropdownMenuItem>
                 {hasAdminAccess && (
@@ -209,7 +137,10 @@ export function Navbar() {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Button onClick={() => signIn("keycloak")} size="sm">
+            <Button
+              onClick={() => signIn("keycloak", { callbackUrl: "/dashboard" })}
+              size="sm"
+            >
               Sign In
             </Button>
           )}

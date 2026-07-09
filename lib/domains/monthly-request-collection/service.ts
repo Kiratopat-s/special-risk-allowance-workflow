@@ -187,7 +187,7 @@ export const monthlyRequestCollectionService = {
                     "MRC_SUBMITTED",
                     "มีรายการรวบรวมคำขอรายเดือนรอการตรวจสอบ",
                     "มีรายการรวบรวมคำขอรายเดือนใหม่รอการตรวจสอบในขั้นตอน HPA",
-                    "/monthly-request-collection"
+                    "/dashboard?tab=monthly-requests"
                 );
             }
         );
@@ -262,7 +262,7 @@ export const monthlyRequestCollectionService = {
                 "MRC_REJECTED",
                 "คำขอรายเดือนถูกปฏิเสธ",
                 `รายการรวบรวมคำขอรายเดือนถูกปฏิเสธในขั้นตอน ${input.stage}`,
-                "/monthly-request-collection"
+                "/dashboard?tab=monthly-requests"
             );
 
             const updated = await repo.findById(id);
@@ -297,7 +297,7 @@ export const monthlyRequestCollectionService = {
                 "MRC_APPROVED",
                 "คำขอรายเดือนได้รับการอนุมัติแล้ว",
                 "รายการรวบรวมคำขอรายเดือนได้รับการอนุมัติครบทุกขั้นตอนแล้ว",
-                "/monthly-request-collection"
+                "/dashboard?tab=monthly-requests"
             );
         } else {
             // Advance to next stage — notify the next-stage reviewers
@@ -322,7 +322,7 @@ export const monthlyRequestCollectionService = {
                     "MRC_STEP_APPROVED",
                     "ขั้นตอนการอนุมัติผ่านแล้ว — รอดำเนินการขั้นถัดไป",
                     `คำขอรายเดือนผ่านขั้น ${input.stage} แล้ว กรุณาดำเนินการในขั้นตอน ${nextStage}`,
-                    "/monthly-request-collection"
+                    "/dashboard?tab=monthly-requests"
                 )
             );
         }
@@ -375,7 +375,7 @@ export const monthlyRequestCollectionService = {
             "MRC_CANCELLED",
             "รายการรวบรวมคำขอรายเดือนถูกยกเลิก",
             "รายการรวบรวมคำขอรายเดือนถูกยกเลิกแล้ว เอกสารเบิกจ่ายที่เกี่ยวข้องกลับสู่สถานะรอรวบรวม",
-            "/monthly-request-collection"
+            "/dashboard?tab=monthly-requests"
         );
 
         return success(undefined, "Monthly request collection cancelled");

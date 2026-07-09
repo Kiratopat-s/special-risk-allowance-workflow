@@ -255,6 +255,7 @@ export async function createMonthlyRequestCollection(
     const result = await monthlyRequestCollectionService.create(data, session.user.dbUserId);
     if (!result.success) return result;
     revalidatePath("/monthly-request-collection");
+    revalidatePath("/dashboard");
     return { ...result, data: serializeMrcEntity(result.data) };
 }
 
@@ -284,6 +285,7 @@ export async function updateMonthlyRequestCollection(
     const result = await monthlyRequestCollectionService.update(id, data, session.user.dbUserId);
     if (!result.success) return result;
     revalidatePath("/monthly-request-collection");
+    revalidatePath("/dashboard");
     return { ...result, data: serializeMrcEntity(result.data) };
 }
 
@@ -312,6 +314,7 @@ export async function submitMonthlyRequestCollection(
     const result = await monthlyRequestCollectionService.submit(id, session.user.dbUserId);
     if (!result.success) return result;
     revalidatePath("/monthly-request-collection");
+    revalidatePath("/dashboard");
     return { ...result, data: serializeMrcEntity(result.data) };
 }
 
@@ -385,6 +388,7 @@ export async function reviewMonthlyRequestCollectionStep(
     const result = await monthlyRequestCollectionService.reviewStep(id, input, userId);
     if (!result.success) return result;
     revalidatePath("/monthly-request-collection");
+    revalidatePath("/dashboard");
     return { ...result, data: serializeMrcEntity(result.data) };
 }
 
@@ -411,6 +415,9 @@ export async function cancelMonthlyRequestCollection(
     }
 
     const cancelResult = await monthlyRequestCollectionService.cancel(id, session.user.dbUserId);
-    if (cancelResult.success) revalidatePath("/monthly-request-collection");
+    if (cancelResult.success) {
+        revalidatePath("/monthly-request-collection");
+        revalidatePath("/dashboard");
+    }
     return cancelResult;
 }

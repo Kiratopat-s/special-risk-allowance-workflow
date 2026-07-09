@@ -158,7 +158,7 @@ export function NotificationsAdminClient({ users }: Props) {
             <Label htmlFor="notif-link">ลิงก์ (ไม่บังคับ)</Label>
             <Input
               id="notif-link"
-              placeholder="/monthly-request-collection"
+              placeholder="/dashboard?tab=monthly-requests"
               value={link}
               onChange={(e) => setLink(e.target.value)}
             />

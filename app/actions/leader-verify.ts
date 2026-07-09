@@ -61,7 +61,10 @@ export async function verifyByToken(
 
     const signatureData = signatureDataUrl ? dataUrlToBuffer(signatureDataUrl) : null;
     const result = await leaderVerificationService.verifyByToken(token, signatureData ?? undefined);
-    if (result.success) revalidatePath("/expense-claim-document");
+    if (result.success) {
+        revalidatePath("/expense-claim-document");
+        revalidatePath("/dashboard");
+    }
     return result;
 }
 
@@ -102,7 +105,10 @@ export async function verifyAsLeader(
         session.user.dbUserId,
         signatureData ?? undefined
     );
-    if (result.success) revalidatePath("/expense-claim-document");
+    if (result.success) {
+        revalidatePath("/expense-claim-document");
+        revalidatePath("/dashboard");
+    }
     return result;
 }
 

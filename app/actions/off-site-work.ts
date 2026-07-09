@@ -105,7 +105,10 @@ export async function createOffSiteWork(
   }
 
   const result = await offSiteWorkService.create(data, session.user.dbUserId);
-  if (result.success) revalidatePath("/off-site-work");
+  if (result.success) {
+    revalidatePath("/off-site-work");
+    revalidatePath("/dashboard");
+  }
   return result;
 }
 
@@ -135,7 +138,10 @@ export async function updateOffSiteWork(
   }
 
   const result = await offSiteWorkService.update(id, data, session.user.dbUserId);
-  if (result.success) revalidatePath("/off-site-work");
+  if (result.success) {
+    revalidatePath("/off-site-work");
+    revalidatePath("/dashboard");
+  }
   return result;
 }
 
@@ -164,6 +170,9 @@ export async function deleteOffSiteWork(
   }
 
   const result = await offSiteWorkService.delete(id, session.user.dbUserId);
-  if (result.success) revalidatePath("/off-site-work");
+  if (result.success) {
+    revalidatePath("/off-site-work");
+    revalidatePath("/dashboard");
+  }
   return result;
 }

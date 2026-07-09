@@ -105,7 +105,7 @@ export const leaderVerificationService = {
                         "LEADER_VERIFY_REQUEST",
                         "มีคำขอยืนยันการออกปฏิบัติงาน",
                         "พนักงานได้ยื่นเบิกค่าตอบแทนเสี่ยงภัยฯ และรอการยืนยันจากคุณ",
-                        "/leader-verify/pending",
+                        "/dashboard?tab=leader-queue",
                     )
                 )
                 .catch(() => undefined);
@@ -271,7 +271,7 @@ async function notifyClaimant(expenseClaimId: string, allDone: boolean): Promise
             "CLAIM_STATUS_CHANGED",
             "หัวหน้ายืนยันครบทุกใบสั่งแล้ว",
             "เอกสารเบิกค่าตอบแทนของคุณได้รับการยืนยันครบทุกใบสั่งปฏิบัติงานแล้ว และพร้อมรวบรวมเข้าสู่ระบบ",
-            `/expense-claim-document?view=${expenseClaimId}`,
+            `/dashboard?tab=expense-claims&claimId=${expenseClaimId}`,
         );
     } else {
         await ns.send(
@@ -279,7 +279,7 @@ async function notifyClaimant(expenseClaimId: string, allDone: boolean): Promise
             "CLAIM_STATUS_CHANGED",
             "หัวหน้ายืนยันใบสั่งปฏิบัติงานแล้ว",
             "หัวหน้ายืนยันใบสั่งปฏิบัติงานของคุณ 1 รายการแล้ว — รอหัวหน้ารายอื่นยืนยันต่อ (ถ้ามี)",
-            `/expense-claim-document?view=${expenseClaimId}`,
+            `/dashboard?tab=expense-claims&claimId=${expenseClaimId}`,
         );
     }
 }

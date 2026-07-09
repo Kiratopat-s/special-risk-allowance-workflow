@@ -489,7 +489,7 @@ export function MrcClient({
                       >
                         <Button variant="ghost" size="sm" asChild>
                           <a
-                            href={`/expense-claim-document?claimId=${claim.id}`}
+                            href={`/dashboard?tab=expense-claims&claimId=${claim.id}`}
                             target="_blank"
                             rel="noreferrer"
                             title="เปิดเอกสารเบิกในแท็บใหม่"

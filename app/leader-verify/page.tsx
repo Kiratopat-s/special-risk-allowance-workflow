@@ -45,7 +45,7 @@ export default async function LeaderVerifyPage({
           <div className="rounded-xl border bg-card/80 px-4 py-3 text-sm text-muted-foreground flex items-center justify-between gap-3 shadow-sm">
             <span>คุณล็อกอินอยู่แล้ว — ดูคิวยืนยันทั้งหมดของคุณได้ที่:</span>
             <Link
-              href="/leader-verify/pending"
+              href="/dashboard?tab=leader-queue"
               className="shrink-0 font-medium text-sky-600 dark:text-sky-400 hover:underline"
             >
               คิวยืนยัน →
