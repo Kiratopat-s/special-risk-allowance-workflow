@@ -142,7 +142,7 @@ export default async function Home() {
 
               <div className="flex flex-col items-center gap-3 pt-2 sm:flex-row">
                 <Button asChild size="lg" className="group min-w-40">
-                  <Link href="/api/auth/signin?callbackUrl=/dashboard">
+                  <Link href="/auth/signin?callbackUrl=%2Fdashboard">
                     เข้าสู่ระบบ
                     <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                   </Link>

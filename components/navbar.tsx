@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  CircleHelp,
   User,
   LogOut,
   Settings,
@@ -67,6 +68,12 @@ export function Navbar() {
         </Link>
 
         <nav className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" asChild className="gap-2">
+            <Link href="/how-to-use">
+              <CircleHelp className="h-4 w-4" />
+              <span>วิธีใช้</span>
+            </Link>
+          </Button>
           <ThemeToggle />
           {session?.user && <NotificationBell />}
           {isLoading ? (
