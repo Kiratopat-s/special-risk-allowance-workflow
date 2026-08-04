@@ -236,15 +236,75 @@ For risky changes, manually verify the affected workflow, especially:
 
 ## Deployment
 
-At deployment time:
+This project is deployed as a Docker Compose application that connects to an
+existing PostgreSQL instance. It does not create or manage a database
+container. The host's existing reverse proxy terminates HTTPS and forwards
+requests to the app on localhost.
 
-1. Provide all required environment variables.
-2. Run migrations with `bunx prisma migrate deploy`.
-3. Generate the Prisma client with `bunx prisma generate`.
-4. Build the app with `bun run build`.
-5. Start it with `bun run start` or deploy through the chosen Next.js hosting platform.
+### Server setup
 
-Run `bunx prisma db seed` when provisioning a new database or when the default permission/role seed data changes.
+Install Docker Engine with the Docker Compose plugin, clone the repository on
+the server, then create the untracked production environment file:
+
+```bash
+cp deploy/env.production.example .env
+chmod 600 .env
+```
+
+Set every required value in `.env`. Do not commit or copy this file into the
+repository. `DATABASE_URL` must reference a database host reachable from the
+container, and `NEXTAUTH_URL` must be the public HTTPS URL.
+
+### Deploy and update
+
+From the repository root on the server, run:
+
+```bash
+git pull --ff-only
+docker compose --env-file .env build app migrate
+docker compose --env-file .env --profile ops run --rm migrate
+docker compose --env-file .env up -d --remove-orphans app
+docker compose --env-file .env ps
+docker compose --env-file .env logs -f app
+```
+
+For a newly provisioned database, or after a deliberate change to the default
+roles and permissions, run the idempotent seed job after migrations and before
+starting the app:
+
+```bash
+docker compose --env-file .env build migrate
+docker compose --env-file .env --profile ops run --rm seed
+```
+
+Check readiness through the host proxy or locally on the server:
+
+```bash
+curl --fail http://127.0.0.1:3000/api/health
+```
+
+The app container has no persistent volume: application files are immutable
+and uploaded document content is stored in PostgreSQL. Migrations and seeds
+are explicit operator actions and never run when the app container starts.
+
+### Reverse proxy and Keycloak
+
+Configure the host reverse proxy to forward to
+`http://127.0.0.1:${APP_PORT}` and preserve `Host`, `X-Forwarded-For`,
+`X-Forwarded-Host`, and `X-Forwarded-Proto` headers. Terminate TLS at the
+proxy; do not expose the Compose port publicly.
+
+In Keycloak, register this valid redirect URI:
+
+```text
+${NEXTAUTH_URL}/api/auth/callback/keycloak
+```
+
+Also set the client web origin to the public `NEXTAUTH_URL` value.
+
+Before a rollback, confirm that the database migration is backward-compatible.
+Then restore the prior Git revision or image tag and run `docker compose up -d
+app`; do not attempt to roll back production Prisma migrations automatically.
 
 ## Troubleshooting
 

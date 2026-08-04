@@ -1,0 +1,26 @@
+# Secrets and local configuration
+.env*
+
+# Source-control and editor files
+.git
+.gitignore
+.DS_Store
+
+# Dependency and build outputs
+node_modules
+.next
+build
+coverage
+lib/generated/prisma
+
+# Generated analysis and local-only project artifacts
+graphify-out
+.agents
+.codex
+certificates
+sql-lab
+
+# Documentation is not needed at image build time
+README.md
+AGENTS.md
+docs

@@ -1,0 +1,64 @@
+services:
+  app:
+    build:
+      context: .
+      target: runner
+    image: sraw-app:${IMAGE_TAG:-latest}
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  migrate:
+    profiles: ["ops"]
+    build:
+      context: .
+      target: migrator
+    image: sraw-migrator:${IMAGE_TAG:-latest}
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+    command: ["bunx", "prisma", "migrate", "deploy"]
+    restart: "no"
+
+  seed:
+    profiles: ["ops"]
+    build:
+      context: .
+      target: migrator
+    image: sraw-migrator:${IMAGE_TAG:-latest}
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+    command: ["bunx", "prisma", "db", "seed"]
+    restart: "no"
