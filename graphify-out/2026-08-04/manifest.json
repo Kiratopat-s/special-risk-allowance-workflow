@@ -1695,8 +1695,8 @@
     "semantic_hash": ""
   },
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/next.config.ts": {
-    "mtime": 1784362403.1569724,
-    "ast_hash": "38503ac0a5096b4ceb0c37819c8c4636",
+    "mtime": 1783610883.9834852,
+    "ast_hash": "6c7a30e2b859b2cdd7f9c9765123c18d",
     "semantic_hash": ""
   },
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/package.json": {
@@ -1850,8 +1850,8 @@
     "semantic_hash": ""
   },
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/README.md": {
-    "mtime": 1784362585.1936543,
-    "ast_hash": "1764bc9b27221bc381a20eb72f645b95",
+    "mtime": 1783614930.2989163,
+    "ast_hash": "e1d32b25f36200c5a00da4c0b3e645c2",
     "semantic_hash": ""
   },
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/lib/domains/README.md": {
@@ -1997,16 +1997,6 @@
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/app/how-to-use/page.tsx": {
     "mtime": 1783647245.9000044,
     "ast_hash": "dec93a54146ef573b42a4fd97cef7f20",
-    "semantic_hash": ""
-  },
-  "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/app/api/health/route.ts": {
-    "mtime": 1784362403.5984,
-    "ast_hash": "5cde13f4c390315103a75fa01750fcc3",
-    "semantic_hash": ""
-  },
-  "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/compose.yaml": {
-    "mtime": 1784362585.0689704,
-    "ast_hash": "f177bada12c04b52a97dfe07fe1c9f05",
     "semantic_hash": ""
   }
 }
