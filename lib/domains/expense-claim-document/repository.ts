@@ -1,395 +1,693 @@
-/**
- * ExpenseClaimDocument Domain - Repository Layer
- *
- * Data access layer for expense claim documents
- *
- * @module lib/domains/expense-claim-document/repository
- */
-
 import { prisma } from "@/lib/db";
-import { Prisma } from "@/lib/generated/prisma/client";
-import { sanitizeStrings } from "@/lib/shared/sanitize";
-import type {
-    ExpenseClaimDocumentEntity,
-    ExpenseClaimDocumentWithRelations,
-    CreateExpenseClaimDocumentInput,
-    UpdateExpenseClaimDocumentInput,
-    ExpenseClaimDocumentFilterCriteria,
-    EligibleOffSiteWorkOption,
-} from "./types";
+import type { Prisma } from "@/lib/generated/prisma/client";
 import type { PaginatedResult } from "@/lib/shared/types";
+import type {
+  EligibleOffSiteWorkOption,
+  ExpenseClaimDocumentEntity,
+  ExpenseClaimDocumentFilterCriteria,
+  ExpenseClaimDocumentWithRelations,
+  PreparedRevision,
+} from "./types";
+import { CLAIM_DAILY_RATE } from "./validation";
 
-const userSelect = {
-    id: true,
-    firstName: true,
-    lastName: true,
-    employeeId: true,
-    departmentId: true,
+const claimantSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  employeeId: true,
+  departmentId: true,
 } as const;
 
-const createdBySelect = {
-    id: true,
-    firstName: true,
-    lastName: true,
-    employeeId: true,
+const creatorSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  employeeId: true,
 } as const;
 
-const offSiteWorkSelect = {
-    id: true,
-    innerRefDocumentId: true,
-    startDate: true,
-    endDate: true,
-    location: true,
-    objective: true,
-    leaderUserId: true,
-    leaderEmpId: true,
-    leaderFirstName: true,
-    leaderLastName: true,
-    leaderPosition: true,
-    leaderEmail: true,
+const revisionInclude = {
+  offSiteWorks: { orderBy: { createdAt: "asc" as const } },
+  workDates: {
+    orderBy: { workDate: "asc" as const },
+    include: { weSafeCodes: { orderBy: { createdAt: "asc" as const } } },
+  },
+  leaderVerifications: { orderBy: { createdAt: "asc" as const } },
 } as const;
 
-const leaderVerificationSelect = {
-    id: true,
-    offSiteWorkId: true,
-    leaderUserId: true,
-    leaderEmail: true,
-    token: true,
-    expiresAt: true,
-    verifiedAt: true,
+const claimInclude = {
+  claimant: { select: claimantSelect },
+  createdBy: { select: creatorSelect },
+  revisions: {
+    orderBy: { revisionNo: "desc" as const },
+    take: 1,
+    include: revisionInclude,
+  },
+  monthlyRequestItems: {
+    where: { removedAt: null },
+    select: { monthlyRequestCollectionId: true },
+    take: 1,
+  },
 } as const;
 
-function serializeDecimalFields<T extends { countDates: unknown; amount: unknown }>(
-    item: T
-): T {
-    return {
-        ...item,
-        countDates: item.countDates != null ? Number(item.countDates) : null,
-        amount: item.amount != null ? Number(item.amount) : null,
-    };
+type RawClaim = Awaited<ReturnType<typeof findRawClaim>>;
+type TransactionClient = Prisma.TransactionClient;
+
+export class ActiveClaimExistsError extends Error {
+  constructor() {
+    super("An active claim already exists for this user and month");
+    this.name = "ActiveClaimExistsError";
+  }
+}
+
+export class ClaimStateConflictError extends Error {
+  constructor(message = "Expense claim state changed") {
+    super(message);
+    this.name = "ClaimStateConflictError";
+  }
+}
+
+async function findRawClaim(id: string, includeCancelled = false) {
+  return prisma.expenseClaim.findFirst({
+    where: { id, ...(includeCancelled ? {} : { cancelledAt: null }) },
+    include: claimInclude,
+  });
+}
+
+function isoDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function mapClaim(row: NonNullable<RawClaim>): ExpenseClaimDocumentWithRelations {
+  const revision = row.revisions[0];
+  if (!revision) {
+    throw new Error(`Expense claim ${row.id} has no revision`);
+  }
+
+  const offSiteBySnapshotId = new Map(
+    revision.offSiteWorks.map((item) => [item.id, item.offSiteWorkId]),
+  );
+  const revisionView = {
+    id: revision.id,
+    revisionNo: revision.revisionNo,
+    status: revision.status,
+    claimantPositionAtSubmission: revision.positionShortSnapshot,
+    totalDays: revision.totalDays,
+    totalAmount: Number(revision.totalAmount),
+    ratePerDay: Number(revision.ratePerDay),
+    remark: revision.remark,
+    submittedAt: revision.submittedAt,
+    supersededAt: revision.supersededAt,
+    offSiteWorks: revision.offSiteWorks.map((item) => ({
+      id: item.id,
+      offSiteWorkId: item.offSiteWorkId,
+      innerRefDocumentId: item.innerRefDocumentIdSnapshot,
+      startDate: item.startDateSnapshot,
+      endDate: item.endDateSnapshot,
+      objective: item.objectiveSnapshot,
+      location: item.locationSnapshot,
+      leaderUserId: item.leaderUserIdSnapshot,
+      leaderEmpId: item.leaderEmpIdSnapshot,
+      leaderFirstName: item.leaderFirstNameSnapshot,
+      leaderLastName: item.leaderLastNameSnapshot,
+      leaderPosition: item.leaderPositionSnapshot,
+      leaderEmail: item.leaderEmailSnapshot,
+    })),
+    workDates: revision.workDates.map((item) => ({
+      id: item.id,
+      date: isoDate(item.workDate),
+      offSiteWorkId:
+        revision.offSiteWorks.find((osw) => osw.id === item.revisionOffSiteWorkId)
+          ?.offSiteWorkId ?? "",
+      dayType: item.dayType,
+      holidayType: item.holidayType,
+      holidayName: item.holidayName,
+      holidaySource: item.holidaySource,
+      requiresWeSafe: item.requiresWeSafe,
+      dailyRate: Number(item.dailyRate),
+      weSafeCodes: item.weSafeCodes.map((entry) => entry.code),
+    })),
+  };
+
+  return {
+    id: row.id,
+    expenseMonth: row.expenseMonth,
+    userId: row.userId,
+    createdById: row.createdById,
+    status: row.status,
+    currentRevisionNo: row.currentRevisionNo,
+    collectedAt: row.collectedAt,
+    completedAt: row.completedAt,
+    rejectedAt: row.rejectedAt,
+    rejectionReason: row.rejectionReason,
+    cancelledAt: row.cancelledAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    currentRevision: revisionView,
+    claimantPositionAtSubmission: revision.positionShortSnapshot,
+    countDates: revision.totalDays,
+    amount: Number(revision.totalAmount),
+    remark: revision.remark,
+    monthlyRequestCollectionId:
+      row.monthlyRequestItems[0]?.monthlyRequestCollectionId ?? null,
+    claimant: row.claimant,
+    createdBy: row.createdBy,
+    expenseClaimOffSiteWorks: revision.offSiteWorks.map((item) => ({
+      offSiteWorkId: item.offSiteWorkId,
+      offSiteWork: {
+        id: item.offSiteWorkId,
+        innerRefDocumentId: item.innerRefDocumentIdSnapshot,
+        startDate: item.startDateSnapshot,
+        endDate: item.endDateSnapshot,
+        location: item.locationSnapshot,
+        objective: item.objectiveSnapshot,
+        leaderUserId: item.leaderUserIdSnapshot,
+        leaderEmpId: item.leaderEmpIdSnapshot,
+        leaderFirstName: item.leaderFirstNameSnapshot,
+        leaderLastName: item.leaderLastNameSnapshot,
+        leaderPosition: item.leaderPositionSnapshot,
+        leaderEmail: item.leaderEmailSnapshot,
+      },
+    })),
+    leaderVerifications: revision.leaderVerifications.map((item) => ({
+      id: item.id,
+      revisionNo: revision.revisionNo,
+      offSiteWorkId: offSiteBySnapshotId.get(item.revisionOffSiteWorkId) ?? "",
+      leaderUserId: item.leaderUserId,
+      leaderEmail: item.leaderEmailSnapshot,
+      expiresAt: item.expiresAt,
+      confirmedAt: item.confirmedAt,
+      status: item.status,
+    })),
+  };
+}
+
+async function replaceDraftRevisionContent(
+  tx: TransactionClient,
+  revisionId: string,
+  prepared: PreparedRevision,
+): Promise<void> {
+  await tx.expenseClaimWorkDate.deleteMany({ where: { revisionId } });
+  await tx.expenseClaimRevisionOffSiteWork.deleteMany({ where: { revisionId } });
+
+  const snapshotIds = new Map<string, string>();
+  for (const osw of prepared.offSiteWorks) {
+    const snapshot = await tx.expenseClaimRevisionOffSiteWork.create({
+      data: {
+        revisionId,
+        offSiteWorkId: osw.id,
+        innerRefDocumentIdSnapshot: osw.innerRefDocumentId,
+        startDateSnapshot: osw.startDate,
+        endDateSnapshot: osw.endDate,
+        objectiveSnapshot: osw.objective,
+        locationSnapshot: osw.location,
+        leaderUserIdSnapshot: osw.leaderUserId,
+        leaderEmpIdSnapshot: osw.leaderEmpId,
+        leaderFirstNameSnapshot: osw.leaderFirstName,
+        leaderLastNameSnapshot: osw.leaderLastName,
+        leaderPositionSnapshot: osw.leaderPosition,
+        leaderEmailSnapshot: osw.leaderEmail,
+      },
+    });
+    snapshotIds.set(osw.id, snapshot.id);
+  }
+
+  for (const workDate of prepared.workDates) {
+    const revisionOffSiteWorkId = snapshotIds.get(workDate.offSiteWorkId);
+    if (!revisionOffSiteWorkId) {
+      throw new Error(`Missing off-site snapshot for ${workDate.offSiteWorkId}`);
+    }
+    await tx.expenseClaimWorkDate.create({
+      data: {
+        revisionId,
+        revisionOffSiteWorkId,
+        workDate: workDate.date,
+        dayType: workDate.dayType,
+        holidayType: workDate.holidayType,
+        holidayName: workDate.holidayName,
+        holidaySource: workDate.holidaySource,
+        requiresWeSafe: workDate.requiresWeSafe,
+        dailyRate: CLAIM_DAILY_RATE,
+        weSafeCodes: {
+          create: workDate.weSafeCodes.map((code) => ({ code })),
+        },
+      },
+    });
+  }
+
+  await tx.expenseClaimRevision.update({
+    where: { id: revisionId },
+    data: {
+      employeeIdSnapshot: prepared.claimant.employeeId,
+      firstNameSnapshot: prepared.claimant.firstName,
+      lastNameSnapshot: prepared.claimant.lastName,
+      positionSnapshot: prepared.claimant.position,
+      positionShortSnapshot: prepared.claimant.positionShort,
+      positionLevelSnapshot: prepared.claimant.positionLevel,
+      departmentIdSnapshot: prepared.claimant.departmentId,
+      departmentNameSnapshot: prepared.claimant.departmentName,
+      departmentShortSnapshot: prepared.claimant.departmentShort,
+      ratePerDay: CLAIM_DAILY_RATE,
+      totalDays: prepared.totalDays,
+      totalAmount: prepared.totalAmount,
+      remark: prepared.remark,
+      materialHash: prepared.materialHash,
+    },
+  });
+}
+
+function sameNullable(a: string | null, b: string | null): boolean {
+  return (a ?? null) === (b ?? null);
+}
+
+async function lockAndValidateOffSiteWorks(
+  tx: TransactionClient,
+  prepared: PreparedRevision,
+  claimantId: string,
+): Promise<void> {
+  const ids = prepared.offSiteWorks.map((item) => item.id);
+  const lockedAt = new Date();
+  const locked = await tx.offSiteWork.updateMany({
+    where: {
+      id: { in: ids },
+      deletedAt: null,
+      replacements: { none: { deletedAt: null } },
+    },
+    data: { lockedAt },
+  });
+  if (locked.count !== ids.length) {
+    throw new ClaimStateConflictError("Off-site work changed or was replaced");
+  }
+  const rows = await tx.offSiteWork.findMany({
+    where: { id: { in: ids } },
+    include: {
+      participants: {
+        where: { userId: claimantId },
+        select: { userId: true },
+      },
+    },
+  });
+  const rowById = new Map(rows.map((item) => [item.id, item]));
+  for (const snapshot of prepared.offSiteWorks) {
+    const row = rowById.get(snapshot.id);
+    if (
+      !row ||
+      row.participants.length !== 1 ||
+      row.startDate.getTime() !== snapshot.startDate.getTime() ||
+      row.endDate.getTime() !== snapshot.endDate.getTime() ||
+      !sameNullable(row.innerRefDocumentId, snapshot.innerRefDocumentId) ||
+      !sameNullable(row.objective, snapshot.objective) ||
+      !sameNullable(row.location, snapshot.location) ||
+      !sameNullable(row.leaderUserId, snapshot.leaderUserId) ||
+      !sameNullable(row.leaderEmpId, snapshot.leaderEmpId) ||
+      !sameNullable(row.leaderFirstName, snapshot.leaderFirstName) ||
+      !sameNullable(row.leaderLastName, snapshot.leaderLastName) ||
+      !sameNullable(row.leaderPosition, snapshot.leaderPosition) ||
+      !sameNullable(row.leaderEmail, snapshot.leaderEmail)
+    ) {
+      throw new ClaimStateConflictError("Off-site work changed before submit");
+    }
+  }
+}
+
+async function mappedClaim(id: string): Promise<ExpenseClaimDocumentEntity> {
+  const row = await findRawClaim(id);
+  if (!row) throw new ClaimStateConflictError("Expense claim disappeared");
+  return mapClaim(row);
 }
 
 export const expenseClaimDocumentRepository = {
-    /**
-     * Find off-site work options eligible for claim creation for a specific user.
-     * - Related to user: posted by user OR listed in employee_list JSON
-        * - Not already linked to any APPROVED expense claim of the same user in selected month
-     * - Overlaps selected month range
-     */
-    async findEligibleOffSiteWorksForUser(
-        userId: string,
-        month: Date
-    ): Promise<EligibleOffSiteWorkOption[]> {
-        const monthStart = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1));
-        const monthEnd = new Date(
-            Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0, 23, 59, 59, 999)
-        );
+  async findWithRelations(
+    id: string,
+    includeCancelled = false,
+  ): Promise<ExpenseClaimDocumentWithRelations | null> {
+    const row = await findRawClaim(id, includeCancelled);
+    return row ? mapClaim(row) : null;
+  },
 
-        const rows = await prisma.$queryRaw<EligibleOffSiteWorkOption[]>`
-			SELECT
-				osw.id,
-				osw.inner_ref_document_id AS "innerRefDocumentId",
-				osw.start_date AS "startDate",
-				osw.end_date AS "endDate",
-				osw.location,
-				osw.objective,
-				(osw.leader_user_id IS NOT NULL OR osw.leader_email IS NOT NULL) AS "hasLeader",
-				osw.leader_first_name AS "leaderFirstName",
-				osw.leader_last_name AS "leaderLastName",
-				osw.leader_email AS "leaderEmail"
-			FROM off_site_works osw
-			WHERE
-				osw.deleted_at IS NULL
-				AND osw.start_date <= ${monthEnd}
-				AND osw.end_date >= ${monthStart}
-				AND (
-					osw.posted_by_user_id = ${userId}
-					OR EXISTS (
-						SELECT 1
-						FROM jsonb_array_elements(COALESCE(osw.employee_list, '[]'::jsonb)) AS emp
-						WHERE emp->>'userId' = ${userId}
-					)
-				)
-				AND NOT EXISTS (
-					SELECT 1
-					FROM expense_claim_off_site_work ecosw
-					JOIN expense_claims ec ON ec.id = ecosw.expense_claim_id
-					WHERE ecosw.off_site_work_id = osw.id
-						AND ec.user_id = ${userId}
-						AND ec.status = 'APPROVED'
-						AND ec.cancelled_at IS NULL
-                        AND ec.expense_month >= ${monthStart}
-                        AND ec.expense_month <= ${monthEnd}
-				)
-			ORDER BY osw.start_date DESC, osw.id DESC
-		`;
+  async findById(
+    id: string,
+    includeCancelled = false,
+  ): Promise<ExpenseClaimDocumentEntity | null> {
+    const row = await findRawClaim(id, includeCancelled);
+    return row ? mapClaim(row) : null;
+  },
 
-        return rows;
-    },
+  findClaimantProfile(userId: string) {
+    return prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        employeeId: true,
+        firstName: true,
+        lastName: true,
+        position: true,
+        positionShort: true,
+        positionLevel: true,
+        departmentId: true,
+        department: { select: { name: true, shortName: true } },
+      },
+    });
+  },
 
-    /**
-     * Find claim by ID (exclude cancelled by default)
-     */
-    async findById(
-        id: string,
-        includeCancelled = false
-    ): Promise<ExpenseClaimDocumentEntity | null> {
-        const result = await prisma.expenseClaim.findFirst({
-            where: {
-                id,
-                ...(includeCancelled ? {} : { cancelledAt: null }),
-            },
-        });
+  async findActiveForUserMonth(userId: string, month: Date) {
+    return prisma.expenseClaim.findFirst({
+      where: { userId, expenseMonth: month, cancelledAt: null },
+      select: { id: true, status: true },
+    });
+  },
 
-        return result ? serializeDecimalFields(result as ExpenseClaimDocumentEntity) : null;
-    },
+  async findEligibleOffSiteWorksForUser(
+    userId: string,
+    month: Date,
+  ): Promise<EligibleOffSiteWorkOption[]> {
+    const monthStart = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth(), 1));
+    const monthEnd = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0));
+    const rows = await prisma.offSiteWork.findMany({
+      where: {
+        deletedAt: null,
+        startDate: { lte: monthEnd },
+        endDate: { gte: monthStart },
+        participants: { some: { userId } },
+        replacements: { none: { deletedAt: null } },
+      },
+      orderBy: [{ startDate: "asc" }, { id: "asc" }],
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      supersedesId: row.supersedesId,
+      innerRefDocumentId: row.innerRefDocumentId,
+      startDate: row.startDate,
+      endDate: row.endDate,
+      location: row.location,
+      objective: row.objective,
+      hasLeader: Boolean(row.leaderUserId || row.leaderEmail),
+      leaderFirstName: row.leaderFirstName,
+      leaderLastName: row.leaderLastName,
+      leaderEmail: row.leaderEmail,
+    }));
+  },
 
-    /**
-     * Find claim by ID with relations
-     */
-    async findWithRelations(
-        id: string,
-        includeCancelled = false
-    ): Promise<ExpenseClaimDocumentWithRelations | null> {
-        const result = await prisma.expenseClaim.findFirst({
-            where: {
-                id,
-                ...(includeCancelled ? {} : { cancelledAt: null }),
-            },
-            include: {
-                claimant: { select: userSelect },
-                createdBy: { select: createdBySelect },
-                expenseClaimOffSiteWorks: {
-                    select: {
-                        offSiteWorkId: true,
-                        offSiteWork: { select: offSiteWorkSelect },
-                    },
-                },
-                leaderVerifications: { select: leaderVerificationSelect },
-            },
-        });
+  findOffSiteWorksForParticipant(userId: string, ids: string[]) {
+    return prisma.offSiteWork.findMany({
+      where: {
+        id: { in: ids },
+        deletedAt: null,
+        participants: { some: { userId } },
+        replacements: { none: { deletedAt: null } },
+      },
+    });
+  },
 
-        return result ? serializeDecimalFields(result as ExpenseClaimDocumentWithRelations) : null;
-    },
-
-    /**
-     * Update only the status field of a claim document
-     */
-    async updateStatus(
-        id: string,
-        status: string
-    ): Promise<ExpenseClaimDocumentEntity> {
-        return prisma.expenseClaim.update({
-            where: { id },
-            data: { status: status as never },
-        }) as Promise<ExpenseClaimDocumentEntity>;
-    },
-
-    /**
-     * Create a new claim document
-     */
-    async create(
-        data: CreateExpenseClaimDocumentInput,
-        userId: string,
-        createdById: string
-    ): Promise<ExpenseClaimDocumentEntity> {
-        // Strip null bytes (0x00) from all string fields — PostgreSQL rejects them
-        data = sanitizeStrings(data);
-
-        const createData = {
-            expenseMonth: new Date(data.expenseMonth),
-            userId,
-            claimantPositionAtSubmission: data.claimantPositionAtSubmission,
-            selectedDates: (data.selectedDates ?? Prisma.JsonNull) as unknown,
-            countDates: data.countDates,
-            amount: data.amount,
-            remark: data.remark,
-            createdById,
-            status: data.status,
-            monthlyRequestCollectionId: data.monthlyRequestCollectionId,
-            collectedAt: data.collectedAt ? new Date(data.collectedAt) : undefined,
-            ...(data.offSiteWorkIds && data.offSiteWorkIds.length > 0
-                ? {
-                    expenseClaimOffSiteWorks: {
-                        create: data.offSiteWorkIds.map((offSiteWorkId) => ({
-                            offSiteWorkId,
-                        })),
-                    },
-                }
-                : {}),
-        };
-
-        return prisma.expenseClaim.create({
-            data: createData as Parameters<typeof prisma.expenseClaim.create>[0]["data"],
-        }) as Promise<ExpenseClaimDocumentEntity>;
-    },
-
-    /**
-     * Update an existing claim document
-     */
-    async update(
-        id: string,
-        data: UpdateExpenseClaimDocumentInput
-    ): Promise<ExpenseClaimDocumentEntity> {
-        // Strip null bytes (0x00) from all string fields — PostgreSQL rejects them
-        data = sanitizeStrings(data);
-
-        const updateData: Record<string, unknown> = {};
-
-        if (data.expenseMonth !== undefined) {
-            updateData.expenseMonth = new Date(data.expenseMonth);
-        }
-        if (data.claimantPositionAtSubmission !== undefined) {
-            updateData.claimantPositionAtSubmission =
-                data.claimantPositionAtSubmission;
-        }
-        if (data.selectedDates !== undefined) {
-            updateData.selectedDates = (data.selectedDates ?? Prisma.JsonNull) as unknown;
-        }
-        if (data.countDates !== undefined) {
-            updateData.countDates = data.countDates;
-        }
-        if (data.amount !== undefined) {
-            updateData.amount = data.amount;
-        }
-        if (data.remark !== undefined) {
-            updateData.remark = data.remark;
-        }
-        if (data.status !== undefined) {
-            updateData.status = data.status;
-        }
-        if (data.monthlyRequestCollectionId !== undefined) {
-            updateData.monthlyRequestCollectionId = data.monthlyRequestCollectionId;
-        }
-        if (data.collectedAt !== undefined) {
-            updateData.collectedAt = data.collectedAt
-                ? new Date(data.collectedAt)
-                : null;
-        }
-        if (data.offSiteWorkIds !== undefined) {
-            updateData.expenseClaimOffSiteWorks = {
-                deleteMany: {},
-                create:
-                    data.offSiteWorkIds.length > 0
-                        ? data.offSiteWorkIds.map((offSiteWorkId) => ({ offSiteWorkId }))
-                        : [],
-            };
-        }
-
-        return prisma.expenseClaim.update({
-            where: { id },
-            data: updateData,
-        }) as Promise<ExpenseClaimDocumentEntity>;
-    },
-
-    /**
-     * Soft-delete a claim document by cancelling it
-     */
-    async softDelete(id: string): Promise<ExpenseClaimDocumentEntity> {
-        const result = await prisma.expenseClaim.update({
-            where: { id },
+  async createDraft(
+    month: Date,
+    userId: string,
+    actorId: string,
+    prepared: PreparedRevision,
+  ): Promise<ExpenseClaimDocumentEntity> {
+    let claimId: string;
+    try {
+      claimId = await prisma.$transaction(
+        async (tx) => {
+          const active = await tx.expenseClaim.findFirst({
+            where: { userId, expenseMonth: month, cancelledAt: null },
+            select: { id: true },
+          });
+          if (active) throw new ActiveClaimExistsError();
+          const claim = await tx.expenseClaim.create({
             data: {
-                status: "CANCELLED",
-                cancelledAt: new Date(),
+              expenseMonth: month,
+              userId,
+              createdById: actorId,
+              status: "DRAFT",
+              currentRevisionNo: 1,
+              revisions: {
+                create: {
+                  revisionNo: 1,
+                  status: "DRAFT",
+                  employeeIdSnapshot: prepared.claimant.employeeId,
+                  firstNameSnapshot: prepared.claimant.firstName,
+                  lastNameSnapshot: prepared.claimant.lastName,
+                  positionSnapshot: prepared.claimant.position,
+                  positionShortSnapshot: prepared.claimant.positionShort,
+                  positionLevelSnapshot: prepared.claimant.positionLevel,
+                  departmentIdSnapshot: prepared.claimant.departmentId,
+                  departmentNameSnapshot: prepared.claimant.departmentName,
+                  departmentShortSnapshot: prepared.claimant.departmentShort,
+                  ratePerDay: CLAIM_DAILY_RATE,
+                  totalDays: 0,
+                  totalAmount: 0,
+                  remark: prepared.remark,
+                },
+              },
             },
+            select: { id: true },
+          });
+          const revision = await tx.expenseClaimRevision.findUniqueOrThrow({
+            where: {
+              expenseClaimId_revisionNo: {
+                expenseClaimId: claim.id,
+                revisionNo: 1,
+              },
+            },
+            select: { id: true },
+          });
+          await replaceDraftRevisionContent(tx, revision.id, prepared);
+          return claim.id;
+        },
+        { isolationLevel: "Serializable" },
+      );
+    } catch (cause) {
+      if (
+        cause instanceof ActiveClaimExistsError ||
+        (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "P2034")
+      ) {
+        throw new ActiveClaimExistsError();
+      }
+      throw cause;
+    }
+    return mappedClaim(claimId);
+  },
+
+  async updateDraftRevision(
+    claimId: string,
+    revisionId: string,
+    prepared: PreparedRevision,
+  ): Promise<ExpenseClaimDocumentEntity> {
+    await prisma.$transaction(async (tx) => {
+      const current = await tx.expenseClaim.findUnique({
+        where: { id: claimId },
+        select: { status: true, revisions: { where: { id: revisionId }, select: { status: true } } },
+      });
+      if (current?.status !== "DRAFT" || current.revisions[0]?.status !== "DRAFT") {
+        throw new ClaimStateConflictError();
+      }
+      await replaceDraftRevisionContent(tx, revisionId, prepared);
+    });
+    return mappedClaim(claimId);
+  },
+
+  async startCorrectionRevision(
+    claimId: string,
+    oldRevisionId: string,
+    nextRevisionNo: number,
+    prepared: PreparedRevision,
+  ): Promise<ExpenseClaimDocumentEntity> {
+    await prisma.$transaction(async (tx) => {
+      const current = await tx.expenseClaim.findUnique({
+        where: { id: claimId },
+        select: { status: true, currentRevisionNo: true },
+      });
+      if (
+        !current ||
+        current.currentRevisionNo !== nextRevisionNo - 1 ||
+        current.status === "COLLECTED" ||
+        current.status === "COMPLETED" ||
+        current.status === "CANCELLED"
+      ) {
+        throw new ClaimStateConflictError();
+      }
+      await tx.expenseClaimRevision.update({
+        where: { id: oldRevisionId },
+        data: { status: "SUPERSEDED", supersededAt: new Date() },
+      });
+      await tx.leaderVerification.updateMany({
+        where: { claimRevisionId: oldRevisionId },
+        data: { status: "SUPERSEDED", supersededAt: new Date() },
+      });
+      const revision = await tx.expenseClaimRevision.create({
+        data: {
+          expenseClaimId: claimId,
+          revisionNo: nextRevisionNo,
+          status: "DRAFT",
+          employeeIdSnapshot: prepared.claimant.employeeId,
+          firstNameSnapshot: prepared.claimant.firstName,
+          lastNameSnapshot: prepared.claimant.lastName,
+          positionSnapshot: prepared.claimant.position,
+          positionShortSnapshot: prepared.claimant.positionShort,
+          positionLevelSnapshot: prepared.claimant.positionLevel,
+          departmentIdSnapshot: prepared.claimant.departmentId,
+          departmentNameSnapshot: prepared.claimant.departmentName,
+          departmentShortSnapshot: prepared.claimant.departmentShort,
+          ratePerDay: CLAIM_DAILY_RATE,
+          totalDays: 0,
+          totalAmount: 0,
+          remark: prepared.remark,
+        },
+      });
+      await tx.expenseClaim.update({
+        where: { id: claimId },
+        data: {
+          status: "DRAFT",
+          currentRevisionNo: nextRevisionNo,
+          rejectedAt: null,
+          rejectedById: null,
+          rejectionReason: null,
+        },
+      });
+      await replaceDraftRevisionContent(tx, revision.id, prepared);
+    });
+    return mappedClaim(claimId);
+  },
+
+  async submitDraftAtomic<T>(
+    claimId: string,
+    revisionId: string,
+    prepared: PreparedRevision,
+    createVerifications: (tx: TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return prisma.$transaction(
+      async (tx) => {
+        const current = await tx.expenseClaim.findUnique({
+          where: { id: claimId },
+          select: {
+            status: true,
+            userId: true,
+            currentRevisionNo: true,
+            revisions: {
+              where: { id: revisionId },
+              select: { revisionNo: true, status: true },
+            },
+          },
         });
-
-        return result as ExpenseClaimDocumentEntity;
-    },
-
-    /**
-     * List claim documents with filters and pagination
-     */
-    async findMany(
-        criteria: ExpenseClaimDocumentFilterCriteria
-    ): Promise<PaginatedResult<ExpenseClaimDocumentWithRelations>> {
-        const {
-            search,
-            userId,
-            createdById,
-            status,
-            expenseMonthFrom,
-            expenseMonthTo,
-            includeCancelled = false,
-            page = 1,
-            pageSize = 20,
-        } = criteria;
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const where: any = {};
-
-        if (!includeCancelled) {
-            where.cancelledAt = null;
+        const revision = current?.revisions[0];
+        if (
+          current?.status !== "DRAFT" ||
+          revision?.status !== "DRAFT" ||
+          revision.revisionNo !== current.currentRevisionNo
+        ) {
+          throw new ClaimStateConflictError();
         }
 
-        if (userId) {
-            where.userId = userId;
-        }
+        await lockAndValidateOffSiteWorks(tx, prepared, current.userId);
+        await replaceDraftRevisionContent(tx, revisionId, prepared);
+        const result = await createVerifications(tx);
+        const submittedAt = new Date();
+        await tx.expenseClaimRevision.update({
+          where: { id: revisionId },
+          data: { status: "SUBMITTED", submittedAt },
+        });
+        await tx.expenseClaim.update({
+          where: { id: claimId },
+          data: { status: "PENDING_LEADER_CONFIRMATION" },
+        });
+        return result;
+      },
+      { isolationLevel: "Serializable" },
+    );
+  },
 
-        if (createdById) {
-            where.createdById = createdById;
-        }
+  async cancelAtomic(id: string): Promise<void> {
+    await prisma.$transaction(async (tx) => {
+      const claim = await tx.expenseClaim.findUnique({
+        where: { id },
+        select: {
+          status: true,
+          currentRevisionNo: true,
+          revisions: {
+            orderBy: { revisionNo: "desc" },
+            take: 1,
+            select: { id: true, revisionNo: true },
+          },
+        },
+      });
+      if (!claim) throw new ClaimStateConflictError("Expense claim not found");
+      if (claim.status === "COLLECTED" || claim.status === "COMPLETED") {
+        throw new ClaimStateConflictError("Expense claim is immutable");
+      }
+      if (claim.status === "CANCELLED") return;
+      const currentRevision = claim.revisions[0];
+      if (currentRevision?.revisionNo !== claim.currentRevisionNo) {
+        throw new ClaimStateConflictError();
+      }
+      const cancelledAt = new Date();
+      if (currentRevision) {
+        await tx.leaderVerification.updateMany({
+          where: { claimRevisionId: currentRevision.id, supersededAt: null },
+          data: { status: "SUPERSEDED", supersededAt: cancelledAt },
+        });
+      }
+      await tx.expenseClaim.update({
+        where: { id },
+        data: { status: "CANCELLED", cancelledAt },
+      });
+    });
+  },
 
-        if (status) {
-            where.status = status;
-        }
+  async findMany(
+    criteria: ExpenseClaimDocumentFilterCriteria,
+  ): Promise<PaginatedResult<ExpenseClaimDocumentWithRelations>> {
+    const page = Math.max(1, criteria.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, criteria.pageSize ?? 20));
+    const where: Prisma.ExpenseClaimWhereInput = {};
+    if (!criteria.includeCancelled) where.cancelledAt = null;
+    if (criteria.userId) where.userId = criteria.userId;
+    if (criteria.createdById) where.createdById = criteria.createdById;
+    if (criteria.status) where.status = criteria.status;
+    if (criteria.expenseMonthFrom || criteria.expenseMonthTo) {
+      where.expenseMonth = {
+        ...(criteria.expenseMonthFrom
+          ? { gte: new Date(criteria.expenseMonthFrom) }
+          : {}),
+        ...(criteria.expenseMonthTo ? { lte: new Date(criteria.expenseMonthTo) } : {}),
+      };
+    }
+    if (criteria.search?.trim()) {
+      const search = criteria.search.trim();
+      where.OR = [
+        { id: { contains: search, mode: "insensitive" } },
+        {
+          claimant: {
+            OR: [
+              { firstName: { contains: search, mode: "insensitive" } },
+              { lastName: { contains: search, mode: "insensitive" } },
+              { employeeId: { contains: search, mode: "insensitive" } },
+            ],
+          },
+        },
+      ];
+    }
 
-        if (expenseMonthFrom || expenseMonthTo) {
-            where.expenseMonth = {};
-            if (expenseMonthFrom) where.expenseMonth.gte = new Date(expenseMonthFrom);
-            if (expenseMonthTo) where.expenseMonth.lte = new Date(expenseMonthTo);
-        }
-
-        if (search) {
-            where.OR = [
-                { id: { contains: search, mode: "insensitive" } },
-                { remark: { contains: search, mode: "insensitive" } },
-                {
-                    claimant: {
-                        OR: [
-                            { firstName: { contains: search, mode: "insensitive" } },
-                            { lastName: { contains: search, mode: "insensitive" } },
-                            { employeeId: { contains: search, mode: "insensitive" } },
-                        ],
-                    },
-                },
-            ];
-        }
-
-        const [data, total] = await Promise.all([
-            prisma.expenseClaim.findMany({
-                where,
-                include: {
-                    claimant: { select: userSelect },
-                    createdBy: { select: createdBySelect },
-                    expenseClaimOffSiteWorks: {
-                        select: {
-                            offSiteWorkId: true,
-                            offSiteWork: { select: offSiteWorkSelect },
-                        },
-                    },
-                    leaderVerifications: { select: leaderVerificationSelect },
-                },
-                orderBy: [{ expenseMonth: "desc" }, { createdAt: "desc" }],
-                skip: (page - 1) * pageSize,
-                take: pageSize,
-            }),
-            prisma.expenseClaim.count({ where }),
-        ]);
-
-        const totalPages = Math.ceil(total / pageSize);
-
-        return {
-            data: (data as ExpenseClaimDocumentWithRelations[]).map(serializeDecimalFields),
-            pagination: {
-                page,
-                pageSize,
-                total,
-                totalPages,
-                hasNext: page < totalPages,
-                hasPrevious: page > 1,
-            },
-        };
-    },
+    const [rows, total] = await Promise.all([
+      prisma.expenseClaim.findMany({
+        where,
+        include: claimInclude,
+        orderBy: [{ expenseMonth: "desc" }, { createdAt: "desc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.expenseClaim.count({ where }),
+    ]);
+    const totalPages = Math.ceil(total / pageSize);
+    return {
+      data: rows.map((row) => mapClaim(row)),
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrevious: page > 1,
+      },
+    };
+  },
 };
-

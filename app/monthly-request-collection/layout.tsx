@@ -17,8 +17,8 @@ export default async function MrcLayout({ children }: MrcLayoutProps) {
     { resource: "MONTHLY_REQUEST", action: "READ" },
     { resource: "MONTHLY_REQUEST", action: "LIST" },
     { resource: "MONTHLY_REQUEST", action: "MANAGE" },
-    { resource: "MONTHLY_REQUEST", action: "SUBMIT" },
-    { resource: "MONTHLY_REQUEST", action: "APPROVE" },
+    { resource: "MONTHLY_REQUEST", action: "COLLECT" },
+    { resource: "MONTHLY_REQUEST", action: "PRINT" },
   ]);
 
   if (!hasAccess) {

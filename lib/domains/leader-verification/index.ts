@@ -5,10 +5,18 @@
  */
 
 export type {
-    LeaderVerificationEntity,
-    LeaderVerificationWithRelations,
-    CreateLeaderVerificationInput,
+  CreatedLeaderVerification,
+  LeaderVerificationEntity,
+  LeaderVerificationPayload,
+  LeaderVerificationWithRelations,
+  VerifyResult,
 } from "./types";
 
 export { leaderVerificationRepository } from "./repository";
-export { leaderVerificationService, type VerifyResult } from "./service";
+export { leaderVerificationService } from "./service";
+export {
+  generateLeaderVerificationToken,
+  hashLeaderVerificationPayload,
+  hashLeaderVerificationToken,
+} from "./token";
+export { claimantFromVerificationSnapshot } from "./snapshot";

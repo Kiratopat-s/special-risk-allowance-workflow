@@ -1,110 +1,112 @@
 "use server";
 
-/**
- * OffSiteWork Server Actions
- *
- * Server actions for managing off-site work records
- *
- * @module app/actions/off-site-work
- */
-
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { can } from "@/lib/auth/permissions";
-import { offSiteWorkService } from "@/lib/domains/off-site-work";
-import type { Result, PaginatedResult } from "@/lib/shared/types";
-import type {
-  OffSiteWorkEntity,
-  OffSiteWorkWithRelations,
-  CreateOffSiteWorkInput,
-  UpdateOffSiteWorkInput,
-  OffSiteWorkFilterCriteria,
+import {
+  offSiteWorkService,
+  type CreateOffSiteWorkInput,
+  type OffSiteWorkEntity,
+  type OffSiteWorkFilterCriteria,
+  type OffSiteWorkWithRelations,
+  type UpdateOffSiteWorkInput,
 } from "@/lib/domains/off-site-work";
+import { authorizationService } from "@/lib/domains/permission";
+import type { PaginatedResult, Result } from "@/lib/shared/types";
 
-/**
- * List off-site work records with filters and pagination
- */
+function denied<T>(): Result<T> {
+  return {
+    success: false,
+    error: "Permission denied",
+    code: "PERMISSION_DENIED",
+  };
+}
+
+async function canListAll(userId: string): Promise<boolean> {
+  const permissionResult = await authorizationService.getUserPermissions(userId);
+  const permissions = permissionResult.success ? permissionResult.data : [];
+  return permissions.some(
+    (permission) =>
+      permission.resource === "OFF_SITE_WORK" &&
+      (permission.action === "MANAGE" ||
+        (permission.action === "LIST" && permission.scope === "ALL")),
+  );
+}
+
 export async function listOffSiteWorks(
-  filters?: OffSiteWorkFilterCriteria
+  filters: OffSiteWorkFilterCriteria = {},
 ): Promise<Result<PaginatedResult<OffSiteWorkWithRelations>>> {
   const session = await auth();
-  if (!session?.user?.dbUserId) {
-    return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
-  }
+  const userId = session?.user?.dbUserId;
+  if (!userId) return denied();
 
-  const canList = await can(session.user.dbUserId, "OFF_SITE_WORK", "LIST");
-  if (!canList) {
-    // User can only see own records
-    const canReadOwn = await can(
-      session.user.dbUserId,
-      "OFF_SITE_WORK",
-      "READ"
-    );
-    if (!canReadOwn) {
-      return {
-        success: false,
-        error: "Permission denied",
-        code: "PERMISSION_DENIED",
-      };
-    }
-    // Restrict to own records
-    return offSiteWorkService.list({
-      ...filters,
-      postedByUserId: session.user.dbUserId,
-    });
-  }
+  if (await canListAll(userId)) return offSiteWorkService.list(filters);
 
-  return offSiteWorkService.list(filters ?? {});
+  const allowed =
+    (await can(userId, "OFF_SITE_WORK", "LIST", { targetOwnerId: userId })) ||
+    (await can(userId, "OFF_SITE_WORK", "READ", { targetOwnerId: userId }));
+  if (!allowed) return denied();
+  // Force OWN after spreading filters so caller input can never widen the scope.
+  return offSiteWorkService.list({ ...filters, postedByUserId: userId });
 }
 
-/**
- * Get off-site work by ID
- */
 export async function getOffSiteWork(
-  id: string
+  id: string,
 ): Promise<Result<OffSiteWorkWithRelations>> {
   const session = await auth();
-  if (!session?.user?.dbUserId) {
-    return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
-  }
-
-  const canRead = await can(session.user.dbUserId, "OFF_SITE_WORK", "READ");
-  if (!canRead) {
+  const userId = session?.user?.dbUserId;
+  if (!userId) return denied();
+  const targetResult = await offSiteWorkService.getById(id);
+  if (!targetResult.success) {
     return {
       success: false,
-      error: "Permission denied",
-      code: "PERMISSION_DENIED",
+      error: "ไม่พบใบนำตัว",
+      code: "OFF_SITE_WORK_NOT_FOUND",
     };
   }
-
-  return offSiteWorkService.getById(id);
+  const target = targetResult.data;
+  if (
+    !(await can(userId, "OFF_SITE_WORK", "READ", {
+      targetOwnerId: target.postedByUserId,
+    }))
+  ) {
+    return denied();
+  }
+  return targetResult;
 }
 
-/**
- * Create a new off-site work record
- */
 export async function createOffSiteWork(
-  data: CreateOffSiteWorkInput
+  data: CreateOffSiteWorkInput,
 ): Promise<Result<OffSiteWorkEntity>> {
   const session = await auth();
-  if (!session?.user?.dbUserId) {
-    return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
+  const userId = session?.user?.dbUserId;
+  if (!userId) return denied();
+  if (
+    !(await can(userId, "OFF_SITE_WORK", "CREATE", {
+      targetOwnerId: userId,
+    }))
+  ) {
+    return denied();
   }
-
-  const canCreate = await can(
-    session.user.dbUserId,
-    "OFF_SITE_WORK",
-    "CREATE"
-  );
-  if (!canCreate) {
-    return {
-      success: false,
-      error: "Permission denied",
-      code: "PERMISSION_DENIED",
-    };
+  if (data.supersedesId) {
+    const targetResult = await offSiteWorkService.getById(data.supersedesId);
+    if (!targetResult.success) {
+      return {
+        success: false,
+        error: "ไม่พบใบนำตัวต้นฉบับ",
+        code: "OFF_SITE_WORK_NOT_FOUND",
+      };
+    }
+    const target = targetResult.data;
+    if (
+      !(await can(userId, "OFF_SITE_WORK", "UPDATE", {
+        targetOwnerId: target.postedByUserId,
+      }))
+    ) {
+      return denied();
+    }
   }
-
-  const result = await offSiteWorkService.create(data, session.user.dbUserId);
+  const result = await offSiteWorkService.create(data, userId);
   if (result.success) {
     revalidatePath("/off-site-work");
     revalidatePath("/dashboard");
@@ -112,32 +114,30 @@ export async function createOffSiteWork(
   return result;
 }
 
-/**
- * Update an off-site work record
- */
 export async function updateOffSiteWork(
   id: string,
-  data: UpdateOffSiteWorkInput
+  data: UpdateOffSiteWorkInput,
 ): Promise<Result<OffSiteWorkEntity>> {
   const session = await auth();
-  if (!session?.user?.dbUserId) {
-    return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
-  }
-
-  const canUpdate = await can(
-    session.user.dbUserId,
-    "OFF_SITE_WORK",
-    "UPDATE"
-  );
-  if (!canUpdate) {
+  const userId = session?.user?.dbUserId;
+  if (!userId) return denied();
+  const targetResult = await offSiteWorkService.getById(id);
+  if (!targetResult.success) {
     return {
       success: false,
-      error: "Permission denied",
-      code: "PERMISSION_DENIED",
+      error: "ไม่พบใบนำตัว",
+      code: "OFF_SITE_WORK_NOT_FOUND",
     };
   }
-
-  const result = await offSiteWorkService.update(id, data, session.user.dbUserId);
+  const target = targetResult.data;
+  if (
+    !(await can(userId, "OFF_SITE_WORK", "UPDATE", {
+      targetOwnerId: target.postedByUserId,
+    }))
+  ) {
+    return denied();
+  }
+  const result = await offSiteWorkService.update(id, data, userId);
   if (result.success) {
     revalidatePath("/off-site-work");
     revalidatePath("/dashboard");
@@ -145,31 +145,27 @@ export async function updateOffSiteWork(
   return result;
 }
 
-/**
- * Soft-delete an off-site work record
- */
-export async function deleteOffSiteWork(
-  id: string
-): Promise<Result<void>> {
+export async function deleteOffSiteWork(id: string): Promise<Result<void>> {
   const session = await auth();
-  if (!session?.user?.dbUserId) {
-    return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
-  }
-
-  const canDelete = await can(
-    session.user.dbUserId,
-    "OFF_SITE_WORK",
-    "DELETE"
-  );
-  if (!canDelete) {
+  const userId = session?.user?.dbUserId;
+  if (!userId) return denied();
+  const targetResult = await offSiteWorkService.getById(id);
+  if (!targetResult.success) {
     return {
       success: false,
-      error: "Permission denied",
-      code: "PERMISSION_DENIED",
+      error: "ไม่พบใบนำตัว",
+      code: "OFF_SITE_WORK_NOT_FOUND",
     };
   }
-
-  const result = await offSiteWorkService.delete(id, session.user.dbUserId);
+  const target = targetResult.data;
+  if (
+    !(await can(userId, "OFF_SITE_WORK", "DELETE", {
+      targetOwnerId: target.postedByUserId,
+    }))
+  ) {
+    return denied();
+  }
+  const result = await offSiteWorkService.delete(id, userId);
   if (result.success) {
     revalidatePath("/off-site-work");
     revalidatePath("/dashboard");

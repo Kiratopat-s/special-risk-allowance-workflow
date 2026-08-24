@@ -19,6 +19,7 @@ import {
   Settings,
   ShieldCheck,
   LayoutDashboard,
+  SearchCheck,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
@@ -48,6 +49,13 @@ export function Navbar() {
       { resource: "ROLE", action: "MANAGE" },
       { resource: "USER", action: "MANAGE" },
       { resource: "PERMISSION", action: "LIST" },
+    ]);
+  const hasCollectorAccess =
+    hasRole("collector") ||
+    hasRole("super-admin") ||
+    canAny([
+      { resource: "EXPENSE_CLAIM", action: "RECHECK" },
+      { resource: "MONTHLY_REQUEST", action: "MANAGE" },
     ]);
 
   return (
@@ -115,6 +123,14 @@ export function Navbar() {
                     <span>Dashboard</span>
                   </Link>
                 </DropdownMenuItem>
+                {!permissionsLoading && hasCollectorAccess ? (
+                  <DropdownMenuItem asChild>
+                    <Link href="/monthly-request-recheck" className="flex items-center">
+                      <SearchCheck className="mr-2 h-4 w-4" />
+                      <span>Collector Recheck</span>
+                    </Link>
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem asChild>
                   <Link href="/profile" className="flex items-center">
                     <User className="mr-2 h-4 w-4" />

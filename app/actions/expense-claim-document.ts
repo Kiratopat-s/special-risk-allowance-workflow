@@ -12,7 +12,9 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { can } from "@/lib/auth/permissions";
 import { expenseClaimDocumentService } from "@/lib/domains/expense-claim-document";
-import { expenseClaimDocumentRepository } from "@/lib/domains/expense-claim-document";
+import { holidayCalendarService } from "@/lib/domains/holiday-calendar";
+import type { HolidayResolution } from "@/lib/domains/holiday-calendar";
+import { authorizationService } from "@/lib/domains/permission";
 import type { Result, PaginatedResult } from "@/lib/shared/types";
 import type {
     ExpenseClaimDocumentEntity,
@@ -22,6 +24,24 @@ import type {
     UpdateExpenseClaimDocumentInput,
     ExpenseClaimDocumentFilterCriteria,
 } from "@/lib/domains/expense-claim-document";
+
+export async function resolveHolidayDatesForClaim(
+    dates: string[],
+): Promise<Result<HolidayResolution[]>> {
+    const session = await auth();
+    if (!session?.user?.dbUserId) {
+        return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
+    }
+    if (dates.length > 62) {
+        return { success: false, error: "Too many dates", code: "TOO_MANY_DATES" };
+    }
+    try {
+        const resolved = await holidayCalendarService.resolveDates(dates);
+        return { success: true, data: dates.map((date) => resolved.get(date)!).filter(Boolean) };
+    } catch {
+        return { success: false, error: "Invalid date", code: "INVALID_DATE" };
+    }
+}
 
 /**
  * List off-site work options eligible for creating expense claim for current user
@@ -65,7 +85,7 @@ export async function listEligibleOffSiteWorksForClaim(
  * List expense claim documents with permission-aware visibility.
  *
  * Scope resolution:
- *   LIST:ALL  → return all documents (collector, hpa, rk, drt)
+ *   LIST:ALL  → return all documents (collector or administrator)
  *   LIST:OWN  → return only the caller’s own documents (employee)
  *   READ:OWN  → fallback, same as LIST:OWN
  *   else      → PERMISSION_DENIED
@@ -101,14 +121,19 @@ export async function listExpenseClaimDocuments(
         return expenseClaimDocumentService.list({ ...(filters ?? {}), userId });
     }
 
-    // Distinguish LIST:ALL from LIST:OWN by using a NIL-UUID sentinel.
-    // OWN scope will deny (sentinel ≠ userId); ALL scope will allow.
-    const canListAll = await can(userId, "EXPENSE_CLAIM", "LIST", {
-        targetOwnerId: "00000000-0000-0000-0000-000000000000",
-    });
+    // Inspect the matched scope explicitly. The generic guard cannot infer
+    // LIST:ALL from an absent target and DEPARTMENT must never widen to ALL.
+    const permissionResult = await authorizationService.getUserPermissions(userId);
+    const permissions = permissionResult.success ? permissionResult.data : [];
+    const canListAll = permissions.some(
+        (permission) =>
+            permission.resource === "EXPENSE_CLAIM" &&
+            (permission.action === "MANAGE" ||
+                (permission.action === "LIST" && permission.scope === "ALL")),
+    );
 
     if (canListAll) {
-        // ALL scope — collector / hpa / rk / drt see every document.
+        // ALL scope — collectors and administrators see every document.
         return expenseClaimDocumentService.list(filters ?? {});
     }
 
@@ -127,10 +152,11 @@ export async function getExpenseClaimDocument(
         return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
     }
 
-    const existing = await expenseClaimDocumentRepository.findById(id);
-    if (!existing) {
+    const existingResult = await expenseClaimDocumentService.getById(id, true);
+    if (!existingResult.success) {
         return { success: false, error: "Expense claim document not found", code: "CLAIM_NOT_FOUND" };
     }
+    const existing = existingResult.data;
 
     const canRead = await can(session.user.dbUserId, "EXPENSE_CLAIM", "READ", {
         targetOwnerId: existing.userId,
@@ -144,7 +170,7 @@ export async function getExpenseClaimDocument(
         };
     }
 
-    return expenseClaimDocumentService.getById(id);
+    return existingResult;
 }
 
 /**
@@ -171,7 +197,11 @@ export async function createExpenseClaimDocument(
         };
     }
 
-    const result = await expenseClaimDocumentService.create(data, session.user.dbUserId, targetUserId);
+    const result = await expenseClaimDocumentService.saveClaimDraft(
+        data,
+        session.user.dbUserId,
+        targetUserId,
+    );
     if (result.success) {
         revalidatePath("/expense-claim-document");
         revalidatePath("/dashboard");
@@ -191,10 +221,11 @@ export async function updateExpenseClaimDocument(
         return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
     }
 
-    const existing = await expenseClaimDocumentRepository.findById(id);
-    if (!existing) {
+    const existingResult = await expenseClaimDocumentService.getById(id);
+    if (!existingResult.success) {
         return { success: false, error: "Expense claim document not found", code: "CLAIM_NOT_FOUND" };
     }
+    const existing = existingResult.data;
 
     const canUpdate = await can(session.user.dbUserId, "EXPENSE_CLAIM", "UPDATE", {
         targetOwnerId: existing.userId,
@@ -207,7 +238,18 @@ export async function updateExpenseClaimDocument(
         };
     }
 
-    const result = await expenseClaimDocumentService.update(id, data, session.user.dbUserId);
+    const result = existing.status === "DRAFT"
+        ? await expenseClaimDocumentService.saveClaimDraft(
+            data,
+            session.user.dbUserId,
+            existing.userId,
+            id,
+        )
+        : await expenseClaimDocumentService.startClaimCorrection(
+            id,
+            data,
+            session.user.dbUserId,
+        );
     if (result.success) {
         revalidatePath("/expense-claim-document");
         revalidatePath("/dashboard");
@@ -217,7 +259,8 @@ export async function updateExpenseClaimDocument(
 
 /**
  * Submit a DRAFT expense claim document.
- * Checks all linked OSWs have leaders, creates verifications, transitions to PENDING_LEADER_VERIFY.
+ * Checks all linked OSWs have leaders, creates verifications, and transitions
+ * to PENDING_LEADER_CONFIRMATION.
  */
 export async function submitDraftExpenseClaimDocument(
     id: string
@@ -227,10 +270,11 @@ export async function submitDraftExpenseClaimDocument(
         return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
     }
 
-    const existing = await expenseClaimDocumentRepository.findById(id);
-    if (!existing) {
+    const existingResult = await expenseClaimDocumentService.getById(id);
+    if (!existingResult.success) {
         return { success: false, error: "Expense claim document not found", code: "CLAIM_NOT_FOUND" };
     }
+    const existing = existingResult.data;
 
     const canUpdate = await can(session.user.dbUserId, "EXPENSE_CLAIM", "UPDATE", {
         targetOwnerId: existing.userId,
@@ -243,7 +287,9 @@ export async function submitDraftExpenseClaimDocument(
         };
     }
 
-    const result = await expenseClaimDocumentService.submitDraft(id, session.user.dbUserId);
+    const result = existing.currentRevisionNo > 1
+        ? await expenseClaimDocumentService.resubmitClaim(id, session.user.dbUserId)
+        : await expenseClaimDocumentService.submitClaim(id, session.user.dbUserId);
     if (result.success) {
         revalidatePath("/expense-claim-document");
         revalidatePath("/dashboard");
@@ -260,10 +306,11 @@ export async function deleteExpenseClaimDocument(id: string): Promise<Result<voi
         return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
     }
 
-    const existing = await expenseClaimDocumentRepository.findById(id);
-    if (!existing) {
+    const existingResult = await expenseClaimDocumentService.getById(id);
+    if (!existingResult.success) {
         return { success: false, error: "Expense claim document not found", code: "CLAIM_NOT_FOUND" };
     }
+    const existing = existingResult.data;
 
     const canDelete = await can(session.user.dbUserId, "EXPENSE_CLAIM", "DELETE", {
         targetOwnerId: existing.userId,
@@ -276,7 +323,7 @@ export async function deleteExpenseClaimDocument(id: string): Promise<Result<voi
         };
     }
 
-    const result = await expenseClaimDocumentService.delete(id, session.user.dbUserId);
+    const result = await expenseClaimDocumentService.cancelClaim(id, session.user.dbUserId);
     if (result.success) {
         revalidatePath("/expense-claim-document");
         revalidatePath("/dashboard");

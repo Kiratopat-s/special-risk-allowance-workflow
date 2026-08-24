@@ -187,13 +187,16 @@ function VerificationCard({
   const [sigStep, setSigStep] = useState<CardSigStep>(initialStep);
   const [capturedSig, setCapturedSig] = useState<string | null>(null);
 
-  const isExpired = !item.verifiedAt && new Date(item.expiresAt) < new Date();
+  const isExpired =
+    item.status === "PENDING" && new Date(item.expiresAt) < new Date();
+  const isConfirmed = done || item.status === "CONFIRMED";
+  const isSuperseded = item.status === "SUPERSEDED";
 
   const handleVerify = (sigDataUrl: string) => {
     startTransition(async () => {
       const res = await verifyAsLeader(
-        item.expenseClaimId,
-        item.offSiteWorkId,
+        item.claimRevisionId,
+        item.revisionOffSiteWorkId,
         sigDataUrl,
       );
       if (!res.success) {
@@ -213,7 +216,7 @@ function VerificationCard({
   const submitSig = capturedSig ?? existingSignatureDataUrl ?? null;
 
   const renderSignatureSection = () => {
-    if (done || isExpired) return null;
+    if (isConfirmed || isSuperseded || isExpired) return null;
 
     if (sigStep === "choose" && existingSignatureDataUrl) {
       return (
@@ -309,10 +312,14 @@ function VerificationCard({
             เดือน {monthDisplay(claim.expenseMonth)}
           </p>
         </div>
-        {done ? (
+        {isConfirmed ? (
           <Badge variant="default" className="shrink-0 bg-green-600">
             <CheckCircle2 className="mr-1 h-3 w-3" />
             ยืนยันแล้ว
+          </Badge>
+        ) : isSuperseded ? (
+          <Badge variant="outline" className="shrink-0">
+            ยกเลิกจาก revision ใหม่
           </Badge>
         ) : isExpired ? (
           <Badge variant="destructive" className="shrink-0">
@@ -323,6 +330,34 @@ function VerificationCard({
             รอยืนยัน
           </Badge>
         )}
+      </div>
+      {item.status === "CONFIRMED" && item.confirmedAt ? (
+        <p className="text-xs text-emerald-700">
+          ยืนยันเมื่อ {dateDisplay(item.confirmedAt)}
+        </p>
+      ) : item.status === "SUPERSEDED" && item.supersededAt ? (
+        <p className="text-xs text-muted-foreground">
+          ยกเลิกเมื่อ {dateDisplay(item.supersededAt)}
+        </p>
+      ) : null}
+
+      <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="font-medium">วันที่ให้ยืนยัน</span>
+          <strong>{item.confirmedDayCount} วัน · {item.amount.toLocaleString("th-TH")} บาท</strong>
+        </div>
+        <div className="space-y-1.5">
+          {item.payloadSnapshot.dates.map((date) => (
+            <div key={date.date} className="rounded-md bg-background px-3 py-2 text-xs">
+              <div className="flex flex-wrap justify-between gap-2">
+                <span className="font-medium">{dateDisplay(new Date(`${date.date}T00:00:00.000Z`))}</span>
+                <span>{date.dayType === "TRAVEL" ? "เดินทาง" : "ปฏิบัติงาน"} · {date.dailyRate.toLocaleString("th-TH")} บาท</span>
+              </div>
+              {date.holidayName ? <p className="text-amber-700">{date.holidayName}</p> : null}
+              {date.weSafeCodes.length > 0 ? <p className="break-all font-mono">We Safe: {date.weSafeCodes.join(", ")}</p> : null}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* OSW details */}
@@ -362,7 +397,7 @@ function VerificationCard({
       {renderSignatureSection()}
 
       {/* Action */}
-      {!done && (
+      {!isConfirmed && !isSuperseded && (
         <LoadingButton
           className="w-full"
           disabled={isPending || isExpired || submitSig === null}
@@ -398,8 +433,8 @@ export function PendingVerificationsClient({
     setVerifiedIds((prev) => new Set([...prev, id]));
   };
 
-  const pending = items.filter((i) => !verifiedIds.has(i.id) && !i.verifiedAt);
-  const done = items.filter((i) => verifiedIds.has(i.id) || !!i.verifiedAt);
+  const pending = items.filter((i) => !verifiedIds.has(i.id) && !i.confirmedAt && i.status === "PENDING");
+  const done = items.filter((i) => i.status === "CONFIRMED" || i.status === "SUPERSEDED");
 
   return (
     <div className="space-y-6">
@@ -451,16 +486,13 @@ export function PendingVerificationsClient({
             <details className="group">
               <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground select-none list-none flex items-center gap-1.5">
                 <CheckCircle2 className="h-4 w-4 text-green-500" />
-                ยืนยันแล้ว ({done.length} รายการ)
+                ประวัติการยืนยัน ({done.length} รายการ)
               </summary>
               <div className="mt-3 space-y-3 opacity-70">
                 {done.map((item) => (
                   <VerificationCard
                     key={item.id}
-                    item={{
-                      ...item,
-                      verifiedAt: item.verifiedAt ?? new Date(),
-                    }}
+                    item={item}
                     existingSignatureDataUrl={existingSignatureDataUrl}
                     onVerified={() => undefined}
                   />

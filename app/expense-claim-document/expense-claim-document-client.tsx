@@ -1,33 +1,33 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  useTransition,
-} from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { toast } from "sonner";
 import {
-  AlertTriangle,
   CalendarDays,
-  Check,
   Eye,
   FileText,
-  Loader2,
   Pencil,
   Plus,
   Search,
   Send,
   Trash2,
-  User,
-  Wallet,
+  X,
 } from "lucide-react";
+import { toast } from "sonner";
+import {
+  createExpenseClaimDocument,
+  deleteExpenseClaimDocument,
+  getExpenseClaimDocument,
+  listEligibleOffSiteWorksForClaim,
+  listExpenseClaimDocuments,
+  resolveHolidayDatesForClaim,
+  submitDraftExpenseClaimDocument,
+  updateExpenseClaimDocument,
+} from "@/app/actions/expense-claim-document";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { LoadingButton } from "@/components/ui/loading-button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogBody,
@@ -37,35 +37,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LoadingButton } from "@/components/ui/loading-button";
+import { PaginationControls } from "@/components/ui/pagination-controls";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  createExpenseClaimDocument,
-  deleteExpenseClaimDocument,
-  getExpenseClaimDocument,
-  listEligibleOffSiteWorksForClaim,
-  listExpenseClaimDocuments,
-  submitDraftExpenseClaimDocument,
-  updateExpenseClaimDocument,
-} from "@/app/actions/expense-claim-document";
 import type {
+  ClaimWorkDateInput,
   EligibleOffSiteWorkOption,
   ExpenseClaimDocumentWithRelations,
-  UpdateExpenseClaimDocumentInput,
 } from "@/lib/domains/expense-claim-document";
-import type { ClaimDocumentStatus, Pagination } from "@/lib/shared/types";
 import {
-  monthDisplay,
-  dateDisplay,
-  decimalText,
-  toMonthInput,
-} from "@/lib/shared/format";
+  CLAIM_DAILY_RATE,
+  deriveWorkDayType,
+} from "@/lib/domains/expense-claim-document/validation";
+import type { HolidayResolution } from "@/lib/domains/holiday-calendar";
 import { claimStatusVariant } from "@/lib/shared/claim-status";
-import { PaginationControls } from "@/components/ui/pagination-controls";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import type { ExpenseClaimStatus, Pagination } from "@/lib/shared/types";
 import { LeaderVerificationSection } from "./leader-verification-section";
 
 interface ExpenseClaimDocumentClientProps {
@@ -76,117 +65,86 @@ interface ExpenseClaimDocumentClientProps {
   currentUserClaimantPositionAtSubmission: string;
 }
 
-type Mode = "create" | "edit" | "view" | "delete" | null;
-
-interface FormState {
-  expenseMonth: string;
-  claimantPositionAtSubmission: string;
-  remark: string;
-  status: ClaimDocumentStatus;
-  countDates: string;
-  amount: string;
+interface WorkDateDraft {
+  date: string;
+  offSiteWorkId: string;
+  weSafeCodes: string[];
 }
 
 const PAGE_SIZE = 20;
-const RATE_PER_DAY = 150;
+const RATE = CLAIM_DAILY_RATE;
 
-function toMonthDate(monthValue: string): string {
-  return `${monthValue}-01`;
-}
-
-const STATUS_LABEL: Record<ClaimDocumentStatus, string> = {
-  DRAFT: "ร่าง",
-  PENDING: "รอดำเนินการ",
-  PENDING_LEADER_VERIFY: "รอหัวหน้ายืนยัน",
-  WAIT_FOR_COLLECTION: "รอรวบรวม",
+const STATUS_LABEL: Record<ExpenseClaimStatus, string> = {
+  DRAFT: "ฉบับร่าง",
+  PENDING_LEADER_CONFIRMATION: "รอหัวหน้าชุดยืนยัน",
+  READY_FOR_COLLECTION: "พร้อมรวบรวม",
   COLLECTED: "รวบรวมแล้ว",
-  APPROVED: "อนุมัติ",
-  REJECTED: "ปฏิเสธ",
+  COMPLETED: "เสร็จสิ้น",
+  REJECTED: "ให้แก้ไข",
   CANCELLED: "ยกเลิก",
 };
 
-function formatDay(isoDate: string): string {
-  return new Date(isoDate).toLocaleDateString("th-TH", {
+function isoDate(value: Date | string): string {
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function currentMonth(): string {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    timeZone: "Asia/Bangkok",
+  }).formatToParts(now);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  return year && month
+    ? `${year}-${month}`
+    : `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatMonth(value: Date | string): string {
+  return new Intl.DateTimeFormat("th-TH", {
+    month: "long",
+    year: "numeric",
+    timeZone: "Asia/Bangkok",
+  }).format(new Date(value));
+}
+
+function formatDate(value: Date | string): string {
+  const date = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T00:00:00.000Z`)
+    : new Date(value);
+  return new Intl.DateTimeFormat("th-TH", {
     weekday: "short",
     day: "2-digit",
-    month: "2-digit",
-  });
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Bangkok",
+  }).format(date);
 }
 
-function getMonthDateRange(monthValue: string): { start: Date; end: Date } {
-  const [year, month] = monthValue.split("-").map(Number);
-  const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
-  const end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
-  return { start, end };
-}
-
-function toISODate(date: Date): string {
-  return date.toISOString().split("T")[0];
-}
-
-function getClaimDatePool(
-  selectedOffSiteIds: string[],
-  options: EligibleOffSiteWorkOption[],
-  monthValue: string,
-): { allDates: string[]; weekdayDefaultDates: string[] } {
-  const picked = new Set(selectedOffSiteIds);
-  const selectedRanges = options.filter((item) => picked.has(item.id));
-  const { start: monthStart, end: monthEnd } = getMonthDateRange(monthValue);
-
-  const allDates = new Set<string>();
-  const weekdayDefaultDates = new Set<string>();
-
-  for (const item of selectedRanges) {
-    const start = new Date(item.startDate);
-    const end = new Date(item.endDate);
-
-    const effectiveStart = start > monthStart ? start : monthStart;
-    const effectiveEnd = end < monthEnd ? end : monthEnd;
-
-    const cursor = new Date(effectiveStart);
-    cursor.setUTCHours(0, 0, 0, 0);
-
-    while (cursor <= effectiveEnd) {
-      const day = cursor.getUTCDay();
-      const isoDate = toISODate(cursor);
-      allDates.add(isoDate);
-      if (day >= 1 && day <= 5) {
-        weekdayDefaultDates.add(isoDate);
-      }
-      cursor.setUTCDate(cursor.getUTCDate() + 1);
-    }
-  }
-
+function dateRangeForMonth(month: string): { start: string; end: string } {
+  const [year, monthNo] = month.split("-").map(Number);
   return {
-    allDates: Array.from(allDates).sort(),
-    weekdayDefaultDates: Array.from(weekdayDefaultDates).sort(),
+    start: `${month}-01`,
+    end: new Date(Date.UTC(year, monthNo, 0)).toISOString().slice(0, 10),
   };
 }
 
-function getCalendarGridDates(monthValue: string): Array<string | null> {
-  const [year, month] = monthValue.split("-").map(Number);
-  const firstDate = new Date(Date.UTC(year, month - 1, 1));
-  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const leadingEmpty = firstDate.getUTCDay();
-
-  const cells: Array<string | null> = [];
-  for (let i = 0; i < leadingEmpty; i += 1) {
-    cells.push(null);
+function enumerateDates(start: string, end: string): string[] {
+  const output: string[] = [];
+  const cursor = new Date(`${start}T00:00:00.000Z`);
+  const last = new Date(`${end}T00:00:00.000Z`);
+  while (cursor <= last) {
+    output.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
-
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    cells.push(toISODate(new Date(Date.UTC(year, month - 1, day))));
-  }
-
-  const trailingEmpty = (7 - (cells.length % 7)) % 7;
-  for (let i = 0; i < trailingEmpty; i += 1) {
-    cells.push(null);
-  }
-
-  return cells;
+  return output;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
+function oswLabel(option: EligibleOffSiteWorkOption): string {
+  return option.innerRefDocumentId?.trim() || option.id;
+}
 
 export function ExpenseClaimDocumentClient({
   initialItems,
@@ -196,1224 +154,565 @@ export function ExpenseClaimDocumentClient({
   currentUserClaimantPositionAtSubmission,
 }: ExpenseClaimDocumentClientProps) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [items, setItems] = useState(initialItems);
   const [pagination, setPagination] = useState(initialPagination);
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(initialPagination?.page ?? 1);
-  const [mode, setMode] = useState<Mode>(null);
-  const [selected, setSelected] =
-    useState<ExpenseClaimDocumentWithRelations | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [detail, setDetail] = useState<ExpenseClaimDocumentWithRelations | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<ExpenseClaimDocumentWithRelations | null>(null);
+  const [expenseMonth, setExpenseMonth] = useState(currentMonth());
+  const [remark, setRemark] = useState("");
+  const [eligible, setEligible] = useState<EligibleOffSiteWorkOption[]>([]);
+  const [selectedOswIds, setSelectedOswIds] = useState<string[]>([]);
+  const [workDates, setWorkDates] = useState<WorkDateDraft[]>([]);
+  const [holidays, setHolidays] = useState<Record<string, HolidayResolution>>({});
+  const [cancelTarget, setCancelTarget] = useState<ExpenseClaimDocumentWithRelations | null>(null);
 
-  // No-leader dialog state
-  const [noLeaderDialogOpen, setNoLeaderDialogOpen] = useState(false);
-  const [noLeaderOsws, setNoLeaderOsws] = useState<EligibleOffSiteWorkOption[]>(
-    [],
+  const loadEligible = useCallback(async (
+    month: string,
+    seedClaim?: ExpenseClaimDocumentWithRelations,
+  ) => {
+    const result = await listEligibleOffSiteWorksForClaim(month);
+    if (!result.success) {
+      toast.error(result.error);
+      return;
+    }
+    setEligible(result.data);
+    if (seedClaim) {
+      const byId = new Map(result.data.map((item) => [item.id, item]));
+      const replacementByOldId = new Map(
+        result.data
+          .filter((item) => item.supersedesId)
+          .map((item) => [item.supersedesId!, item]),
+      );
+      const remapped = seedClaim.currentRevision.workDates.flatMap((item) => {
+        const option =
+          byId.get(item.offSiteWorkId) ??
+          replacementByOldId.get(item.offSiteWorkId);
+        if (
+          !option ||
+          isoDate(option.startDate) > item.date ||
+          isoDate(option.endDate) < item.date
+        ) {
+          return [];
+        }
+        return [{
+          date: item.date,
+          offSiteWorkId: option.id,
+          weSafeCodes: [...item.weSafeCodes],
+        }];
+      });
+      setWorkDates(remapped);
+      setSelectedOswIds([
+        ...new Set(remapped.map((item) => item.offSiteWorkId)),
+      ]);
+      const didRemap = remapped.some((item) => {
+        const old = seedClaim.currentRevision.workDates.find(
+          (candidate) => candidate.date === item.date,
+        );
+        return old?.offSiteWorkId !== item.offSiteWorkId;
+      });
+      if (didRemap) {
+        toast.info(
+          "ระบบเปลี่ยนใบนำตัวหลักเป็นฉบับทดแทนแล้ว กรุณาตรวจวันที่อีกครั้ง",
+        );
+      }
+    }
+  }, []);
+
+  const selectedOptions = useMemo(
+    () => eligible.filter((item) => selectedOswIds.includes(item.id)),
+    [eligible, selectedOswIds],
   );
 
-  const [form, setForm] = useState<FormState>({
-    expenseMonth: toMonthInput(new Date()),
-    claimantPositionAtSubmission: currentUserClaimantPositionAtSubmission,
-    remark: "",
-    status: "DRAFT",
-    countDates: "",
-    amount: "",
-  });
-
-  const [eligibleOffSiteWorks, setEligibleOffSiteWorks] = useState<
-    EligibleOffSiteWorkOption[]
-  >([]);
-  const [selectedOffSiteWorkIds, setSelectedOffSiteWorkIds] = useState<
-    string[]
-  >([]);
-  const [availableClaimDates, setAvailableClaimDates] = useState<string[]>([]);
-  const [selectedClaimDates, setSelectedClaimDates] = useState<string[]>([]);
-  const [offSiteSearch, setOffSiteSearch] = useState("");
-  const [isLoadingEligibleOffSites, setIsLoadingEligibleOffSites] =
-    useState(false);
+  const datePool = useMemo(() => {
+    if (!expenseMonth) return [];
+    const monthRange = dateRangeForMonth(expenseMonth);
+    const values = new Set<string>();
+    for (const option of selectedOptions) {
+      const start = isoDate(option.startDate) > monthRange.start
+        ? isoDate(option.startDate)
+        : monthRange.start;
+      const end = isoDate(option.endDate) < monthRange.end
+        ? isoDate(option.endDate)
+        : monthRange.end;
+      if (start <= end) enumerateDates(start, end).forEach((date) => values.add(date));
+    }
+    return [...values].sort();
+  }, [expenseMonth, selectedOptions]);
 
   useEffect(() => {
-    if (!initialViewId) return;
-
-    let cancelled = false;
-
-    const openInitialClaim = async () => {
-      const existingItem = initialItems.find(
-        (item) => item.id === initialViewId,
-      );
-      if (existingItem) {
-        if (!cancelled) {
-          setSelected(existingItem);
-          setMode("view");
-          router.replace("/dashboard?tab=expense-claims", { scroll: false });
-        }
-        return;
-      }
-
-      const result = await getExpenseClaimDocument(initialViewId);
-      if (!cancelled) {
-        if (result.success) {
-          setSelected(result.data);
-          setMode("view");
-        } else {
-          toast.error("ไม่สามารถเปิดเอกสารเบิกได้", {
-            description: result.error,
-          });
-        }
-        router.replace("/dashboard?tab=expense-claims", { scroll: false });
-      }
-    };
-
-    void openInitialClaim();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [initialItems, initialViewId, router]);
-
-  const dateCount = selectedClaimDates.length;
-  const totalAmount = dateCount * RATE_PER_DAY;
-
-  const formValid = useMemo(() => {
-    if (!form.expenseMonth) return false;
-    if (!form.claimantPositionAtSubmission.trim()) return false;
-    return true;
-  }, [form]);
-
-  const hasLeaderlessSelectedOsw = useMemo(
-    () =>
-      eligibleOffSiteWorks.some(
-        (o) => selectedOffSiteWorkIds.includes(o.id) && !o.hasLeader,
-      ),
-    [eligibleOffSiteWorks, selectedOffSiteWorkIds],
-  );
-
-  const filteredEligibleOptions = useMemo(() => {
-    const keyword = offSiteSearch.trim().toLowerCase();
-    if (!keyword) return eligibleOffSiteWorks;
-
-    return eligibleOffSiteWorks.filter((item) => {
-      const haystack = [
-        item.id,
-        item.innerRefDocumentId || "",
-        item.location || "",
-        item.objective || "",
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(keyword);
-    });
-  }, [eligibleOffSiteWorks, offSiteSearch]);
-
-  const calendarCells = useMemo(
-    () => getCalendarGridDates(form.expenseMonth),
-    [form.expenseMonth],
-  );
-  const selectableDateSet = useMemo(
-    () => new Set(availableClaimDates),
-    [availableClaimDates],
-  );
-  const selectedDateSet = useMemo(
-    () => new Set(selectedClaimDates),
-    [selectedClaimDates],
-  );
-
-  const viewMonthValue = useMemo(
-    () =>
-      selected ? toMonthInput(selected.expenseMonth) : toMonthInput(new Date()),
-    [selected],
-  );
-
-  const viewCalendarCells = useMemo(
-    () => getCalendarGridDates(viewMonthValue),
-    [viewMonthValue],
-  );
-
-  const viewSelectedDateSet = useMemo(() => {
-    const selectedDates = selected?.selectedDates ?? [];
-    return new Set(selectedDates.map((value) => value.slice(0, 10)));
-  }, [selected]);
-
-  const refresh = useCallback(
-    async (nextPage = page, nextSearch = search) => {
-      const result = await listExpenseClaimDocuments({
-        page: nextPage,
-        pageSize: PAGE_SIZE,
-        search: nextSearch || undefined,
-      });
-
-      if (!result.success) {
-        toast.error("ไม่สามารถโหลดข้อมูลได้", { description: result.error });
-        return;
-      }
-
-      setItems(result.data.data);
-      setPagination(result.data.pagination);
-      setPage(result.data.pagination.page);
-    },
-    [page, search],
-  );
-
-  const loadEligibleOffSiteWorks = useCallback(
-    async (monthValue: string, preSelectedIds?: string[]) => {
-      setIsLoadingEligibleOffSites(true);
-      const result = await listEligibleOffSiteWorksForClaim(monthValue);
-      if (!result.success) {
-        toast.error("ไม่สามารถโหลด Off-site Work ได้", {
-          description: result.error,
-        });
-        setEligibleOffSiteWorks([]);
-        setSelectedOffSiteWorkIds([]);
-        setAvailableClaimDates([]);
-        setSelectedClaimDates([]);
-        setIsLoadingEligibleOffSites(false);
-        return;
-      }
-
-      setEligibleOffSiteWorks(result.data);
-
-      if (preSelectedIds && preSelectedIds.length > 0) {
-        // Compute available + selected dates using the fetched options directly
-        // (state update is async so we can't rely on eligibleOffSiteWorks here)
-        const { allDates, weekdayDefaultDates } = getClaimDatePool(
-          preSelectedIds,
-          result.data,
-          monthValue,
-        );
-        setSelectedOffSiteWorkIds(preSelectedIds);
-        setAvailableClaimDates(allDates);
-        setSelectedClaimDates(
-          weekdayDefaultDates.length > 0 ? weekdayDefaultDates : allDates,
-        );
-      } else {
-        setSelectedOffSiteWorkIds([]);
-        setAvailableClaimDates([]);
-        setSelectedClaimDates([]);
-      }
-
-      setIsLoadingEligibleOffSites(false);
-    },
-    [],
-  );
-
-  const openCreate = () => {
-    const defaultMonth = toMonthInput(new Date());
-    setSelected(null);
-    setForm({
-      expenseMonth: defaultMonth,
-      claimantPositionAtSubmission: currentUserClaimantPositionAtSubmission,
-      remark: "",
-      status: "DRAFT",
-      countDates: "",
-      amount: "",
-    });
-    setOffSiteSearch("");
-    setEligibleOffSiteWorks([]);
-    setSelectedOffSiteWorkIds([]);
-    setAvailableClaimDates([]);
-    setSelectedClaimDates([]);
-    setMode("create");
-    void loadEligibleOffSiteWorks(defaultMonth);
-  };
-
-  const openEdit = (item: ExpenseClaimDocumentWithRelations) => {
-    setSelected(item);
-    setForm({
-      expenseMonth: toMonthInput(item.expenseMonth),
-      claimantPositionAtSubmission: item.claimantPositionAtSubmission,
-      remark: item.remark || "",
-      status: item.status,
-      countDates: decimalText(item.countDates),
-      amount: decimalText(item.amount),
-    });
-    setOffSiteSearch("");
-    if (item.status === "DRAFT") {
-      const linkedIds = item.expenseClaimOffSiteWorks.map(
-        (l) => l.offSiteWorkId,
-      );
-      void loadEligibleOffSiteWorks(toMonthInput(item.expenseMonth), linkedIds);
-    } else {
-      setEligibleOffSiteWorks([]);
-      setSelectedOffSiteWorkIds([]);
-      setAvailableClaimDates([]);
-      setSelectedClaimDates([]);
-    }
-    setMode("edit");
-  };
-
-  const updateClaimDatePool = useCallback(
-    (nextOffSiteIds: string[], monthValue: string) => {
-      const { allDates, weekdayDefaultDates } = getClaimDatePool(
-        nextOffSiteIds,
-        eligibleOffSiteWorks,
-        monthValue,
-      );
-      setAvailableClaimDates(allDates);
-      setSelectedClaimDates((prev) => {
-        const prevSet = new Set(prev);
-        const nextSelected = allDates.filter((date) => prevSet.has(date));
-        if (nextSelected.length === 0 && allDates.length > 0) {
-          return weekdayDefaultDates.length > 0
-            ? weekdayDefaultDates
-            : allDates;
-        }
-        return nextSelected;
-      });
-    },
-    [eligibleOffSiteWorks],
-  );
-
-  const toggleOffSiteWork = (offSiteWorkId: string) => {
-    setSelectedOffSiteWorkIds((prev) => {
-      const hasValue = prev.includes(offSiteWorkId);
-      const next = hasValue
-        ? prev.filter((id) => id !== offSiteWorkId)
-        : [...prev, offSiteWorkId];
-
-      updateClaimDatePool(next, form.expenseMonth);
-      return next;
-    });
-  };
-
-  const toggleClaimDate = (date: string) => {
-    setSelectedClaimDates((prev) =>
-      prev.includes(date)
-        ? prev.filter((d) => d !== date)
-        : [...prev, date].sort(),
-    );
-  };
-
-  const submitCreate = (status: ClaimDocumentStatus) => {
-    // Hard-block: when submitting (not saving draft), every selected OSW must have a leader.
-    if (status !== "DRAFT" && hasLeaderlessSelectedOsw) {
-      const noLeader = eligibleOffSiteWorks.filter(
-        (o) => selectedOffSiteWorkIds.includes(o.id) && !o.hasLeader,
-      );
-      setNoLeaderOsws(noLeader);
-      setNoLeaderDialogOpen(true);
-      return;
-    }
-
-    startTransition(async () => {
-      const result = await createExpenseClaimDocument({
-        expenseMonth: toMonthDate(form.expenseMonth),
-        claimantPositionAtSubmission: form.claimantPositionAtSubmission.trim(),
-        offSiteWorkIds:
-          selectedOffSiteWorkIds.length > 0
-            ? selectedOffSiteWorkIds
-            : undefined,
-        selectedDates:
-          selectedClaimDates.length > 0 ? selectedClaimDates : undefined,
-        countDates: dateCount > 0 ? String(dateCount) : undefined,
-        amount: totalAmount > 0 ? String(totalAmount) : undefined,
-        remark: form.remark.trim() || undefined,
-        status,
-      });
-
-      if (!result.success) {
-        toast.error("สร้างเอกสารไม่สำเร็จ", { description: result.error });
-        return;
-      }
-
-      toast.success(
-        status === "PENDING"
-          ? "ส่งเอกสารเรียบร้อย"
-          : "บันทึกร่างเอกสารเรียบร้อย",
-      );
-      await refresh(1, search);
-      setMode(null);
-    });
-  };
-
-  const toUpdatePayload = (): UpdateExpenseClaimDocumentInput => {
-    if (!selected) return {};
-
-    const base: UpdateExpenseClaimDocumentInput = {
-      expenseMonth:
-        toMonthInput(selected.expenseMonth) !== form.expenseMonth
-          ? toMonthDate(form.expenseMonth)
-          : undefined,
-      claimantPositionAtSubmission:
-        selected.claimantPositionAtSubmission !==
-        form.claimantPositionAtSubmission
-          ? form.claimantPositionAtSubmission.trim()
-          : undefined,
-      remark:
-        (selected.remark || "") !== form.remark
-          ? form.remark.trim() || null
-          : undefined,
-    };
-
-    if (selected.status === "DRAFT") {
-      // For DRAFT edits, always include OSW selection and derived dates/amounts
-      return {
-        ...base,
-        offSiteWorkIds: selectedOffSiteWorkIds,
-        selectedDates:
-          selectedClaimDates.length > 0 ? selectedClaimDates : undefined,
-        countDates: dateCount > 0 ? String(dateCount) : undefined,
-        amount: totalAmount > 0 ? String(totalAmount) : undefined,
+    let active = true;
+    if (datePool.length === 0) {
+      setHolidays({});
+      return () => {
+        active = false;
       };
     }
-
-    return {
-      ...base,
-      countDates:
-        decimalText(selected.countDates) !== form.countDates
-          ? form.countDates.trim() || null
-          : undefined,
-      amount:
-        decimalText(selected.amount) !== form.amount
-          ? form.amount.trim() || null
-          : undefined,
+    void resolveHolidayDatesForClaim(datePool).then((result) => {
+      if (!active || !result.success) return;
+      setHolidays(
+        Object.fromEntries(result.data.map((item) => [item.date, item])),
+      );
+    });
+    return () => {
+      active = false;
     };
+  }, [datePool]);
+
+  const refreshList = useCallback(async (page = pagination?.page ?? 1) => {
+    const result = await listExpenseClaimDocuments({
+      page,
+      pageSize: PAGE_SIZE,
+      search: search.trim() || undefined,
+    });
+    if (!result.success) {
+      toast.error(result.error);
+      return;
+    }
+    setItems(result.data.data);
+    setPagination(result.data.pagination);
+  }, [pagination?.page, search]);
+
+  const showDetail = useCallback(async (id: string) => {
+    const result = await getExpenseClaimDocument(id);
+    if (result.success) setDetail(result.data);
+    else toast.error(result.error);
+  }, []);
+
+  useEffect(() => {
+    if (initialViewId) void showDetail(initialViewId);
+  }, [initialViewId, showDetail]);
+
+  const openCreate = () => {
+    const month = currentMonth();
+    setEditing(null);
+    setExpenseMonth(month);
+    setRemark("");
+    setSelectedOswIds([]);
+    setWorkDates([]);
+    setFormOpen(true);
+    void loadEligible(month);
   };
 
-  const submitUpdate = () => {
-    if (!selected) return;
+  const openEdit = (claim: ExpenseClaimDocumentWithRelations) => {
+    const month = isoDate(claim.expenseMonth).slice(0, 7);
+    setEditing(claim);
+    setExpenseMonth(month);
+    setRemark(claim.currentRevision.remark ?? "");
+    setSelectedOswIds([]);
+    setWorkDates([]);
+    setFormOpen(true);
+    void loadEligible(month, claim);
+  };
 
-    startTransition(async () => {
-      const result = await updateExpenseClaimDocument(
-        selected.id,
-        toUpdatePayload(),
-      );
-
-      if (!result.success) {
-        toast.error("แก้ไขเอกสารไม่สำเร็จ", { description: result.error });
-        return;
-      }
-
-      toast.success("อัปเดตเอกสารเรียบร้อย");
-      await refresh(page, search);
-      setMode(null);
+  const toggleOsw = (id: string) => {
+    setSelectedOswIds((previous) => {
+      if (!previous.includes(id)) return [...previous, id];
+      setWorkDates((dates) => dates.filter((item) => item.offSiteWorkId !== id));
+      return previous.filter((item) => item !== id);
     });
   };
 
-  const submitDelete = () => {
-    if (!selected) return;
-
-    startTransition(async () => {
-      const result = await deleteExpenseClaimDocument(selected.id);
-
-      if (!result.success) {
-        toast.error("ยกเลิกเอกสารไม่สำเร็จ", { description: result.error });
-        return;
-      }
-
-      toast.success("ยกเลิกเอกสารเรียบร้อย");
-      await refresh(page, search);
-      setMode(null);
-    });
-  };
-
-  // Retry-submit from card button (DRAFT items)
-  const submitRetry = (item: ExpenseClaimDocumentWithRelations) => {
-    // Client-side pre-check: show no-leader dialog if any linked OSW is leaderless
-    const noLeader = item.expenseClaimOffSiteWorks.filter(
-      (l) => !l.offSiteWork.leaderUserId && !l.offSiteWork.leaderEmail,
+  const matchingOptions = (date: string) =>
+    selectedOptions.filter(
+      (option) => isoDate(option.startDate) <= date && isoDate(option.endDate) >= date,
     );
-    if (noLeader.length > 0) {
-      setNoLeaderOsws(
-        noLeader.map((l) => ({
-          id: l.offSiteWork.id,
-          innerRefDocumentId: l.offSiteWork.innerRefDocumentId,
-          startDate: l.offSiteWork.startDate,
-          endDate: l.offSiteWork.endDate,
-          location: l.offSiteWork.location,
-          objective: l.offSiteWork.objective,
-          hasLeader: false,
-          leaderFirstName: l.offSiteWork.leaderFirstName,
-          leaderLastName: l.offSiteWork.leaderLastName,
-          leaderEmail: l.offSiteWork.leaderEmail,
-        })),
-      );
-      setNoLeaderDialogOpen(true);
-      return;
-    }
 
+  const setDateSelected = (date: string, selected: boolean) => {
+    setWorkDates((previous) => {
+      if (!selected) return previous.filter((item) => item.date !== date);
+      if (previous.some((item) => item.date === date)) return previous;
+      const primary = matchingOptions(date)[0];
+      return primary
+        ? [...previous, { date, offSiteWorkId: primary.id, weSafeCodes: [] }].sort(
+            (a, b) => a.date.localeCompare(b.date),
+          )
+        : previous;
+    });
+  };
+
+  const updateWorkDate = (date: string, change: Partial<WorkDateDraft>) => {
+    setWorkDates((previous) =>
+      previous.map((item) => (item.date === date ? { ...item, ...change } : item)),
+    );
+  };
+
+  const setCode = (date: string, index: number, value: string) => {
+    const current = workDates.find((item) => item.date === date);
+    if (!current) return;
+    const codes = [...current.weSafeCodes];
+    codes[index] = value;
+    updateWorkDate(date, { weSafeCodes: codes });
+  };
+
+  const addCode = (date: string) => {
+    const current = workDates.find((item) => item.date === date);
+    if (!current) return;
+    const year = date.slice(0, 4);
+    updateWorkDate(date, { weSafeCodes: [...current.weSafeCodes, `WSZ${year}`] });
+  };
+
+  const removeCode = (date: string, index: number) => {
+    const current = workDates.find((item) => item.date === date);
+    if (!current) return;
+    updateWorkDate(date, {
+      weSafeCodes: current.weSafeCodes.filter((_, itemIndex) => itemIndex !== index),
+    });
+  };
+
+  const save = (submitAfterSave: boolean) => {
     startTransition(async () => {
-      const result = await submitDraftExpenseClaimDocument(item.id);
+      const payloadDates: ClaimWorkDateInput[] = workDates.map((item) => ({
+        date: item.date,
+        offSiteWorkId: item.offSiteWorkId,
+        weSafeCodes: item.weSafeCodes.filter((code) => code.trim().length > 0),
+      }));
+      const saved = editing
+        ? await updateExpenseClaimDocument(editing.id, {
+            expenseMonth: `${expenseMonth}-01`,
+            remark,
+            workDates: payloadDates,
+          })
+        : await createExpenseClaimDocument({
+            expenseMonth: `${expenseMonth}-01`,
+            remark,
+            workDates: payloadDates,
+          });
+      if (!saved.success) {
+        toast.error(saved.error);
+        return;
+      }
+      if (submitAfterSave) {
+        const submitted = await submitDraftExpenseClaimDocument(saved.data.id);
+        if (!submitted.success) {
+          toast.error("บันทึกฉบับร่างแล้ว แต่ยังส่งไม่ได้", {
+            description: submitted.error,
+          });
+          const draft = await getExpenseClaimDocument(saved.data.id);
+          if (draft.success) setDetail(draft.data);
+          setFormOpen(false);
+          await refreshList();
+          return;
+        }
+        toast.success("ส่งคำขอให้หัวหน้าชุดยืนยันแล้ว");
+      } else {
+        toast.success("บันทึกฉบับร่างแล้ว");
+      }
+      const fresh = await getExpenseClaimDocument(saved.data.id);
+      if (fresh.success) setDetail(fresh.data);
+      setFormOpen(false);
+      await refreshList();
+      router.refresh();
+    });
+  };
+
+  const cancelClaim = () => {
+    if (!cancelTarget) return;
+    startTransition(async () => {
+      const result = await deleteExpenseClaimDocument(cancelTarget.id);
       if (!result.success) {
-        toast.error("ส่งเอกสารไม่สำเร็จ", { description: result.error });
+        toast.error(result.error);
         return;
       }
-      toast.success("ส่งเอกสารเรียบร้อย");
-      await refresh(page, search);
-    });
-  };
-
-  // Submit from edit dialog for DRAFT: update OSWs first then submit
-  const submitAndUpdate = () => {
-    if (!selected) return;
-
-    // Client-side leader check against current OSW picker selection
-    if (hasLeaderlessSelectedOsw) {
-      const noLeader = eligibleOffSiteWorks.filter(
-        (o) => selectedOffSiteWorkIds.includes(o.id) && !o.hasLeader,
-      );
-      setNoLeaderOsws(noLeader);
-      setNoLeaderDialogOpen(true);
-      return;
-    }
-
-    startTransition(async () => {
-      // Step 1: save updated OSW links
-      const updateResult = await updateExpenseClaimDocument(
-        selected.id,
-        toUpdatePayload(),
-      );
-      if (!updateResult.success) {
-        toast.error("อัปเดตเอกสารไม่สำเร็จ", {
-          description: updateResult.error,
-        });
-        return;
-      }
-
-      // Step 2: submit the draft
-      const submitResult = await submitDraftExpenseClaimDocument(selected.id);
-      if (!submitResult.success) {
-        toast.error("ส่งเอกสารไม่สำเร็จ", {
-          description: submitResult.error,
-        });
-        return;
-      }
-
-      toast.success("ส่งเอกสารเรียบร้อย");
-      await refresh(page, search);
-      setMode(null);
-    });
-  };
-
-  const submitSearch = () => {
-    startTransition(async () => {
-      await refresh(1, search);
-    });
-  };
-
-  const changePage = (nextPage: number) => {
-    startTransition(async () => {
-      await refresh(nextPage, search);
+      toast.success("ยกเลิกคำขอแล้ว");
+      setCancelTarget(null);
+      if (detail?.id === cancelTarget.id) setDetail(null);
+      await refreshList();
+      router.refresh();
     });
   };
 
   return (
-    <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-2xl border bg-linear-to-r from-emerald-50 via-white to-teal-50 p-6 shadow-sm">
-        <div className="absolute -right-14 -top-14 h-36 w-36 rounded-full bg-emerald-100/70 blur-2xl" />
-        <div className="absolute -left-10 -bottom-14 h-32 w-32 rounded-full bg-teal-100/60 blur-2xl" />
-        <div className="relative flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Expense Claim Documents
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              จัดการเอกสารเบิกจ่ายแบบสะอาดตา เน้นงานสำคัญและรองรับทุกขนาดหน้าจอ
-            </p>
-          </div>
-          <Button onClick={openCreate} className="w-full md:w-auto">
-            <Plus className="mr-2 h-4 w-4" />
-            สร้างเอกสาร
-          </Button>
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">คำขอเบิกค่าตอบแทนรายเดือน</h2>
+          <p className="text-sm text-muted-foreground">
+            {RATE} บาทต่อวัน · เลือกใบนำตัวหลักให้แต่ละวันที่ขอเบิก
+          </p>
         </div>
-      </section>
+        <Button onClick={openCreate}>
+          <Plus className="h-4 w-4" /> สร้างคำขอ
+        </Button>
+      </div>
 
-      <section className="rounded-xl border bg-card p-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="ค้นหาเลขที่เอกสาร, หมายเหตุ, หรือชื่อผู้ยื่น"
-              className="pl-9"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") submitSearch();
-              }}
-            />
-          </div>
-          <Button variant="outline" disabled={isPending} onClick={submitSearch}>
-            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "ค้นหา"}
-          </Button>
-        </div>
-      </section>
-
-      <section
-        aria-busy={isPending || undefined}
-        className="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+      <form
+        className="flex gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          startTransition(() => refreshList(1));
+        }}
       >
-        {items.map((item) => (
-          <article
-            key={item.id}
-            role="button"
-            tabIndex={0}
-            aria-label={`ดูรายละเอียดเอกสาร ${item.id}`}
-            onClick={() => {
-              setSelected(item);
-              setMode("view");
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                setSelected(item);
-                setMode("view");
-              }
-            }}
-            className="cursor-pointer rounded-2xl border border-border/60 bg-card p-4 shadow-sm outline-none transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/30 hover:shadow-md focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
-          >
-            <div className="mb-3 flex items-start justify-between gap-2">
-              <div>
-                <p className="font-semibold">{item.id}</p>
-                <p className="text-xs text-muted-foreground">
-                  {item.claimant.firstName} {item.claimant.lastName}
-                </p>
-              </div>
-              <Badge variant={claimStatusVariant(item.status)}>
-                {STATUS_LABEL[item.status] ?? item.status}
-              </Badge>
-            </div>
+        <div className="relative max-w-md flex-1">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} className="pl-9" placeholder="ค้นหาเลขคำขอหรือชื่อผู้ขอ" />
+        </div>
+        <Button type="submit" variant="outline" disabled={isPending}>ค้นหา</Button>
+      </form>
 
-            <div className="space-y-2 text-sm text-muted-foreground">
-              <p className="flex items-center gap-2">
-                <CalendarDays className="h-4 w-4" />
-                <span>{monthDisplay(item.expenseMonth)}</span>
-              </p>
-              <p className="flex items-center gap-2">
-                <Wallet className="h-4 w-4" />
-                <span>{decimalText(item.amount)} บาท</span>
-              </p>
-              <p className="line-clamp-2">{item.remark || "-"}</p>
-            </div>
-
-            <div className="mt-4 flex items-center justify-between border-t pt-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setSelected(item);
-                  setMode("view");
-                }}
-              >
-                <Eye className="mr-1 h-4 w-4" />
-                ดู
-              </Button>
-              <div className="flex gap-1">
-                {item.status === "DRAFT" && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-emerald-600 hover:text-emerald-700"
-                    disabled={isPending}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      submitRetry(item);
-                    }}
-                    title="ส่งเอกสาร"
-                  >
-                    <Send className="mr-1 h-4 w-4" />
-                    ส่ง
+      {items.length === 0 ? (
+        <EmptyState
+          icon={FileText}
+          message="ยังไม่มีคำขอเบิก — กด “สร้างคำขอ” เพื่อเริ่มฉบับร่าง"
+        />
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {items.map((claim) => (
+            <Card key={claim.id} className="gap-4 py-4">
+              <CardHeader className="px-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <CardTitle>{formatMonth(claim.expenseMonth)}</CardTitle>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {claim.claimant.firstName} {claim.claimant.lastName}
+                    </p>
+                  </div>
+                  <Badge variant={claimStatusVariant(claim.status)}>{STATUS_LABEL[claim.status]}</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3 px-4">
+                <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted/50 p-3 text-sm">
+                  <span className="text-muted-foreground">จำนวนวัน</span>
+                  <span className="text-right font-medium">{claim.countDates} วัน</span>
+                  <span className="text-muted-foreground">ยอดรวม</span>
+                  <span className="text-right font-medium">{claim.amount.toLocaleString("th-TH")} บาท</span>
+                  <span className="text-muted-foreground">Revision</span>
+                  <span className="text-right">{claim.currentRevisionNo}</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => void showDetail(claim.id)}>
+                    <Eye className="h-4 w-4" /> ดูรายละเอียด
                   </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    openEdit(item);
-                  }}
-                  aria-label={`แก้ไขเอกสาร ${item.id}`}
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-destructive hover:text-destructive"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setSelected(item);
-                    setMode("delete");
-                  }}
-                  aria-label={`ยกเลิกเอกสาร ${item.id}`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </article>
-        ))}
-      </section>
-
-      {items.length === 0 && (
-        <EmptyState icon={FileText} message="ไม่พบเอกสารเบิกจ่าย" />
+                  {!(["COLLECTED", "COMPLETED", "CANCELLED"] as ExpenseClaimStatus[]).includes(claim.status) ? (
+                    <Button size="sm" variant="outline" onClick={() => openEdit(claim)}>
+                      <Pencil className="h-4 w-4" /> แก้ไข
+                    </Button>
+                  ) : null}
+                  {!(["COLLECTED", "COMPLETED", "CANCELLED"] as ExpenseClaimStatus[]).includes(claim.status) ? (
+                    <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setCancelTarget(claim)}>
+                      <Trash2 className="h-4 w-4" /> ยกเลิก
+                    </Button>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
 
-      {pagination && (
+      {pagination ? (
         <PaginationControls
           pagination={pagination}
           isPending={isPending}
-          onPrevious={() => changePage(page - 1)}
-          onNext={() => changePage(page + 1)}
+          onPrevious={() => startTransition(() => refreshList(pagination.page - 1))}
+          onNext={() => startTransition(() => refreshList(pagination.page + 1))}
         />
-      )}
+      ) : null}
 
-      <Dialog
-        open={mode === "create" || mode === "edit"}
-        onClose={() => setMode(null)}
-        className="max-w-4xl"
-      >
-        <DialogClose onClose={() => setMode(null)} />
+      <Dialog open={formOpen} onClose={() => !isPending && setFormOpen(false)} className="max-w-5xl">
+        <DialogClose onClose={() => setFormOpen(false)} />
         <DialogHeader>
-          <DialogTitle>
-            {mode === "create" ? "สร้างเอกสาร" : "แก้ไขเอกสาร"}
-          </DialogTitle>
+          <DialogTitle>{editing ? `แก้ไขคำขอ Revision ${editing.currentRevisionNo}` : "สร้างคำขอเบิก"}</DialogTitle>
           <DialogDescription>
-            {mode === "create"
-              ? "สร้างเอกสารเบิกจ่ายจาก Off-site Work ที่เกี่ยวข้อง"
-              : "แก้ไขข้อมูลเอกสารที่มีอยู่"}
+            {currentUserDisplayName} · {currentUserClaimantPositionAtSubmission}
+            {editing && editing.status !== "DRAFT" ? " · การแก้ไขจะสร้าง revision ใหม่และยกเลิกการยืนยันเดิม" : ""}
           </DialogDescription>
         </DialogHeader>
-        <DialogBody>
-          <div className="space-y-4">
+        <DialogBody className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="expenseMonth">เดือน</Label>
+              <Label htmlFor="claim-month">เดือนที่เบิก</Label>
               <Input
-                id="expenseMonth"
+                id="claim-month"
                 type="month"
-                value={form.expenseMonth}
-                onChange={(e) => {
-                  const nextMonth = e.target.value;
-                  setForm((prev) => ({ ...prev, expenseMonth: nextMonth }));
-                  if (mode === "create") {
-                    void loadEligibleOffSiteWorks(nextMonth);
-                  } else if (mode === "edit" && selected?.status === "DRAFT") {
-                    void loadEligibleOffSiteWorks(nextMonth);
-                  }
+                value={expenseMonth}
+                disabled={Boolean(editing)}
+                onChange={(event) => {
+                  setExpenseMonth(event.target.value);
+                  setSelectedOswIds([]);
+                  setWorkDates([]);
+                  void loadEligible(event.target.value);
                 }}
-                disabled={
-                  mode !== "create" &&
-                  !(mode === "edit" && selected?.status === "DRAFT")
-                }
               />
             </div>
-
             <div className="space-y-2">
-              <Label htmlFor="owner">Owner</Label>
-              <Input id="owner" value={currentUserDisplayName} disabled />
+              <Label>อัตราและยอดรวม</Label>
+              <div className="rounded-md border px-3 py-2 text-sm">
+                {workDates.length} วัน × {RATE} บาท = <strong>{(workDates.length * RATE).toLocaleString("th-TH")} บาท</strong>
+              </div>
             </div>
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="claimantPositionAtSubmission">
-                ตำแหน่งผู้ยื่นขณะยื่นเอกสาร
-              </Label>
-              <Input
-                id="claimantPositionAtSubmission"
-                value={form.claimantPositionAtSubmission}
-                disabled
-              />
+          <section className="space-y-3">
+            <div>
+              <h3 className="font-medium">1. เลือกใบนำตัวที่เกี่ยวข้อง</h3>
+              <p className="text-xs text-muted-foreground">แสดงเฉพาะใบนำตัวที่มีชื่อคุณเป็นผู้เดินทางในเดือนนี้</p>
             </div>
-
-            {mode === "create" ||
-            (mode === "edit" && selected?.status === "DRAFT") ? (
-              <>
-                {hasLeaderlessSelectedOsw && (
-                  <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>
-                      ใบสั่งปฏิบัติงานที่เลือกบางรายการยังไม่มีหัวหน้า
-                      กรุณากำหนดหัวหน้าก่อนส่ง
-                    </span>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label htmlFor="offsite-search">OffSiteWork Relateds</Label>
-                  <Input
-                    id="offsite-search"
-                    placeholder="ค้นหา Off-site Work"
-                    value={offSiteSearch}
-                    onChange={(e) => setOffSiteSearch(e.target.value)}
-                  />
-                  <div
-                    aria-busy={isLoadingEligibleOffSites || undefined}
-                    className="max-h-52 overflow-y-auto rounded-md border p-2"
-                  >
-                    {isLoadingEligibleOffSites ? (
-                      <div className="space-y-2 p-1">
-                        {Array.from({ length: 3 }).map((_, index) => (
-                          <div
-                            key={index}
-                            className="flex items-start gap-2 rounded-md border px-2 py-2"
-                          >
-                            <Skeleton className="mt-0.5 h-4 w-4 rounded" />
-                            <div className="min-w-0 flex-1 space-y-2">
-                              <Skeleton className="h-4 w-36" />
-                              <Skeleton className="h-3 w-full" />
-                              <Skeleton className="h-3 w-28" />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : filteredEligibleOptions.length === 0 ? (
-                      <p className="py-6 text-center text-sm text-muted-foreground">
-                        ไม่พบ Off-site Work ที่เข้าเงื่อนไข
-                      </p>
-                    ) : (
-                      <div className="space-y-1">
-                        {filteredEligibleOptions.map((offsite) => {
-                          const checked = selectedOffSiteWorkIds.includes(
-                            offsite.id,
-                          );
-                          return (
-                            <button
-                              key={offsite.id}
-                              type="button"
-                              onClick={() => toggleOffSiteWork(offsite.id)}
-                              className="flex w-full items-start gap-2 rounded-md border px-2 py-2 text-left hover:bg-muted/40"
-                            >
-                              <div
-                                className={`mt-0.5 flex h-4 w-4 items-center justify-center rounded border ${
-                                  checked
-                                    ? "border-primary bg-primary text-primary-foreground"
-                                    : "border-muted-foreground/30"
-                                }`}
-                              >
-                                {checked ? <Check className="h-3 w-3" /> : null}
-                              </div>
-                              <div className="min-w-0 flex-1 text-sm">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <p className="font-medium">
-                                    {offsite.innerRefDocumentId || offsite.id}
-                                  </p>
-                                  {!offsite.hasLeader && (
-                                    <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
-                                      ยังไม่มีหัวหน้า
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="truncate text-xs text-muted-foreground">
-                                  {offsite.location || "-"}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {dateDisplay(offsite.startDate)} -{" "}
-                                  {dateDisplay(offsite.endDate)}
-                                </p>
-                                {offsite.hasLeader &&
-                                  (offsite.leaderFirstName ||
-                                    offsite.leaderLastName) && (
-                                    <p className="text-xs text-emerald-600 dark:text-emerald-400">
-                                      หัวหน้า: {offsite.leaderFirstName}{" "}
-                                      {offsite.leaderLastName}
-                                      {offsite.leaderEmail
-                                        ? ` (${offsite.leaderEmail})`
-                                        : ""}
-                                    </p>
-                                  )}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>
-                    Claim Dates (default Mon-Fri, can select all days)
-                  </Label>
-                  <div className="rounded-md border p-2">
-                    {availableClaimDates.length === 0 ? (
-                      <p className="py-4 text-center text-sm text-muted-foreground">
-                        เลือก Off-site Work ก่อน เพื่อคำนวณวันเบิก
-                      </p>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground">
-                          <span>Sun</span>
-                          <span>Mon</span>
-                          <span>Tue</span>
-                          <span>Wed</span>
-                          <span>Thu</span>
-                          <span>Fri</span>
-                          <span>Sat</span>
-                        </div>
-                        <div className="grid grid-cols-7 gap-1">
-                          {calendarCells.map((cell, idx) => {
-                            if (!cell) {
-                              return (
-                                <div
-                                  key={`empty-${idx}`}
-                                  className="h-9 rounded-md"
-                                />
-                              );
-                            }
-
-                            const selectable = selectableDateSet.has(cell);
-                            const checked = selectedDateSet.has(cell);
-
-                            return (
-                              <button
-                                key={cell}
-                                type="button"
-                                onClick={() =>
-                                  selectable && toggleClaimDate(cell)
-                                }
-                                disabled={!selectable}
-                                className={`h-9 rounded-md border text-xs transition ${
-                                  selectable
-                                    ? checked
-                                      ? "border-primary bg-primary text-primary-foreground"
-                                      : "border-muted-foreground/30 hover:bg-muted/50"
-                                    : "border-transparent text-muted-foreground/30"
-                                }`}
-                                title={formatDay(cell)}
-                              >
-                                {new Date(cell).getUTCDate()}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          วันที่ที่เลือก: {selectedClaimDates.length} วัน
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="countDates">Date Count</Label>
-                    <Input id="countDates" value={String(dateCount)} disabled />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="amount">Total Amount (THB)</Label>
-                    <Input id="amount" value={String(totalAmount)} disabled />
-                  </div>
-                </div>
-              </>
+            {eligible.length === 0 ? (
+              <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">ไม่พบใบนำตัวที่ใช้เบิกได้ในเดือนนี้</p>
             ) : (
-              <>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="countDates">จำนวนวัน</Label>
-                    <Input
-                      id="countDates"
-                      inputMode="decimal"
-                      value={form.countDates === "-" ? "" : form.countDates}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          countDates: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="amount">จำนวนเงิน</Label>
-                    <Input
-                      id="amount"
-                      inputMode="decimal"
-                      value={form.amount === "-" ? "" : form.amount}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, amount: e.target.value }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>สถานะ</Label>
-                  <div className="flex h-9 items-center">
-                    <Badge variant={claimStatusVariant(form.status)}>
-                      {STATUS_LABEL[form.status] ?? form.status}
-                    </Badge>
-                  </div>
-                </div>
-              </>
+              <div className="grid gap-2 md:grid-cols-2">
+                {eligible.map((option) => (
+                  <label key={option.id} className="flex cursor-pointer gap-3 rounded-lg border p-3">
+                    <input type="checkbox" className="mt-1" checked={selectedOswIds.includes(option.id)} onChange={() => toggleOsw(option.id)} />
+                    <span className="min-w-0 text-sm">
+                      <span className="block font-medium">{oswLabel(option)}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {formatDate(option.startDate)} – {formatDate(option.endDate)}
+                        {option.location ? ` · ${option.location}` : ""}
+                      </span>
+                      {!option.hasLeader ? <span className="text-xs text-destructive">ยังไม่มีหัวหน้าชุด (บันทึกร่างได้ แต่ส่งไม่ได้)</span> : null}
+                    </span>
+                  </label>
+                ))}
+              </div>
             )}
+          </section>
 
-            <div className="space-y-2">
-              <Label htmlFor="remark">Remark (optional)</Label>
-              <Textarea
-                id="remark"
-                rows={3}
-                value={form.remark}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, remark: e.target.value }))
-                }
-              />
+          <section className="space-y-3">
+            <div>
+              <h3 className="font-medium">2. เลือกวันและใบนำตัวหลัก</h3>
+              <p className="text-xs text-muted-foreground">หนึ่งวันเลือกได้เพียงหนึ่งใบนำตัวหลัก ระบบคำนวณวันเดินทางจากวันเริ่ม/สิ้นสุดเอง</p>
             </div>
+            {datePool.length === 0 ? (
+              <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">เลือกใบนำตัวก่อนเพื่อแสดงวันที่</p>
+            ) : (
+              <div className="space-y-2">
+                {datePool.map((date) => {
+                  const selected = workDates.find((item) => item.date === date);
+                  const options = matchingOptions(date);
+                  const primary = options.find((item) => item.id === selected?.offSiteWorkId);
+                  const dayType = primary
+                    ? deriveWorkDayType(date, isoDate(primary.startDate), isoDate(primary.endDate))
+                    : "DUTY";
+                  const holiday = holidays[date];
+                  const requiresCode = dayType === "TRAVEL" || holiday?.holidayType === "WEEKEND" || holiday?.holidayType === "PUBLIC_HOLIDAY";
+                  return (
+                    <div key={date} className={selected ? "rounded-lg border border-primary/30 bg-primary/5 p-3" : "rounded-lg border p-3"}>
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                        <label className="flex min-w-48 items-center gap-2 text-sm font-medium">
+                          <input type="checkbox" checked={Boolean(selected)} onChange={(event) => setDateSelected(date, event.target.checked)} />
+                          {formatDate(date)}
+                        </label>
+                        {selected ? (
+                          <>
+                            <select
+                              className="h-9 min-w-64 flex-1 rounded-md border bg-background px-3 text-sm"
+                              value={selected.offSiteWorkId}
+                              onChange={(event) => updateWorkDate(date, { offSiteWorkId: event.target.value })}
+                            >
+                              {options.map((option) => <option key={option.id} value={option.id}>{oswLabel(option)}</option>)}
+                            </select>
+                            <Badge variant={dayType === "TRAVEL" ? "warning" : "outline"}>{dayType === "TRAVEL" ? "วันเดินทาง" : "วันปฏิบัติงาน"}</Badge>
+                            {holiday?.holidayType === "PUBLIC_HOLIDAY" ? <Badge variant="warning">{holiday.holidayName ?? "วันหยุดราชการ"}</Badge> : holiday?.holidayType === "WEEKEND" ? <Badge variant="warning">วันหยุดสุดสัปดาห์</Badge> : null}
+                          </>
+                        ) : null}
+                      </div>
+                      {selected ? (
+                        <div className="mt-3 space-y-2 border-t pt-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs text-muted-foreground">
+                              รหัส We Safe {requiresCode ? <span className="font-medium text-destructive">จำเป็นสำหรับวันนี้</span> : "(ถ้ามี)"}
+                            </p>
+                            <Button type="button" size="sm" variant="outline" onClick={() => addCode(date)}><Plus className="h-3.5 w-3.5" /> เพิ่มรหัส</Button>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            ระบบตรวจเฉพาะความยาว 19 ตัวอักษร ไม่ได้ตรวจสอบความแท้จริงของรหัส ผู้ยื่นรับรองว่าข้อมูลถูกต้อง
+                          </p>
+                          {selected.weSafeCodes.map((code, index) => (
+                            <div key={`${date}-${index}`} className="flex items-center gap-2">
+                              <Input
+                                value={code}
+                                maxLength={19}
+                                aria-invalid={code.trim().length !== 19}
+                                onChange={(event) => setCode(date, index, event.target.value)}
+                                placeholder={`WSZ${date.slice(0, 4)}............`}
+                              />
+                              <span className="w-12 text-right text-xs text-muted-foreground">{code.trim().length}/19</span>
+                              <Button type="button" variant="ghost" size="icon-sm" onClick={() => removeCode(date, index)} aria-label="ลบรหัส"><X className="h-4 w-4" /></Button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <div className="space-y-2">
+            <Label htmlFor="claim-remark">หมายเหตุ</Label>
+            <Textarea id="claim-remark" value={remark} onChange={(event) => setRemark(event.target.value)} rows={3} />
           </div>
         </DialogBody>
         <DialogFooter>
-          <Button
-            variant="outline"
-            className="w-full sm:w-auto"
-            onClick={() => setMode(null)}
-            disabled={isPending}
-          >
-            Cancel
-          </Button>
-
-          {mode === "create" ? (
-            <>
-              <LoadingButton
-                variant="secondary"
-                className="w-full sm:w-auto"
-                onClick={() => submitCreate("DRAFT")}
-                disabled={!formValid || isPending}
-                isLoading={isPending}
-                loadingText="Saving Draft"
-              >
-                Save Draft
-              </LoadingButton>
-              <LoadingButton
-                className="w-full sm:w-auto"
-                onClick={() => submitCreate("PENDING_LEADER_VERIFY")}
-                disabled={!formValid || isPending || hasLeaderlessSelectedOsw}
-                isLoading={isPending}
-                loadingText="Submitting"
-              >
-                Submit
-              </LoadingButton>
-            </>
-          ) : mode === "edit" && selected?.status === "DRAFT" ? (
-            <>
-              <LoadingButton
-                variant="secondary"
-                className="w-full sm:w-auto"
-                onClick={submitUpdate}
-                disabled={!formValid || isPending}
-                isLoading={isPending}
-                loadingText="Saving Draft"
-              >
-                Save Draft
-              </LoadingButton>
-              <LoadingButton
-                className="w-full sm:w-auto"
-                onClick={submitAndUpdate}
-                disabled={!formValid || isPending || hasLeaderlessSelectedOsw}
-                isLoading={isPending}
-                loadingText="Submitting"
-              >
-                Submit
-              </LoadingButton>
-            </>
-          ) : (
-            <LoadingButton
-              onClick={submitUpdate}
-              disabled={!formValid || isPending}
-              isLoading={isPending}
-              loadingText="Updating"
-            >
-              Update
-            </LoadingButton>
-          )}
+          <Button variant="outline" onClick={() => setFormOpen(false)} disabled={isPending}>ปิด</Button>
+          <LoadingButton variant="outline" isLoading={isPending} onClick={() => save(false)}>บันทึกฉบับร่าง</LoadingButton>
+          <LoadingButton isLoading={isPending} onClick={() => save(true)}><Send className="h-4 w-4" /> บันทึกและส่งยืนยัน</LoadingButton>
         </DialogFooter>
       </Dialog>
 
-      {/* No-leader dialog — rendered after create/edit dialog so it stacks on top */}
-      <Dialog
-        open={noLeaderDialogOpen}
-        onClose={() => setNoLeaderDialogOpen(false)}
-        className="max-w-md"
-      >
-        <DialogClose onClose={() => setNoLeaderDialogOpen(false)} />
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-500" />
-            ใบสั่งปฏิบัติงานยังไม่มีหัวหน้า
-          </DialogTitle>
-          <DialogDescription>
-            ไม่สามารถส่งเอกสารได้จนกว่าใบสั่งต่อไปนี้จะได้รับการกำหนดหัวหน้า
-          </DialogDescription>
-        </DialogHeader>
-        <DialogBody>
-          <ul className="space-y-2">
-            {noLeaderOsws.map((o) => (
-              <li
-                key={o.id}
-                className="rounded-lg border bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-sm"
-              >
-                <p className="font-medium font-mono text-xs">
-                  {o.innerRefDocumentId ?? o.id}
-                </p>
-                {o.location && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {o.location}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-4 text-sm text-muted-foreground">
-            กรุณาไปที่หน้า{" "}
-            <Link
-              href="/dashboard?tab=off-site-work"
-              className="font-medium text-sky-600 dark:text-sky-400 underline underline-offset-2"
-              onClick={() => setNoLeaderDialogOpen(false)}
-            >
-              จัดการใบสั่งปฏิบัติงาน
-            </Link>{" "}
-            แล้วกำหนดหัวหน้าให้ครบก่อนส่ง หรือบันทึกเป็นร่างไว้ก่อน
-          </p>
-        </DialogBody>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => setNoLeaderDialogOpen(false)}
-          >
-            ปิด
-          </Button>
-        </DialogFooter>
-      </Dialog>
-
-      <Dialog
-        open={mode === "view"}
-        onClose={() => setMode(null)}
-        className="max-w-3xl"
-      >
-        <DialogClose onClose={() => setMode(null)} />
-        <DialogHeader>
-          <DialogTitle>รายละเอียดเอกสาร</DialogTitle>
-          <DialogDescription>{selected?.id}</DialogDescription>
-        </DialogHeader>
-        <DialogBody>
-          {selected ? (
-            <div className="space-y-4 text-sm">
-              <div>
-                <p className="text-xs text-muted-foreground">ผู้ยื่น</p>
-                <p className="font-medium">
-                  <User className="mr-1 inline h-4 w-4" />
-                  {selected.claimant.firstName} {selected.claimant.lastName}
-                </p>
+      <Dialog open={Boolean(detail)} onClose={() => setDetail(null)} className="max-w-4xl">
+        <DialogClose onClose={() => setDetail(null)} />
+        {detail ? (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex flex-wrap items-center gap-2">
+                <CalendarDays className="h-5 w-5" /> {formatMonth(detail.expenseMonth)}
+                <Badge variant={claimStatusVariant(detail.status)}>{STATUS_LABEL[detail.status]}</Badge>
+              </DialogTitle>
+              <DialogDescription>
+                {detail.claimant.firstName} {detail.claimant.lastName} · Revision {detail.currentRevisionNo}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogBody className="space-y-5">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">จำนวนวัน</p><p className="text-lg font-semibold">{detail.countDates}</p></div>
+                <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">อัตรา</p><p className="text-lg font-semibold">{detail.currentRevision.ratePerDay.toLocaleString("th-TH")} บาท</p></div>
+                <div className="rounded-lg border p-3"><p className="text-xs text-muted-foreground">ยอดรวม</p><p className="text-lg font-semibold">{detail.amount.toLocaleString("th-TH")} บาท</p></div>
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground">เดือน</p>
-                <p className="font-medium">
-                  {monthDisplay(selected.expenseMonth)}
-                </p>
+              <div className="overflow-x-auto rounded-lg border">
+                <table className="w-full min-w-180 text-sm">
+                  <thead className="bg-muted/60 text-left"><tr><th className="p-3">วันที่</th><th className="p-3">ใบนำตัวหลัก</th><th className="p-3">ประเภท</th><th className="p-3">วันหยุด</th><th className="p-3">We Safe</th><th className="p-3 text-right">บาท</th></tr></thead>
+                  <tbody>
+                    {detail.currentRevision.workDates.map((date) => {
+                      const osw = detail.currentRevision.offSiteWorks.find((item) => item.offSiteWorkId === date.offSiteWorkId);
+                      return (
+                        <tr key={date.id} className="border-t align-top">
+                          <td className="p-3 font-medium">{formatDate(date.date)}</td>
+                          <td className="p-3">{osw?.innerRefDocumentId || date.offSiteWorkId}</td>
+                          <td className="p-3">{date.dayType === "TRAVEL" ? "เดินทาง" : "ปฏิบัติงาน"}</td>
+                          <td className="p-3">{date.holidayName ?? (date.holidayType === "WEEKEND" ? "วันหยุดสุดสัปดาห์" : "-")}</td>
+                          <td className="p-3">{date.weSafeCodes.length > 0 ? date.weSafeCodes.map((code, index) => <span key={`${code}-${index}`} className="block font-mono text-xs">{code}</span>) : "-"}</td>
+                          <td className="p-3 text-right">{date.dailyRate.toLocaleString("th-TH")}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground">จำนวนวัน</p>
-                <p className="font-medium">
-                  {decimalText(selected.countDates)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">จำนวนเงิน</p>
-                <p className="font-medium">{decimalText(selected.amount)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">สถานะ</p>
-                <Badge variant={claimStatusVariant(selected.status)}>
-                  {STATUS_LABEL[selected.status] ?? selected.status}
-                </Badge>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">หมายเหตุ</p>
-                <p className="font-medium whitespace-pre-wrap">
-                  {selected.remark || "-"}
-                </p>
-              </div>
-
-              {/* Leader verification section */}
-              {selected.leaderVerifications &&
-              selected.leaderVerifications.length > 0 ? (
-                <LeaderVerificationSection
-                  verifications={selected.leaderVerifications}
-                  claimId={selected.id}
-                />
-              ) : null}
-
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  วันที่ที่ยื่นเบิก (ปฏิทิน)
-                </p>
-                <div className="rounded-md border p-2">
-                  {viewSelectedDateSet.size === 0 ? (
-                    <p className="py-4 text-center text-sm text-muted-foreground">
-                      ไม่มีวันที่ที่บันทึกไว้
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground">
-                        <span>Sun</span>
-                        <span>Mon</span>
-                        <span>Tue</span>
-                        <span>Wed</span>
-                        <span>Thu</span>
-                        <span>Fri</span>
-                        <span>Sat</span>
-                      </div>
-                      <div className="grid grid-cols-7 gap-1">
-                        {viewCalendarCells.map((cell, idx) => {
-                          if (!cell) {
-                            return (
-                              <div
-                                key={`view-empty-${idx}`}
-                                className="h-9 rounded-md"
-                              />
-                            );
-                          }
-
-                          const checked = viewSelectedDateSet.has(cell);
-
-                          return (
-                            <div
-                              key={`view-${cell}`}
-                              className={`flex h-9 items-center justify-center rounded-md border text-xs ${
-                                checked
-                                  ? "border-primary bg-primary text-primary-foreground"
-                                  : "border-muted-foreground/20 text-muted-foreground"
-                              }`}
-                              title={formatDay(cell)}
-                            >
-                              {new Date(cell).getUTCDate()}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        วันที่ที่เลือก: {viewSelectedDateSet.size} วัน
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </DialogBody>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            className="w-full sm:w-auto"
-            onClick={() => setMode(null)}
-          >
-            ปิด
-          </Button>
-        </DialogFooter>
+              {detail.remark ? <div><h4 className="text-sm font-semibold">หมายเหตุ</h4><p className="text-sm text-muted-foreground">{detail.remark}</p></div> : null}
+              <LeaderVerificationSection verifications={detail.leaderVerifications} claimId={detail.id} />
+            </DialogBody>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDetail(null)}>ปิด</Button>
+              {!(["COLLECTED", "COMPLETED", "CANCELLED"] as ExpenseClaimStatus[]).includes(detail.status) ? <Button onClick={() => { setDetail(null); openEdit(detail); }}><Pencil className="h-4 w-4" /> แก้ไข</Button> : null}
+            </DialogFooter>
+          </>
+        ) : null}
       </Dialog>
 
       <ConfirmDialog
-        open={mode === "delete"}
-        onClose={() => setMode(null)}
-        title="ยืนยันการยกเลิกเอกสาร"
-        description="ระบบจะทำ soft-delete โดยเปลี่ยนสถานะเป็น CANCELLED"
-        bodyText={
-          <>
-            ต้องการยกเลิกเอกสาร{" "}
-            <span className="font-semibold text-foreground">
-              {selected?.id}
-            </span>{" "}
-            ใช่หรือไม่
-          </>
-        }
-        confirmLabel="ยืนยันยกเลิก"
+        open={Boolean(cancelTarget)}
+        onClose={() => setCancelTarget(null)}
+        title="ยกเลิกคำขอนี้?"
+        description="ลิงก์และการยืนยันของ revision ปัจจุบันจะถูกยกเลิกด้วย"
+        confirmLabel="ยืนยันการยกเลิก"
         isPending={isPending}
-        onConfirm={submitDelete}
+        onConfirm={cancelClaim}
       />
     </div>
   );

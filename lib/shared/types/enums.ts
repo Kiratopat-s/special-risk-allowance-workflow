@@ -11,8 +11,17 @@
 export {
     UserStatus,
     ActionType,
-    ClaimDocumentStatus,
+    ExpenseClaimStatus,
+    ExpenseClaimRevisionStatus,
+    WorkDayType,
+    HolidayType,
+    HolidaySource,
+    HolidaySyncStatus,
+    ClaimReviewFlagStatus,
+    LeaderVerificationStatus,
+    MonthlyRequestStatus,
     PermissionResource,
     PermissionAction,
     PermissionScope,
+    NotificationType,
 } from "@/lib/generated/prisma/client";

@@ -1,292 +1,285 @@
-/**
- * LeaderVerification Domain - Service Layer
- *
- * @module lib/domains/leader-verification/service
- */
-
-import { leaderVerificationRepository } from "./repository";
-import { prisma } from "@/lib/db";
-import { success, error, type Result } from "@/lib/shared/types";
+import { actionLogService } from "@/lib/domains/action-log/service";
+import { notificationService } from "@/lib/domains/notification";
 import { sendLeaderVerifyEmail } from "@/lib/email";
+import type { Prisma } from "@/lib/generated/prisma/client";
+import { ActionType, error, success, type Result } from "@/lib/shared/types";
+import { leaderVerificationRepository as repo } from "./repository";
 import type {
-    LeaderVerificationEntity,
-    LeaderVerificationWithRelations,
-    CreateLeaderVerificationInput,
+  CreatedLeaderVerification,
+  LeaderVerificationPayload,
+  LeaderVerificationWithRelations,
+  VerifyResult,
 } from "./types";
+import {
+  generateLeaderVerificationToken,
+  hashLeaderVerificationPayload,
+  hashLeaderVerificationToken,
+} from "./token";
 
-// Lazy-import to avoid circular deps
-async function getNotificationService() {
-    const { notificationService } = await import("@/lib/domains/notification");
-    return notificationService;
-}
-
-/** Token validity period: 7 days */
 const TOKEN_TTL_DAYS = 7;
 
-function makeExpiresAt(): Date {
-    const d = new Date();
-    d.setDate(d.getDate() + TOKEN_TTL_DAYS);
-    return d;
+function expiresAt(): Date {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + TOKEN_TTL_DAYS);
+  return date;
 }
 
-export interface VerifyResult {
-    verified: boolean;
-    allDone: boolean;
-    expenseClaimId: string;
+function isoDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 export const leaderVerificationService = {
-    /**
-     * Create verification records for each OSW that has a leader.
-     * Returns the created records so the caller can extract share URLs.
-     */
-    async createForClaim(
-        expenseClaimId: string,
-        offSiteWorkIds: string[]
-    ): Promise<LeaderVerificationEntity[]> {
-        if (!offSiteWorkIds.length) return [];
+  async getById(
+    verificationId: string,
+  ): Promise<Result<LeaderVerificationWithRelations>> {
+    const record = await repo.findById(verificationId);
+    return record
+      ? success(record)
+      : error("ไม่พบรายการยืนยัน", "VERIFICATION_NOT_FOUND");
+  },
 
-        // Fetch OSWs with their leader data
-        const [osws, claim] = await Promise.all([
-            prisma.offSiteWork.findMany({
-                where: { id: { in: offSiteWorkIds }, deletedAt: null },
-                select: {
-                    id: true,
-                    innerRefDocumentId: true,
-                    leaderUserId: true,
-                    leaderEmail: true,
-                },
-            }),
-            prisma.expenseClaim.findUnique({
-                where: { id: expenseClaimId },
-                select: { claimant: { select: { firstName: true, lastName: true } } },
-            }),
-        ]);
+  async createForRevisionInTransaction(
+    tx: Prisma.TransactionClient,
+    revisionId: string,
+  ): Promise<Result<CreatedLeaderVerification[]>> {
+    const revision = await repo.findRevisionForVerification(revisionId, tx);
+    if (!revision) return error("ไม่พบ revision", "REVISION_NOT_FOUND");
+    if (revision.status !== "DRAFT") {
+      return error("สร้างการยืนยันได้เฉพาะ revision ฉบับร่าง", "REVISION_NOT_DRAFT");
+    }
 
-        const claimantName = claim?.claimant
-            ? `${claim.claimant.firstName} ${claim.claimant.lastName}`.trim()
-            : undefined;
-
-        const records: CreateLeaderVerificationInput[] = [];
-        for (const osw of osws) {
-            const hasInternalLeader = !!osw.leaderUserId;
-            const hasExternalLeader = !!osw.leaderEmail;
-            if (!hasInternalLeader && !hasExternalLeader) continue;
-
-            records.push({
-                expenseClaimId,
-                offSiteWorkId: osw.id,
-                leaderUserId: osw.leaderUserId ?? null,
-                leaderEmail: osw.leaderEmail ?? null,
-                expiresAt: makeExpiresAt(),
-            });
-        }
-
-        if (!records.length) return [];
-
-        await leaderVerificationRepository.createMany(records);
-
-        // Re-fetch to get IDs + tokens
-        const created = await leaderVerificationRepository.findAllByExpenseClaimId(expenseClaimId);
-
-        // Fire-and-forget: notify internal leaders
-        const internalLeaderIds = [
-            ...new Set(
-                records
-                    .filter((r) => r.leaderUserId)
-                    .map((r) => r.leaderUserId as string)
-            ),
-        ];
-        if (internalLeaderIds.length > 0) {
-            getNotificationService()
-                .then((ns) =>
-                    ns.sendToMany(
-                        internalLeaderIds,
-                        "LEADER_VERIFY_REQUEST",
-                        "มีคำขอยืนยันการออกปฏิบัติงาน",
-                        "พนักงานได้ยื่นเบิกค่าตอบแทนเสี่ยงภัยฯ และรอการยืนยันจากคุณ",
-                        "/dashboard?tab=leader-queue",
-                    )
-                )
-                .catch(() => undefined);
-        }
-
-        // Fire-and-forget: send email to external leaders
-        for (const record of created) {
-            if (record.leaderEmail && !record.leaderUserId) {
-                const osw = osws.find((o) => o.id === record.offSiteWorkId);
-                sendLeaderVerifyEmail({
-                    to: record.leaderEmail,
-                    token: record.token,
-                    offSiteWorkRef: osw?.innerRefDocumentId ?? null,
-                    claimantName,
-                    expiresAt: record.expiresAt,
-                }).catch(() => undefined);
-            }
-        }
-
-        return created;
-    },
-
-    /**
-     * Verify via external token link.
-     * Updates the record and transitions the claim to WAIT_FOR_COLLECTION if all done.
-     */
-    async verifyByToken(token: string, signatureData?: Buffer | null): Promise<Result<VerifyResult>> {
-        const record = await leaderVerificationRepository.findByToken(token);
-
-        if (!record) {
-            return error("ไม่พบรายการยืนยัน หรือลิงก์ไม่ถูกต้อง", "VERIFICATION_NOT_FOUND");
-        }
-
-        if (record.verifiedAt) {
-            return success(
-                { verified: true, allDone: true, expenseClaimId: record.expenseClaimId },
-                "ยืนยันแล้ว"
-            );
-        }
-
-        if (new Date() > record.expiresAt) {
-            return error("ลิงก์ยืนยันหมดอายุแล้ว กรุณาติดต่อผู้ดูแลเพื่อขอลิงก์ใหม่", "TOKEN_EXPIRED");
-        }
-
-        await leaderVerificationRepository.verify(record.id, signatureData ?? null);
-
-        const allDone = await checkAllDone(record.expenseClaimId);
-        if (allDone) {
-            await prisma.expenseClaim.update({
-                where: { id: record.expenseClaimId },
-                data: { status: "WAIT_FOR_COLLECTION" },
-            });
-        }
-
-        // Notify claimant — fire-and-forget
-        notifyClaimant(record.expenseClaimId, allDone).catch(() => undefined);
-
-        return success({ verified: true, allDone, expenseClaimId: record.expenseClaimId });
-    },
-
-    /**
-     * Verify by authenticated internal leader (userId must match leaderUserId on record).
-     */
-    async verifyAsInternalLeader(
-        expenseClaimId: string,
-        offSiteWorkId: string,
-        userId: string,
-        signatureData?: Buffer | null
-    ): Promise<Result<VerifyResult>> {
-        const record = await leaderVerificationRepository.findByClaimAndOsw(
-            expenseClaimId,
-            offSiteWorkId
+    const created: CreatedLeaderVerification[] = [];
+    for (const osw of revision.offSiteWorks) {
+      const dates = revision.workDates.filter(
+        (item) => item.revisionOffSiteWorkId === osw.id,
+      );
+      if (dates.length === 0) continue;
+      if ((!osw.leaderUserIdSnapshot && !osw.leaderEmailSnapshot) || !osw.leaderFirstNameSnapshot) {
+        return error(
+          `ใบนำตัว ${osw.innerRefDocumentIdSnapshot ?? osw.offSiteWorkId} ไม่มีหัวหน้าชุด`,
+          "OSW_MISSING_LEADER",
         );
+      }
 
-        if (!record) {
-            return error("ไม่พบรายการยืนยัน", "VERIFICATION_NOT_FOUND");
-        }
+      const payload: LeaderVerificationPayload = {
+        version: 1,
+        claim: {
+          id: revision.expenseClaimId,
+          revisionNo: revision.revisionNo,
+          expenseMonth: isoDate(revision.expenseClaim.expenseMonth),
+          claimant: {
+            employeeId: revision.employeeIdSnapshot,
+            firstName: revision.firstNameSnapshot,
+            lastName: revision.lastNameSnapshot,
+            position: revision.positionSnapshot,
+            positionShort: revision.positionShortSnapshot,
+            positionLevel: revision.positionLevelSnapshot,
+            departmentName: revision.departmentNameSnapshot,
+            departmentShort: revision.departmentShortSnapshot,
+          },
+        },
+        offSiteWork: {
+          id: osw.offSiteWorkId,
+          innerRefDocumentId: osw.innerRefDocumentIdSnapshot,
+          startDate: isoDate(osw.startDateSnapshot),
+          endDate: isoDate(osw.endDateSnapshot),
+          objective: osw.objectiveSnapshot,
+          location: osw.locationSnapshot,
+        },
+        rate: Number(revision.ratePerDay),
+        dates: dates.map((item) => ({
+          date: isoDate(item.workDate),
+          dayType: item.dayType,
+          holidayType: item.holidayType,
+          holidayName: item.holidayName,
+          weSafeCodes: item.weSafeCodes.map((code) => code.code),
+          dailyRate: Number(item.dailyRate),
+        })),
+        countDates: dates.length,
+        amount: dates.reduce((sum, item) => sum + Number(item.dailyRate), 0),
+      };
+      const rawToken = generateLeaderVerificationToken();
+      const record = await repo.create({
+        claimRevisionId: revision.id,
+        revisionOffSiteWorkId: osw.id,
+        leaderUserId: osw.leaderUserIdSnapshot,
+        leaderEmpIdSnapshot: osw.leaderEmpIdSnapshot,
+        leaderFirstNameSnapshot: osw.leaderFirstNameSnapshot,
+        leaderLastNameSnapshot: osw.leaderLastNameSnapshot,
+        leaderPositionSnapshot: osw.leaderPositionSnapshot,
+        leaderEmailSnapshot: osw.leaderEmailSnapshot,
+        tokenHash: hashLeaderVerificationToken(rawToken),
+        expiresAt: expiresAt(),
+        payloadSnapshot: payload,
+        payloadHash: hashLeaderVerificationPayload(payload),
+      }, tx);
+      created.push({ record, rawToken });
+    }
 
-        if (record.leaderUserId !== userId) {
-            return error("คุณไม่ใช่หัวหน้าที่รับผิดชอบงานนี้", "NOT_LEADER");
-        }
+    return success(created);
+  },
 
-        if (record.verifiedAt) {
-            return success(
-                { verified: true, allDone: true, expenseClaimId },
-                "ยืนยันแล้ว"
-            );
-        }
+  notifyCreated(created: CreatedLeaderVerification[]): void {
+    const internalLeaderIds = [
+      ...new Set(created.map((item) => item.record.leaderUserId).filter(Boolean)),
+    ] as string[];
+    if (internalLeaderIds.length > 0) {
+      void notificationService.sendToMany(
+        internalLeaderIds,
+        "LEADER_VERIFY_REQUEST",
+        "มีคำขอยืนยันการออกปฏิบัติงาน",
+        "กรุณาตรวจสอบวันที่ จำนวนวัน และหลักฐาน We Safe ก่อนลงนามยืนยัน",
+        "/dashboard?tab=leader-queue",
+      ).catch(() => undefined);
+    }
+    for (const item of created) {
+      if (item.record.leaderEmailSnapshot && !item.record.leaderUserId) {
+        void sendLeaderVerifyEmail({
+          to: item.record.leaderEmailSnapshot,
+          token: item.rawToken,
+          offSiteWorkRef: item.record.payloadSnapshot.offSiteWork.innerRefDocumentId,
+          claimantName: `${item.record.payloadSnapshot.claim.claimant.firstName} ${item.record.payloadSnapshot.claim.claimant.lastName}`,
+          expiresAt: item.record.expiresAt,
+        }).catch(() => undefined);
+      }
+    }
+  },
 
-        if (new Date() > record.expiresAt) {
-            return error("ลิงก์ยืนยันหมดอายุแล้ว กรุณาติดต่อผู้ดูแลเพื่อขอลิงก์ใหม่", "TOKEN_EXPIRED");
-        }
+  async getByRawToken(
+    rawToken: string,
+  ): Promise<Result<LeaderVerificationWithRelations>> {
+    if (!rawToken.trim()) return error("Token is required", "INVALID_TOKEN");
+    const record = await repo.findByTokenHash(hashLeaderVerificationToken(rawToken));
+    if (!record || record.status === "SUPERSEDED" || record.supersededAt) {
+      return error("ไม่พบรายการยืนยันหรือลิงก์ถูกยกเลิกแล้ว", "VERIFICATION_NOT_FOUND");
+    }
+    if (record.expiresAt < new Date()) {
+      return error("ลิงก์ยืนยันหมดอายุแล้ว", "TOKEN_EXPIRED");
+    }
+    return success(record);
+  },
 
-        await leaderVerificationRepository.verify(record.id, signatureData ?? null);
+  async listForLeader(
+    userId: string,
+    view: "pending" | "history" | "all" = "all",
+  ): Promise<Result<LeaderVerificationWithRelations[]>> {
+    return success(await repo.findForLeader(userId, view));
+  },
 
-        const allDone = await checkAllDone(expenseClaimId);
-        if (allDone) {
-            await prisma.expenseClaim.update({
-                where: { id: expenseClaimId },
-                data: { status: "WAIT_FOR_COLLECTION" },
-            });
-        }
+  async listPendingForLeader(
+    userId: string,
+  ): Promise<Result<LeaderVerificationWithRelations[]>> {
+    return this.listForLeader(userId, "pending");
+  },
 
-        // Notify claimant — fire-and-forget
-        notifyClaimant(expenseClaimId, allDone).catch(() => undefined);
+  async verifyByToken(
+    rawToken: string,
+    signatureData?: Buffer | null,
+  ): Promise<Result<VerifyResult>> {
+    const lookup = await this.getByRawToken(rawToken);
+    if (!lookup.success) return lookup;
+    return confirmRecord(lookup.data, signatureData);
+  },
 
-        return success({ verified: true, allDone, expenseClaimId });
-    },
+  async verifyAsInternalLeader(
+    revisionId: string,
+    revisionOffSiteWorkId: string,
+    userId: string,
+    signatureData?: Buffer | null,
+  ): Promise<Result<VerifyResult>> {
+    const record = await repo.findByRevisionAndOsw(revisionId, revisionOffSiteWorkId);
+    if (!record) return error("ไม่พบรายการยืนยัน", "VERIFICATION_NOT_FOUND");
+    if (record.leaderUserId !== userId) {
+      return error("คุณไม่ใช่หัวหน้าชุดของรายการนี้", "NOT_LEADER");
+    }
+    return confirmRecord(record, signatureData);
+  },
 
-    /**
-     * List pending verifications for an internal leader's dashboard.
-     */
-    async listPendingForLeader(
-        userId: string
-    ): Promise<Result<LeaderVerificationWithRelations[]>> {
-        const records = await leaderVerificationRepository.findPendingByLeaderUserId(userId);
-        return success(records);
-    },
-
-    /**
-     * Refresh token expiry for a specific verification record.
-     * Called when admin wants to re-share an expired link.
-     */
-    async refreshToken(
-        id: string,
-        requestingUserId: string
-    ): Promise<Result<LeaderVerificationEntity>> {
-        const record = await prisma.leaderVerification.findUnique({ where: { id } });
-        if (!record) {
-            return error("ไม่พบรายการยืนยัน", "VERIFICATION_NOT_FOUND");
-        }
-
-        if (record.verifiedAt) {
-            return error("ยืนยันแล้ว ไม่สามารถรีเฟรชลิงก์ได้", "ALREADY_VERIFIED");
-        }
-
-        const updated = await prisma.leaderVerification.update({
-            where: { id },
-            data: { token: crypto.randomUUID(), expiresAt: makeExpiresAt() },
-        });
-
-        void requestingUserId; // for future audit log use
-
-        return success(updated as LeaderVerificationEntity);
-    },
+  async refreshToken(
+    verificationId: string,
+    actorId: string,
+    canManage: boolean,
+  ): Promise<Result<void>> {
+    const record = await repo.findById(verificationId);
+    if (!record) return error("ไม่พบรายการยืนยัน", "VERIFICATION_NOT_FOUND");
+    const isClaimant = record.expenseClaim.userId === actorId;
+    if (!isClaimant && !canManage) return error("ไม่มีสิทธิ์ต่ออายุลิงก์", "FORBIDDEN");
+    if (record.status !== "PENDING" || record.confirmedAt || record.supersededAt) {
+      return error("รายการนี้ไม่อยู่ในสถานะที่ต่ออายุได้", "VERIFICATION_NOT_PENDING");
+    }
+    if (record.leaderUserId || !record.leaderEmailSnapshot) {
+      return error("รายการหัวหน้าภายในไม่ต้องใช้ลิงก์อีเมล", "INTERNAL_LEADER");
+    }
+    const rawToken = generateLeaderVerificationToken();
+    const nextExpiry = expiresAt();
+    await repo.rotateToken(
+      verificationId,
+      hashLeaderVerificationToken(rawToken),
+      nextExpiry,
+    );
+    void sendLeaderVerifyEmail({
+      to: record.leaderEmailSnapshot,
+      token: rawToken,
+      offSiteWorkRef: record.payloadSnapshot.offSiteWork.innerRefDocumentId,
+      claimantName: `${record.payloadSnapshot.claim.claimant.firstName} ${record.payloadSnapshot.claim.claimant.lastName}`,
+      expiresAt: nextExpiry,
+    }).catch(() => undefined);
+    return success(undefined, "ส่งลิงก์ใหม่ให้หัวหน้าชุดแล้ว");
+  },
 };
 
-/**
- * Fire-and-forget: send a notification to the claimant after a leader verifies.
- * Fetches the claim's claimantId from DB to resolve the recipient.
- */
-async function notifyClaimant(expenseClaimId: string, allDone: boolean): Promise<void> {
-    const claim = await prisma.expenseClaim.findUnique({
-        where: { id: expenseClaimId },
-        select: { userId: true },
+async function confirmRecord(
+  record: LeaderVerificationWithRelations,
+  signatureData?: Buffer | null,
+): Promise<Result<VerifyResult>> {
+  if (!signatureData || signatureData.length === 0) {
+    return error("กรุณาลงลายเซ็นก่อนยืนยัน", "SIGNATURE_REQUIRED");
+  }
+  const confirmation = await repo.confirmCurrent(record.id, signatureData);
+  if (confirmation.outcome === "NOT_FOUND") {
+    return error("ไม่พบรายการยืนยัน", "VERIFICATION_NOT_FOUND");
+  }
+  if (confirmation.outcome === "EXPIRED") {
+    return error("ลิงก์ยืนยันหมดอายุแล้ว", "TOKEN_EXPIRED");
+  }
+  if (confirmation.outcome === "NOT_CURRENT") {
+    return error(
+      "รายการยืนยันนี้ไม่ใช่ revision ปัจจุบันหรือสถานะคำขอเปลี่ยนแล้ว",
+      "VERIFICATION_CONFLICT",
+    );
+  }
+  const { allDone } = confirmation;
+
+  // External leaders have no authenticated User actor; the immutable signed
+  // LeaderVerification row is their audit record. Never impersonate claimant.
+  if (record.leaderUserId) {
+    await actionLogService.log({
+      userId: record.leaderUserId,
+      actionType: ActionType.LEADER_VERIFICATION_CONFIRMED,
+      actionDescription: `Leader verification "${record.id}" confirmed`,
+      targetEntityType: "LeaderVerification",
+      targetEntityId: record.id,
+      newData: {
+        claimId: record.expenseClaimId,
+        revisionNo: record.revisionNo,
+        offSiteWorkId: record.offSiteWorkId,
+        payloadHash: record.payloadHash,
+      } as Prisma.JsonObject,
     });
-    if (!claim?.userId) return;
+  }
 
-    const ns = await getNotificationService();
-    if (allDone) {
-        await ns.send(
-            claim.userId,
-            "CLAIM_STATUS_CHANGED",
-            "หัวหน้ายืนยันครบทุกใบสั่งแล้ว",
-            "เอกสารเบิกค่าตอบแทนของคุณได้รับการยืนยันครบทุกใบสั่งปฏิบัติงานแล้ว และพร้อมรวบรวมเข้าสู่ระบบ",
-            `/dashboard?tab=expense-claims&claimId=${expenseClaimId}`,
-        );
-    } else {
-        await ns.send(
-            claim.userId,
-            "CLAIM_STATUS_CHANGED",
-            "หัวหน้ายืนยันใบสั่งปฏิบัติงานแล้ว",
-            "หัวหน้ายืนยันใบสั่งปฏิบัติงานของคุณ 1 รายการแล้ว — รอหัวหน้ารายอื่นยืนยันต่อ (ถ้ามี)",
-            `/dashboard?tab=expense-claims&claimId=${expenseClaimId}`,
-        );
-    }
-}
-
-/** Returns true when every verification record for the claim has been verified. */
-async function checkAllDone(expenseClaimId: string): Promise<boolean> {
-    const all = await leaderVerificationRepository.findAllByExpenseClaimId(expenseClaimId);
-    if (!all.length) return false;
-    return all.every((r) => r.verifiedAt !== null);
+  void notificationService.send(
+    record.expenseClaim.userId,
+    "CLAIM_STATUS_CHANGED",
+    allDone ? "หัวหน้าชุดยืนยันครบแล้ว" : "หัวหน้าชุดยืนยันแล้ว 1 รายการ",
+    allDone
+      ? "คำขอของคุณพร้อมให้ผู้รวบรวมตรวจสอบ"
+      : "คำขอยังรอหัวหน้าชุดรายการอื่นยืนยัน",
+    `/dashboard?tab=expense-claims&claimId=${record.expenseClaimId}`,
+  ).catch(() => undefined);
+  return success({
+    verified: true,
+    allDone,
+    expenseClaimId: confirmation.expenseClaimId,
+  });
 }

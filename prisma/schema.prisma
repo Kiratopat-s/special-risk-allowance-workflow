@@ -27,32 +27,53 @@ enum ActionType {
   LOGOUT
   LOGIN_FAILED
   SESSION_REFRESH
-  
+
   // User Management
   USER_CREATED
   USER_UPDATED
   USER_DELETED
   USER_STATUS_CHANGED
-  
+
   // Profile Management
   PROFILE_VIEWED
   PROFILE_UPDATED
   PASSWORD_CHANGED
-  
+
   // Department Management
   DEPARTMENT_CREATED
   DEPARTMENT_UPDATED
   DEPARTMENT_DELETED
-  
+
   // System Actions
   SYSTEM_ACCESS
   PERMISSION_GRANTED
   PERMISSION_REVOKED
-  
+
   // Data Operations
   DATA_EXPORTED
   DATA_IMPORTED
-  
+
+  // Claim workflow
+  CLAIM_DRAFT_SAVED
+  CLAIM_SUBMITTED
+  CLAIM_CORRECTION_STARTED
+  CLAIM_RESUBMITTED
+  CLAIM_CANCELLED
+  CLAIM_REJECTED
+  CLAIM_COLLECTED
+  CLAIM_REMOVED_FROM_COLLECTION
+  CLAIM_SUSPICIOUS_MARKED
+  CLAIM_SUSPICIOUS_RESOLVED
+  LEADER_VERIFICATION_CONFIRMED
+
+  // Monthly request workflow
+  MRC_FINALIZED
+  MRC_ALL_DONE_RECORDED
+  MRC_DRAFT_CANCELLED
+  MRC_VOIDED
+  MRC_PREVIEW_RENDERED
+  MRC_OFFICIAL_RENDERED
+
   // Other
   OTHER
 }
@@ -62,56 +83,64 @@ enum ActionType {
 // =============================================================================
 
 model User {
-  id                String     @id @default(uuid())
-  keycloakId        String     @unique @map("keycloak_id")
-  
+  id         String @id @default(uuid())
+  keycloakId String @unique @map("keycloak_id")
+
   // Personal Information
-  email             String     @unique
-  peaEmail          String?    @map("pea_email")
-  firstName         String     @map("first_name")
-  lastName          String     @map("last_name")
-  phoneNumber       String?    @map("phone_number")
-  employeeId        String?    @map("employee_id") @unique
-  
+  email       String  @unique
+  peaEmail    String? @map("pea_email")
+  firstName   String  @map("first_name")
+  lastName    String  @map("last_name")
+  phoneNumber String? @map("phone_number")
+  employeeId  String? @unique @map("employee_id")
+
   // Position Information
-  position          String?
-  positionShort     String?    @map("position_short")
-  positionLevel     String?    @map("position_level")
-  
+  position      String?
+  positionShort String? @map("position_short")
+  positionLevel String? @map("position_level")
+
   // Department Relation
-  departmentId      String?    @map("department_id")
-  department        Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  
+  departmentId String?     @map("department_id")
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
   // Status & Metadata
-  status            UserStatus @default(ACTIVE)
-  lastLoginAt       DateTime?  @map("last_login_at")
-  createdAt         DateTime   @default(now()) @map("created_at")
-  updatedAt         DateTime   @updatedAt @map("updated_at")
-  
+  status      UserStatus @default(ACTIVE)
+  lastLoginAt DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
   // Relations
-  actionLogs        UserActionLog[] @relation("UserActions")
-  targetedActions   UserActionLog[] @relation("TargetUserActions")
-  userRoles         UserRole[]
-  
-  @@map("users")
+  actionLogs                 UserActionLog[]                @relation("UserActions")
+  targetedActions            UserActionLog[]                @relation("TargetUserActions")
+  userRoles                  UserRole[]
+  files                      Files[]
+  offSiteWorks               OffSiteWork[]
+  offSiteWorkParticipants    OffSiteWorkParticipant[]
+  expenseClaims              ExpenseClaim[]                 @relation("ExpenseClaimUser")
+  createdExpenseClaims       ExpenseClaim[]                 @relation("ExpenseClaimCreator")
+  rejectedExpenseClaims      ExpenseClaim[]                 @relation("ExpenseClaimRejectedBy")
+  collectedMonthlyRequests   MonthlyRequestCollection[]     @relation("MrcCollector")
+  finalizedMonthlyRequests   MonthlyRequestCollection[]     @relation("MrcFinalizedBy")
+  completedMonthlyRequests   MonthlyRequestCollection[]     @relation("MrcCompletedBy")
+  cancelledMonthlyRequests   MonthlyRequestCollection[]     @relation("MrcCancelledBy")
+  voidedMonthlyRequests      MonthlyRequestCollection[]     @relation("MrcVoidedBy")
+  openedClaimReviewFlags     ClaimReviewFlag[]              @relation("ClaimReviewFlagOpenedBy")
+  resolvedClaimReviewFlags   ClaimReviewFlag[]              @relation("ClaimReviewFlagResolvedBy")
+  addedMonthlyRequestItems   MonthlyRequestCollectionItem[] @relation("MrcItemAddedBy")
+  removedMonthlyRequestItems MonthlyRequestCollectionItem[] @relation("MrcItemRemovedBy")
+  signatures                 Signature[]
+  notifications              Notification[]
+  pushSubscriptions          PushSubscription[]
+  ledOSWs                    OffSiteWork[]                  @relation("OffSiteWorkLeader")
+  leaderVerifications        LeaderVerification[]           @relation("LeaderVerificationUser")
+
   @@index([keycloakId])
   @@index([email])
   @@index([departmentId])
   @@index([status])
   @@index([lastLoginAt])
   @@index([employeeId])
-  files Files[]
-  offSiteWorks OffSiteWork[]
-  expenseClaims          ExpenseClaim[] @relation("ExpenseClaimUser")
-  createdExpenseClaims   ExpenseClaim[] @relation("ExpenseClaimCreator")
-  
-  monthlyRequestsCollection MonthlyRequestCollection[]
-  signatures Signature[]
-  mrcApprovalSteps MrcApprovalStep[]
-  notifications    Notification[]
-  pushSubscriptions PushSubscription[]
-  ledOSWs          OffSiteWork[]        @relation("OffSiteWorkLeader")
-  leaderVerifications LeaderVerification[] @relation("LeaderVerificationUser")
+  @@map("users")
 }
 
 // =============================================================================
@@ -119,32 +148,33 @@ model User {
 // =============================================================================
 
 model Department {
-  id                String     @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // Department Information
-  name              String     @unique
-  shortName         String?    @unique @map("short_name")
-  description       String?
-  
+  name        String  @unique
+  shortName   String? @unique @map("short_name")
+  description String?
+
   // Hierarchy (self-referencing for organizational structure)
-  parentId          String?    @map("parent_id")
-  parent            Department? @relation("DepartmentHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children          Department[] @relation("DepartmentHierarchy")
-  
+  parentId String?      @map("parent_id")
+  parent   Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children Department[] @relation("DepartmentHierarchy")
+
   // Status & Metadata
-  isActive          Boolean    @default(true) @map("is_active")
-  createdAt         DateTime   @default(now()) @map("created_at")
-  updatedAt         DateTime   @updatedAt @map("updated_at")
-  
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
   // Relations
-  users             User[]
-  actionLogs        UserActionLog[]
-  userRoles         UserRole[]
-  
-  @@map("departments")
+  users           User[]
+  actionLogs      UserActionLog[]
+  userRoles       UserRole[]
+  monthlyRequests MonthlyRequestCollection[]
+
   @@index([name])
   @@index([shortName])
   @@index([parentId])
+  @@map("departments")
 }
 
 // =============================================================================
@@ -152,84 +182,87 @@ model Department {
 // =============================================================================
 
 model UserActionLog {
-  id                String     @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // Actor Information
-  userId            String     @map("user_id")
-  user              User       @relation("UserActions", fields: [userId], references: [id], onDelete: Cascade)
-  
+  userId String @map("user_id")
+  user   User   @relation("UserActions", fields: [userId], references: [id], onDelete: Restrict)
+
   // Action Details
   actionType        ActionType @map("action_type")
   actionDescription String?    @map("action_description")
-  
+
   // Target Entity (optional - for actions on other entities)
-  targetUserId      String?    @map("target_user_id")
-  targetUser        User?      @relation("TargetUserActions", fields: [targetUserId], references: [id], onDelete: SetNull)
-  
-  targetDepartmentId String?   @map("target_department_id")
-  targetDepartment  Department? @relation(fields: [targetDepartmentId], references: [id], onDelete: SetNull)
-  
+  targetUserId String? @map("target_user_id")
+  targetUser   User?   @relation("TargetUserActions", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  targetDepartmentId String?     @map("target_department_id")
+  targetDepartment   Department? @relation(fields: [targetDepartmentId], references: [id], onDelete: SetNull)
+
   // Generic target for other entities
-  targetEntityType  String?    @map("target_entity_type")
-  targetEntityId    String?    @map("target_entity_id")
-  
+  targetEntityType String? @map("target_entity_type")
+  targetEntityId   String? @map("target_entity_id")
+
   // Request Context
-  ipAddress         String?    @map("ip_address")
-  userAgent         String?    @map("user_agent")
-  requestPath       String?    @map("request_path")
-  requestMethod     String?    @map("request_method")
-  
+  ipAddress     String? @map("ip_address")
+  userAgent     String? @map("user_agent")
+  requestPath   String? @map("request_path")
+  requestMethod String? @map("request_method")
+
   // Additional Data (JSON for flexibility)
-  metadata          Json?
-  previousData      Json?      @map("previous_data")
-  newData           Json?      @map("new_data")
-  
+  metadata     Json?
+  previousData Json? @map("previous_data")
+  newData      Json? @map("new_data")
+
   // Status
-  isSuccess         Boolean    @default(true) @map("is_success")
-  errorMessage      String?    @map("error_message")
-  
+  isSuccess    Boolean @default(true) @map("is_success")
+  errorMessage String? @map("error_message")
+
   // Timestamp
-  createdAt         DateTime   @default(now()) @map("created_at")
-  
-  @@map("user_action_logs")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
   @@index([userId])
   @@index([actionType])
   @@index([targetUserId])
   @@index([targetDepartmentId])
   @@index([createdAt])
   @@index([isSuccess])
+  @@index([targetEntityType, targetEntityId, createdAt])
+  @@map("user_action_logs")
 }
 
 model OffSiteWork {
-  id                    String      @id
-  innerRefDocumentId    String?     @map("inner_ref_document_id")
-  startDate             DateTime    @map("start_date")
-  endDate               DateTime    @map("end_date")
-  objective             String?     @map("objective")
-  location              String?     @map("location")
-  employeeList          Json?       @map("employee_list")
-  postedAt              DateTime    @map("posted_at") @default(now())
-  postedByUserId        String      @map("posted_by_user_id")
-  postedByUser          User        @relation(fields: [postedByUserId], references: [id], onDelete: Cascade)
-  updatedAt             DateTime?   @map("updated_at") @updatedAt
-  deletedAt             DateTime?   @map("deleted_at")
-  originalFileId        String?     @map("original_file_id")
+  id                 String    @id
+  innerRefDocumentId String?   @map("inner_ref_document_id")
+  startDate          DateTime  @map("start_date") @db.Date
+  endDate            DateTime  @map("end_date") @db.Date
+  objective          String?
+  location           String?
+  postedAt           DateTime  @default(now()) @map("posted_at") @db.Timestamptz(3)
+  postedByUserId     String    @map("posted_by_user_id")
+  postedByUser       User      @relation(fields: [postedByUserId], references: [id], onDelete: Restrict)
+  updatedAt          DateTime? @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt          DateTime? @map("deleted_at") @db.Timestamptz(3)
+  lockedAt           DateTime? @map("locked_at") @db.Timestamptz(3)
+  originalFileId     String?   @map("original_file_id")
+
+  supersedesId String?       @map("supersedes_id")
+  supersedes   OffSiteWork?  @relation("OffSiteWorkReplacement", fields: [supersedesId], references: [id], onDelete: SetNull)
+  replacements OffSiteWork[] @relation("OffSiteWorkReplacement")
 
   // Optional leader — internal (system user) or external (manual info)
-  leaderUserId          String?     @map("leader_user_id")
-  leaderUser            User?       @relation("OffSiteWorkLeader", fields: [leaderUserId], references: [id], onDelete: SetNull)
-  leaderEmpId           String?     @map("leader_emp_id")
-  leaderFirstName       String?     @map("leader_first_name")
-  leaderLastName        String?     @map("leader_last_name")
-  leaderPosition        String?     @map("leader_position")
-  leaderEmail           String?     @map("leader_email")
+  leaderUserId    String? @map("leader_user_id")
+  leaderUser      User?   @relation("OffSiteWorkLeader", fields: [leaderUserId], references: [id], onDelete: SetNull)
+  leaderEmpId     String? @map("leader_emp_id")
+  leaderFirstName String? @map("leader_first_name")
+  leaderLastName  String? @map("leader_last_name")
+  leaderPosition  String? @map("leader_position")
+  leaderEmail     String? @map("leader_email")
 
-  originalFile          Files?      @relation(fields: [originalFileId], references: [id], onDelete: SetNull)
-  
-  expenseClaimOffSiteWorks ExpenseClaimOffSiteWork[]
-  leaderVerifications   LeaderVerification[]
-  
-  @@map("off_site_works")
+  originalFile      Files?                            @relation(fields: [originalFileId], references: [id], onDelete: SetNull)
+  participants      OffSiteWorkParticipant[]
+  revisionSnapshots ExpenseClaimRevisionOffSiteWork[]
+
   @@index([postedByUserId])
   @@index([originalFileId])
   @@index([startDate])
@@ -237,167 +270,416 @@ model OffSiteWork {
   @@index([deletedAt])
   @@index([postedAt])
   @@index([leaderUserId])
+  @@index([supersedesId])
+  @@map("off_site_works")
+}
+
+model OffSiteWorkParticipant {
+  offSiteWorkId          String      @map("off_site_work_id")
+  offSiteWork            OffSiteWork @relation(fields: [offSiteWorkId], references: [id], onDelete: Cascade)
+  userId                 String      @map("user_id")
+  user                   User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  employeeIdSnapshot     String?     @map("employee_id_snapshot")
+  firstNameSnapshot      String      @map("first_name_snapshot")
+  lastNameSnapshot       String      @map("last_name_snapshot")
+  positionSnapshot       String?     @map("position_snapshot")
+  positionShortSnapshot  String?     @map("position_short_snapshot")
+  positionLevelSnapshot  String?     @map("position_level_snapshot")
+  departmentIdSnapshot   String?     @map("department_id_snapshot")
+  departmentNameSnapshot String?     @map("department_name_snapshot")
+  createdAt              DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([offSiteWorkId, userId])
+  @@index([userId])
+  @@index([departmentIdSnapshot])
+  @@map("off_site_work_participants")
 }
 
 model Files {
-  id                    String     @id @default(uuid())
-  fileName               String      @map("file_name")
-  fileType               String?     @map("file_type")
-  fileSize               Int?        @map("file_size")
-  fileContent            Bytes?      @map("file_content")
-  uploadedById          String      @map("uploaded_by_id")
-  uploadedBy            User        @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
-  uploadedAt            DateTime?   @map("uploaded_at") @default(now())
-  deletedAt             DateTime?   @map("deleted_at")
-  
+  id           String    @id @default(uuid())
+  fileName     String    @map("file_name")
+  fileType     String?   @map("file_type")
+  fileSize     Int?      @map("file_size")
+  fileContent  Bytes?    @map("file_content")
+  uploadedById String    @map("uploaded_by_id")
+  uploadedBy   User      @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+  uploadedAt   DateTime? @default(now()) @map("uploaded_at") @db.Timestamptz(3)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(3)
+
   offSiteWorks OffSiteWork[]
-  
-  @@map("files")
+
   @@index([uploadedById])
   @@index([deletedAt])
   @@index([uploadedAt])
+  @@map("files")
 }
 
-enum ClaimDocumentStatus {
-  DRAFT                  // Initial status when a claim is being prepared but not yet submitted for review
-  PENDING                // Status when a claim is submitted but has no leaders to verify (or all OSWs have no leader)
-  PENDING_LEADER_VERIFY  // Status when at least one linked OSW has a leader who hasn't yet verified
-  WAIT_FOR_COLLECTION    // Status when all leaders have verified; ready for admin to collect
-  COLLECTED              // Status when a claim has been collected into a monthly request collection by admin
-  APPROVED               // Status when a claim has been reviewed and approved by the relevant authority
-  REJECTED               // Status when a claim has been reviewed and rejected, often with feedback for the claimant
-  CANCELLED              // Status when a claim has been cancelled by the claimant or due to other reasons
+enum ExpenseClaimStatus {
+  DRAFT
+  PENDING_LEADER_CONFIRMATION
+  READY_FOR_COLLECTION
+  COLLECTED
+  COMPLETED
+  REJECTED
+  CANCELLED
 }
+
+enum ExpenseClaimRevisionStatus {
+  DRAFT
+  SUBMITTED
+  SUPERSEDED
+}
+
+enum WorkDayType {
+  DUTY
+  TRAVEL
+}
+
+enum HolidayType {
+  WORKDAY
+  WEEKEND
+  PUBLIC_HOLIDAY
+  FALLBACK_WORKDAY
+}
+
+enum HolidaySource {
+  GOOGLE
+  CALCULATED
+  MANUAL
+  FALLBACK
+}
+
+enum HolidaySyncStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
 model ExpenseClaim {
-  id                     String     @id @default(uuid())
-  expenseMonth           DateTime    @map("expense_month") // Represents the month for which expenses are claimed (e.g. 2024-01-01 for January 2024)
-  userId                 String      @map("user_id")
-  claimant               User        @relation("ExpenseClaimUser", fields: [userId], references: [id], onDelete: Cascade)
-  claimantPositionAtSubmission String     @map("claimant_position_at_submission")
+  id                String             @id @default(uuid())
+  expenseMonth      DateTime           @map("expense_month") @db.Date
+  userId            String             @map("user_id")
+  claimant          User               @relation("ExpenseClaimUser", fields: [userId], references: [id], onDelete: Restrict)
+  createdById       String             @map("created_by_id")
+  createdBy         User               @relation("ExpenseClaimCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  status            ExpenseClaimStatus @default(DRAFT)
+  currentRevisionNo Int                @default(1) @map("current_revision_no")
+  collectedAt       DateTime?          @map("collected_at") @db.Timestamptz(3)
+  completedAt       DateTime?          @map("completed_at") @db.Timestamptz(3)
+  rejectedAt        DateTime?          @map("rejected_at") @db.Timestamptz(3)
+  rejectedById      String?            @map("rejected_by_id")
+  rejectedBy        User?              @relation("ExpenseClaimRejectedBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+  rejectionReason   String?            @map("rejection_reason")
+  cancelledAt       DateTime?          @map("cancelled_at") @db.Timestamptz(3)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  /// Expected structure: JSON array of ISO-8601 date strings (e.g. "2024-01-15"),
-  /// listing the specific calendar days within `forMonth` for which expenses are claimed.
-  selectedDates          Json?      @map("selected_dates")
-  countDates             Decimal?    @map("count_dates") // Represents the number of specific dates selected for the month, if applicable
-  amount                 Decimal?    @map("amount")
-  remark                 String?     @map("remark")
+  revisions           ExpenseClaimRevision[]
+  reviewFlags         ClaimReviewFlag[]
+  monthlyRequestItems MonthlyRequestCollectionItem[]
 
-  createdById            String     @map("created_by_id")
-  createdBy              User       @relation("ExpenseClaimCreator", fields: [createdById], references: [id], onDelete: Cascade)
-  createdAt              DateTime   @default(now()) @map("created_at")
-  status                 ClaimDocumentStatus @default(DRAFT)
-  updatedAt              DateTime?  @map("updated_at") @updatedAt
-  cancelledAt            DateTime?  @map("cancelled_at")
-
-  monthlyRequestCollectionId       String?    @map("monthly_request_collection_id")
-  monthlyRequestCollection         MonthlyRequestCollection? @relation(fields: [monthlyRequestCollectionId], references: [id], onDelete: SetNull)
-  collectedAt            DateTime?   @map("collected_at")
-  
-  expenseClaimOffSiteWorks ExpenseClaimOffSiteWork[]
-  leaderVerifications      LeaderVerification[]
-  
-  @@map("expense_claims")
   @@index([userId])
   @@index([createdById])
-  @@index([monthlyRequestCollectionId])
   @@index([expenseMonth])
   @@index([status])
   @@index([createdAt])
   @@index([userId, expenseMonth])
   @@index([status, expenseMonth])
+  @@map("expense_claims")
 }
 
-model ExpenseClaimOffSiteWork {
-  expenseClaimId String @map("expense_claim_id")
-  offSiteWorkId  String @map("off_site_work_id")
+model ExpenseClaimRevision {
+  id                      String                     @id @default(uuid())
+  expenseClaimId          String                     @map("expense_claim_id")
+  expenseClaim            ExpenseClaim               @relation(fields: [expenseClaimId], references: [id], onDelete: Cascade)
+  revisionNo              Int                        @map("revision_no")
+  status                  ExpenseClaimRevisionStatus @default(DRAFT)
+  employeeIdSnapshot      String                     @map("employee_id_snapshot")
+  firstNameSnapshot       String                     @map("first_name_snapshot")
+  lastNameSnapshot        String                     @map("last_name_snapshot")
+  positionSnapshot        String?                    @map("position_snapshot")
+  positionShortSnapshot   String                     @map("position_short_snapshot")
+  positionLevelSnapshot   String?                    @map("position_level_snapshot")
+  departmentIdSnapshot    String                     @map("department_id_snapshot")
+  departmentNameSnapshot  String                     @map("department_name_snapshot")
+  departmentShortSnapshot String?                    @map("department_short_snapshot")
+  ratePerDay              Decimal                    @default(150) @map("rate_per_day") @db.Decimal(12, 2)
+  totalDays               Int                        @default(0) @map("total_days")
+  totalAmount             Decimal                    @default(0) @map("total_amount") @db.Decimal(12, 2)
+  remark                  String?
+  materialHash            String?                    @map("material_hash") @db.Char(64)
+  submittedAt             DateTime?                  @map("submitted_at") @db.Timestamptz(3)
+  supersededAt            DateTime?                  @map("superseded_at") @db.Timestamptz(3)
+  createdAt               DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  expenseClaim   ExpenseClaim @relation(fields: [expenseClaimId], references: [id], onDelete: Cascade)
-  offSiteWork    OffSiteWork  @relation(fields: [offSiteWorkId], references: [id], onDelete: Cascade)
+  offSiteWorks        ExpenseClaimRevisionOffSiteWork[]
+  workDates           ExpenseClaimWorkDate[]
+  leaderVerifications LeaderVerification[]
+  monthlyRequestItems MonthlyRequestCollectionItem[]
 
-  @@id([expenseClaimId, offSiteWorkId])
-  @@map("expense_claim_off_site_work")
+  @@unique([expenseClaimId, revisionNo])
+  @@index([expenseClaimId, status])
+  @@index([departmentIdSnapshot])
+  @@map("expense_claim_revisions")
+}
+
+model ExpenseClaimRevisionOffSiteWork {
+  id                         String               @id @default(uuid())
+  revisionId                 String               @map("revision_id")
+  revision                   ExpenseClaimRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  offSiteWorkId              String               @map("off_site_work_id")
+  offSiteWork                OffSiteWork          @relation(fields: [offSiteWorkId], references: [id], onDelete: Restrict)
+  innerRefDocumentIdSnapshot String?              @map("inner_ref_document_id_snapshot")
+  startDateSnapshot          DateTime             @map("start_date_snapshot") @db.Date
+  endDateSnapshot            DateTime             @map("end_date_snapshot") @db.Date
+  objectiveSnapshot          String?              @map("objective_snapshot")
+  locationSnapshot           String?              @map("location_snapshot")
+  leaderUserIdSnapshot       String?              @map("leader_user_id_snapshot")
+  leaderEmpIdSnapshot        String?              @map("leader_emp_id_snapshot")
+  leaderFirstNameSnapshot    String               @map("leader_first_name_snapshot")
+  leaderLastNameSnapshot     String               @map("leader_last_name_snapshot")
+  leaderPositionSnapshot     String?              @map("leader_position_snapshot")
+  leaderEmailSnapshot        String?              @map("leader_email_snapshot")
+  createdAt                  DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  workDates          ExpenseClaimWorkDate[]
+  leaderVerification LeaderVerification?
+
+  @@unique([revisionId, offSiteWorkId])
   @@index([offSiteWorkId])
+  @@index([revisionId])
+  @@map("expense_claim_revision_off_site_works")
 }
 
-/// Stage in the multi-level approval chain for MonthlyRequestCollection
-enum MrcApprovalStage {
-  HPA_CHECK   // หผ. verification
-  RK_CHECK    // รก. verification
-  OK_APPROVE  // อก. final approval
+model ExpenseClaimWorkDate {
+  id                    String                           @id @default(uuid())
+  revisionId            String                           @map("revision_id")
+  revision              ExpenseClaimRevision             @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  revisionOffSiteWorkId String                           @map("revision_off_site_work_id")
+  revisionOffSiteWork   ExpenseClaimRevisionOffSiteWork  @relation(fields: [revisionOffSiteWorkId], references: [id], onDelete: Cascade)
+  workDate              DateTime                         @map("work_date") @db.Date
+  dayType               WorkDayType                      @map("day_type")
+  holidayType           HolidayType                      @map("holiday_type")
+  holidayName           String?                          @map("holiday_name")
+  holidaySource         HolidaySource                    @map("holiday_source")
+  requiresWeSafe        Boolean                          @default(false) @map("requires_we_safe")
+  dailyRate             Decimal                          @default(150) @map("daily_rate") @db.Decimal(12, 2)
+  createdAt             DateTime                         @default(now()) @map("created_at") @db.Timestamptz(3)
+  weSafeCodes           ExpenseClaimWorkDateWeSafeCode[]
+
+  @@unique([revisionId, workDate])
+  @@index([revisionOffSiteWorkId, workDate])
+  @@index([workDate])
+  @@map("expense_claim_work_dates")
 }
 
-/// Status of an individual approval step
-enum MrcStepStatus {
-  PENDING
-  APPROVED
-  REJECTED
+model ExpenseClaimWorkDateWeSafeCode {
+  id         String               @id @default(uuid())
+  workDateId String               @map("work_date_id")
+  workDate   ExpenseClaimWorkDate @relation(fields: [workDateId], references: [id], onDelete: Cascade)
+  code       String
+  createdAt  DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([workDateId])
+  @@map("expense_claim_work_date_we_safe_codes")
+}
+
+model HolidayCalendarDate {
+  date            DateTime      @id @db.Date
+  name            String
+  source          HolidaySource
+  sourceReference String?       @map("source_reference")
+  fetchedAt       DateTime      @default(now()) @map("fetched_at") @db.Timestamptz(3)
+
+  @@index([source])
+  @@map("holiday_calendar_dates")
+}
+
+model HolidayCalendarSync {
+  id            String            @id @default(uuid())
+  year          Int
+  provider      HolidaySource
+  status        HolidaySyncStatus
+  lastAttemptAt DateTime          @default(now()) @map("last_attempt_at") @db.Timestamptz(3)
+  lastSuccessAt DateTime?         @map("last_success_at") @db.Timestamptz(3)
+  errorMessage  String?           @map("error_message")
+
+  @@unique([year, provider])
+  @@map("holiday_calendar_syncs")
+}
+
+enum ClaimReviewFlagStatus {
+  OPEN
+  RESOLVED
+}
+
+model ClaimReviewFlag {
+  id             String                @id @default(uuid())
+  expenseClaimId String                @map("expense_claim_id")
+  expenseClaim   ExpenseClaim          @relation(fields: [expenseClaimId], references: [id], onDelete: Restrict)
+  status         ClaimReviewFlagStatus @default(OPEN)
+  note           String
+  openedById     String                @map("opened_by_id")
+  openedBy       User                  @relation("ClaimReviewFlagOpenedBy", fields: [openedById], references: [id], onDelete: Restrict)
+  openedAt       DateTime              @default(now()) @map("opened_at") @db.Timestamptz(3)
+  resolutionNote String?               @map("resolution_note")
+  resolvedById   String?               @map("resolved_by_id")
+  resolvedBy     User?                 @relation("ClaimReviewFlagResolvedBy", fields: [resolvedById], references: [id], onDelete: Restrict)
+  resolvedAt     DateTime?             @map("resolved_at") @db.Timestamptz(3)
+
+  @@index([expenseClaimId, status])
+  @@index([openedById])
+  @@map("claim_review_flags")
+}
+
+enum MonthlyRequestStatus {
+  DRAFT
+  FINALIZED
+  ALL_DONE
+  CANCELLED
+  VOIDED
 }
 
 model MonthlyRequestCollection {
-  id                 String     @id @default(uuid())
-  collectorId        String     @map("collector_id")
-  collector          User       @relation(fields: [collectorId], references: [id], onDelete: Cascade)
-  collectForMonth    DateTime   @map("collect_for_month") // Represents the month for which data is being collected (e.g. 2024-01-01 for January 2024)
-  countDates         Decimal?   @map("count_dates") // Sum of all collected expense claim countDates
-  amount             Decimal?   @map("amount")       // Sum of all collected expense claim amounts
+  id              String               @id @default(uuid())
+  departmentId    String               @map("department_id")
+  department      Department           @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  collectorId     String               @map("collector_id")
+  collector       User                 @relation("MrcCollector", fields: [collectorId], references: [id], onDelete: Restrict)
+  collectForMonth DateTime             @map("collect_for_month") @db.Date
+  batchNo         Int?                 @map("batch_no")
+  status          MonthlyRequestStatus @default(DRAFT)
+  claimCount      Int                  @default(0) @map("claim_count")
+  countDates      Int                  @default(0) @map("count_dates")
+  amount          Decimal              @default(0) @db.Decimal(12, 2)
+  snapshotVersion Int                  @default(1) @map("snapshot_version")
+  snapshotHash    String?              @map("snapshot_hash") @db.Char(64)
+  finalizedAt     DateTime?            @map("finalized_at") @db.Timestamptz(3)
+  finalizedById   String?              @map("finalized_by_id")
+  finalizedBy     User?                @relation("MrcFinalizedBy", fields: [finalizedById], references: [id], onDelete: Restrict)
+  paperApprovedAt DateTime?            @map("paper_approved_at") @db.Timestamptz(3)
+  allDoneNote     String?              @map("all_done_note")
+  allDoneAt       DateTime?            @map("all_done_at") @db.Timestamptz(3)
+  allDoneById     String?              @map("all_done_by_id")
+  allDoneBy       User?                @relation("MrcCompletedBy", fields: [allDoneById], references: [id], onDelete: Restrict)
+  cancelledAt     DateTime?            @map("cancelled_at") @db.Timestamptz(3)
+  cancelledById   String?              @map("cancelled_by_id")
+  cancelledBy     User?                @relation("MrcCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
+  cancelReason    String?              @map("cancel_reason")
+  voidedAt        DateTime?            @map("voided_at") @db.Timestamptz(3)
+  voidedById      String?              @map("voided_by_id")
+  voidedBy        User?                @relation("MrcVoidedBy", fields: [voidedById], references: [id], onDelete: Restrict)
+  voidReason      String?              @map("void_reason")
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  status            ClaimDocumentStatus @default(DRAFT)
-  createdAt         DateTime   @default(now()) @map("created_at")
-  updatedAt         DateTime?  @map("updated_at") @updatedAt
-  cancelledAt       DateTime?  @map("cancelled_at")
-  
-  expenseClaims     ExpenseClaim[]
-  approvalSteps     MrcApprovalStep[]
-  
-  @@map("monthly_request_collections")
+  items              MonthlyRequestCollectionItem[]
+  replacementSources MrcReplacementSource[]         @relation("MrcReplacementDraft")
+  replacementDrafts  MrcReplacementSource[]         @relation("MrcVoidedSource")
+
+  @@unique([departmentId, collectForMonth, batchNo])
   @@index([collectorId])
+  @@index([departmentId])
   @@index([collectForMonth])
   @@index([status])
   @@index([createdAt])
-  @@index([collectorId, collectForMonth])
+  @@index([departmentId, collectForMonth, status])
+  @@map("monthly_request_collections")
 }
 
-/// Tracks each approval step in the MRC review chain
-model MrcApprovalStep {
-  id                          String            @id @default(uuid())
-  monthlyRequestCollectionId  String            @map("monthly_request_collection_id")
-  monthlyRequestCollection    MonthlyRequestCollection @relation(fields: [monthlyRequestCollectionId], references: [id], onDelete: Cascade)
-  
-  stage       MrcApprovalStage  @map("stage")
-  status      MrcStepStatus     @default(PENDING) @map("status")
-  
-  reviewerId  String?   @map("reviewer_id")
-  reviewer    User?     @relation(fields: [reviewerId], references: [id], onDelete: SetNull)
-  reviewedAt  DateTime? @map("reviewed_at")
-  remark      String?   @map("remark")
-  
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime? @map("updated_at") @updatedAt
-  
-  @@unique([monthlyRequestCollectionId, stage])
-  @@map("mrc_approval_steps")
-  @@index([monthlyRequestCollectionId])
-  @@index([stage])
-  @@index([status])
-  @@index([reviewerId])
+model MonthlyRequestCollectionItem {
+  id                         String                   @id @default(uuid())
+  monthlyRequestCollectionId String                   @map("monthly_request_collection_id")
+  monthlyRequestCollection   MonthlyRequestCollection @relation(fields: [monthlyRequestCollectionId], references: [id], onDelete: Restrict)
+  expenseClaimId             String                   @map("expense_claim_id")
+  expenseClaim               ExpenseClaim             @relation(fields: [expenseClaimId], references: [id], onDelete: Restrict)
+  claimRevisionId            String                   @map("claim_revision_id")
+  claimRevision              ExpenseClaimRevision     @relation(fields: [claimRevisionId], references: [id], onDelete: Restrict)
+  addedById                  String                   @map("added_by_id")
+  addedBy                    User                     @relation("MrcItemAddedBy", fields: [addedById], references: [id], onDelete: Restrict)
+  addedAt                    DateTime                 @default(now()) @map("added_at") @db.Timestamptz(3)
+  removedById                String?                  @map("removed_by_id")
+  removedBy                  User?                    @relation("MrcItemRemovedBy", fields: [removedById], references: [id], onDelete: Restrict)
+  removedAt                  DateTime?                @map("removed_at") @db.Timestamptz(3)
+  removalReason              String?                  @map("removal_reason")
+  rowNo                      Int?                     @map("row_no")
+  employeeIdSnapshot         String?                  @map("employee_id_snapshot")
+  firstNameSnapshot          String?                  @map("first_name_snapshot")
+  lastNameSnapshot           String?                  @map("last_name_snapshot")
+  positionShortSnapshot      String?                  @map("position_short_snapshot")
+  positionLevelSnapshot      String?                  @map("position_level_snapshot")
+  departmentIdSnapshot       String?                  @map("department_id_snapshot")
+  departmentNameSnapshot     String?                  @map("department_name_snapshot")
+  departmentShortSnapshot    String?                  @map("department_short_snapshot")
+  dayCountSnapshot           Int?                     @map("day_count_snapshot")
+  amountSnapshot             Decimal?                 @map("amount_snapshot") @db.Decimal(12, 2)
+  remarkSnapshot             String?                  @map("remark_snapshot")
+  createdAt                  DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  dates MonthlyRequestItemDate[]
+
+  @@unique([monthlyRequestCollectionId, expenseClaimId])
+  @@index([expenseClaimId, removedAt])
+  @@index([claimRevisionId])
+  @@map("monthly_request_collection_items")
+}
+
+model MonthlyRequestItemDate {
+  id                     String                             @id @default(uuid())
+  monthlyRequestItemId   String                             @map("monthly_request_item_id")
+  monthlyRequestItem     MonthlyRequestCollectionItem       @relation(fields: [monthlyRequestItemId], references: [id], onDelete: Cascade)
+  workDate               DateTime                           @map("work_date") @db.Date
+  offSiteWorkIdSnapshot  String                             @map("off_site_work_id_snapshot")
+  offSiteWorkRefSnapshot String?                            @map("off_site_work_ref_snapshot")
+  dayType                WorkDayType                        @map("day_type")
+  holidayType            HolidayType                        @map("holiday_type")
+  holidayName            String?                            @map("holiday_name")
+  dailyRate              Decimal                            @map("daily_rate") @db.Decimal(12, 2)
+  weSafeCodes            MonthlyRequestItemDateWeSafeCode[]
+
+  @@unique([monthlyRequestItemId, workDate])
+  @@index([workDate])
+  @@map("monthly_request_item_dates")
+}
+
+model MonthlyRequestItemDateWeSafeCode {
+  id                       String                 @id @default(uuid())
+  monthlyRequestItemDateId String                 @map("monthly_request_item_date_id")
+  monthlyRequestItemDate   MonthlyRequestItemDate @relation(fields: [monthlyRequestItemDateId], references: [id], onDelete: Cascade)
+  code                     String
+
+  @@index([monthlyRequestItemDateId])
+  @@map("monthly_request_item_date_we_safe_codes")
+}
+
+model MrcReplacementSource {
+  replacementDraftId String                   @map("replacement_draft_id")
+  replacementDraft   MonthlyRequestCollection @relation("MrcReplacementDraft", fields: [replacementDraftId], references: [id], onDelete: Restrict)
+  voidedMrcId        String                   @map("voided_mrc_id")
+  voidedMrc          MonthlyRequestCollection @relation("MrcVoidedSource", fields: [voidedMrcId], references: [id], onDelete: Restrict)
+  createdAt          DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([replacementDraftId, voidedMrcId])
+  @@index([voidedMrcId])
+  @@map("mrc_replacement_sources")
 }
 
 model Signature {
-  id                String     @id @default(uuid())
-  userId            String     @map("user_id")
-  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  signatureData     Bytes      @map("signature_data") // Binary data for the signature (e.g. image bytes)
-  isActive          Boolean    @default(false) @map("is_active")
-  activatedAt       DateTime?  @map("activated_at")
-  createdAt         DateTime   @default(now()) @map("created_at")
-  updatedAt         DateTime?  @map("updated_at") @updatedAt
-  deletedAt         DateTime?  @map("deleted_at")
-  
-  @@map("signatures")
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  signatureData Bytes     @map("signature_data") // Binary data for the signature (e.g. image bytes)
+  isActive      Boolean   @default(false) @map("is_active")
+  activatedAt   DateTime? @map("activated_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime? @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   @@index([deletedAt])
   @@index([userId, deletedAt])
   @@index([userId, isActive, deletedAt])
+  @@map("signatures")
 }
 
 // =============================================================================
@@ -411,14 +693,14 @@ enum PermissionResource {
   DEPARTMENT
   ROLE
   PERMISSION
-  
+
   // Business resources
   EXPENSE_CLAIM
   OFF_SITE_WORK
   MONTHLY_REQUEST
   SIGNATURE
   FILE
-  
+
   // System resources
   ACTION_LOG
   SYSTEM
@@ -437,130 +719,136 @@ enum PermissionAction {
   REJECT
   SUBMIT
   CANCEL
-  MANAGE      // Full control over the resource
-  REVIEW_HPA  // Review MRC at HPA_CHECK stage (หัวหน้าแผนก)
-  REVIEW_RK   // Review MRC at RK_CHECK stage (รองผู้อำนวยการกอง)
-  REVIEW_OK   // Review MRC at OK_APPROVE stage (ผู้อำนวยการกอง)
+  RECHECK
+  COLLECT
+  REMOVE
+  FLAG
+  RESOLVE
+  FINALIZE
+  COMPLETE
+  VOID
+  PRINT
+  MANAGE
 }
 
 /// Scope of permission (own items, department items, or all items)
 enum PermissionScope {
-  OWN         // Only own resources (e.g., own expense claims)
-  DEPARTMENT  // Resources within user's department
-  ALL         // All resources regardless of ownership
+  OWN // Only own resources (e.g., own expense claims)
+  DEPARTMENT // Resources within user's department
+  ALL // All resources regardless of ownership
 }
 
 /// Permission model - Defines individual permissions
 model Permission {
-  id                String            @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // Permission identification
-  code              String            @unique // e.g., "expense-claim:create", "user:manage"
-  name              String            // Human-readable name
-  description       String?           // Detailed description
-  
+  code        String  @unique // e.g., "expense-claim:create", "user:manage"
+  name        String // Human-readable name
+  description String? // Detailed description
+
   // Permission categorization
-  resource          PermissionResource
-  action            PermissionAction
-  scope             PermissionScope   @default(OWN)
-  
+  resource PermissionResource
+  action   PermissionAction
+  scope    PermissionScope    @default(OWN)
+
   // Metadata
-  isActive          Boolean           @default(true) @map("is_active")
-  isSystem          Boolean           @default(false) @map("is_system") // System permissions cannot be deleted
-  createdAt         DateTime          @default(now()) @map("created_at")
-  updatedAt         DateTime          @updatedAt @map("updated_at")
-  
+  isActive  Boolean  @default(true) @map("is_active")
+  isSystem  Boolean  @default(false) @map("is_system") // System permissions cannot be deleted
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
   // Relations
-  rolePermissions   RolePermission[]
-  
-  @@map("permissions")
+  rolePermissions RolePermission[]
+
   @@index([resource])
   @@index([action])
   @@index([code])
   @@index([isActive])
+  @@map("permissions")
 }
 
 /// Role model - Defines named roles that group permissions
 model Role {
-  id                String            @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // Role identification
-  code              String            @unique // e.g., "admin", "manager", "employee"
-  name              String            // Human-readable name
-  description       String?           // Role description
-  
+  code        String  @unique // e.g., "admin", "manager", "employee"
+  name        String // Human-readable name
+  description String? // Role description
+
   // Role hierarchy (optional)
-  level             Int               @default(0) // Higher level = more authority
-  parentRoleId      String?           @map("parent_role_id")
-  parentRole        Role?             @relation("RoleHierarchy", fields: [parentRoleId], references: [id], onDelete: SetNull)
-  childRoles        Role[]            @relation("RoleHierarchy")
-  
+  level        Int     @default(0) // Higher level = more authority
+  parentRoleId String? @map("parent_role_id")
+  parentRole   Role?   @relation("RoleHierarchy", fields: [parentRoleId], references: [id], onDelete: SetNull)
+  childRoles   Role[]  @relation("RoleHierarchy")
+
   // Metadata
-  isActive          Boolean           @default(true) @map("is_active")
-  isSystem          Boolean           @default(false) @map("is_system") // System roles cannot be deleted
-  createdAt         DateTime          @default(now()) @map("created_at")
-  updatedAt         DateTime          @updatedAt @map("updated_at")
-  
+  isActive  Boolean  @default(true) @map("is_active")
+  isSystem  Boolean  @default(false) @map("is_system") // System roles cannot be deleted
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
   // Relations
-  userRoles         UserRole[]
-  rolePermissions   RolePermission[]
-  
-  @@map("roles")
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
   @@index([code])
   @@index([level])
   @@index([isActive])
   @@index([parentRoleId])
+  @@map("roles")
 }
 
 /// UserRole - Junction table linking users to roles
 /// Supports department-scoped role assignments
 model UserRole {
-  id                String            @id @default(uuid())
-  
+  id String @id @default(uuid())
+
   // User and Role
-  userId            String            @map("user_id")
-  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  roleId            String            @map("role_id")
-  role              Role              @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId String @map("role_id")
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
   // Department scope (optional - null means global assignment)
-  departmentId      String?           @map("department_id")
-  department        Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  
+  departmentId String?     @map("department_id")
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
   // Assignment metadata
-  assignedById      String?           @map("assigned_by_id")
-  assignedAt        DateTime          @default(now()) @map("assigned_at")
-  expiresAt         DateTime?         @map("expires_at") // Optional expiration for temporary roles
-  
+  assignedById String?   @map("assigned_by_id")
+  assignedAt   DateTime  @default(now()) @map("assigned_at") @db.Timestamptz(3)
+  expiresAt    DateTime? @map("expires_at") @db.Timestamptz(3) // Optional expiration for temporary roles
+
   // Status
-  isActive          Boolean           @default(true) @map("is_active")
-  
+  isActive Boolean @default(true) @map("is_active")
+
   @@unique([userId, roleId, departmentId])
-  @@map("user_roles")
   @@index([userId])
   @@index([roleId])
   @@index([departmentId])
   @@index([isActive])
   @@index([expiresAt])
+  @@map("user_roles")
 }
 
 /// RolePermission - Junction table linking roles to permissions
 model RolePermission {
-  id                String            @id @default(uuid())
-  
-  roleId            String            @map("role_id")
-  role              Role              @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permissionId      String            @map("permission_id")
-  permission        Permission        @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-  
+  id String @id @default(uuid())
+
+  roleId       String     @map("role_id")
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String     @map("permission_id")
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
   // Granted metadata
-  grantedById       String?           @map("granted_by_id")
-  grantedAt         DateTime          @default(now()) @map("granted_at")
-  
+  grantedById String?  @map("granted_by_id")
+  grantedAt   DateTime @default(now()) @map("granted_at") @db.Timestamptz(3)
+
   @@unique([roleId, permissionId])
-  @@map("role_permissions")
   @@index([roleId])
   @@index([permissionId])
+  @@map("role_permissions")
 }
 
 // =============================================================================
@@ -570,108 +858,105 @@ model RolePermission {
 /// Categorises the business event that produced a notification
 enum NotificationType {
   // MRC lifecycle
-  MRC_SUBMITTED           // Notifies the first reviewer (HPA) when an MRC is submitted
-  MRC_STEP_APPROVED       // Notifies the next reviewer when the current step is approved
-  MRC_APPROVED            // Notifies the collector when the MRC is fully approved
-  MRC_REJECTED            // Notifies the collector when any reviewer rejects the MRC
-  MRC_CANCELLED           // Notifies the collector when the MRC is cancelled
+  MRC_FINALIZED
+  MRC_ALL_DONE
+  MRC_CANCELLED
+  MRC_VOIDED
 
   // Expense claim lifecycle
-  CLAIM_STATUS_CHANGED    // Notifies the claimant when their claim status changes
+  CLAIM_STATUS_CHANGED
+  CLAIM_REJECTED
 
   // Leader verification
-  LEADER_VERIFY_REQUEST   // Notifies an internal leader that they need to verify an expense claim
+  LEADER_VERIFY_REQUEST // Notifies an internal leader that they need to verify an expense claim
 
   // Off-site work lifecycle
-  OFF_SITE_WORK_UPDATED   // Notifies the creator when an off-site work record changes
+  OFF_SITE_WORK_UPDATED // Notifies the creator when an off-site work record changes
 
   // System / admin
-  SYSTEM_ANNOUNCEMENT     // A message broadcast by an administrator to one or more users
+  SYSTEM_ANNOUNCEMENT // A message broadcast by an administrator to one or more users
 }
 
 /// Persisted notification record linked to a single recipient
 model Notification {
-  id          String           @id @default(uuid())
+  id String @id @default(uuid())
 
   // Recipient
-  userId      String           @map("user_id")
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Content
-  type        NotificationType @map("type")
-  title       String
-  body        String
-  link        String?          // Optional deep-link (e.g. /monthly-request-collection/abc)
+  type  NotificationType @map("type")
+  title String
+  body  String
+  link  String? // Optional deep-link (e.g. /monthly-request-collection/abc)
 
   // Read tracking
-  isRead      Boolean          @default(false) @map("is_read")
-  readAt      DateTime?        @map("read_at")
+  isRead Boolean   @default(false) @map("is_read")
+  readAt DateTime? @map("read_at") @db.Timestamptz(3)
 
-  createdAt   DateTime         @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  @@map("notifications")
   @@index([userId])
   @@index([userId, isRead])
   @@index([createdAt])
+  @@map("notifications")
 }
 
 /// Stores Web Push API subscriptions on a per-device basis
 model PushSubscription {
-  id          String   @id @default(uuid())
+  id String @id @default(uuid())
 
-  userId      String   @map("user_id")
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  endpoint    String   @unique   // Push service endpoint URL
-  p256dh      String   @map("p256dh")   // Client public key
-  auth        String             // Authentication secret
-  userAgent   String?  @map("user_agent")
+  endpoint  String  @unique // Push service endpoint URL
+  p256dh    String  @map("p256dh") // Client public key
+  auth      String // Authentication secret
+  userAgent String? @map("user_agent")
 
-  createdAt   DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  @@map("push_subscriptions")
   @@index([userId])
+  @@map("push_subscriptions")
 }
 
 // =============================================================================
 // DOMAIN: LEADER VERIFICATION
 // =============================================================================
 
-/// One record per (ExpenseClaim × OffSiteWork) pair where the OSW has a leader.
-/// Internal leaders are linked via leaderUserId; external leaders use leaderEmail.
-/// The token is a one-time share link sent to external leaders.
-model LeaderVerification {
-  id              String         @id @default(uuid())
-
-  // Claim being verified
-  expenseClaimId  String         @map("expense_claim_id")
-  expenseClaim    ExpenseClaim   @relation(fields: [expenseClaimId], references: [id], onDelete: Cascade)
-
-  // The specific OSW this verification covers
-  offSiteWorkId   String         @map("off_site_work_id")
-  offSiteWork     OffSiteWork    @relation(fields: [offSiteWorkId], references: [id], onDelete: Cascade)
-
-  // Internal leader (system user)
-  leaderUserId    String?        @map("leader_user_id")
-  leaderUser      User?          @relation("LeaderVerificationUser", fields: [leaderUserId], references: [id], onDelete: SetNull)
-
-  // External leader (manual data, for display only)
-  leaderEmail     String?        @map("leader_email")
-
-  // One-time token for external share link
-  token           String         @unique @default(uuid())
-  expiresAt       DateTime       @map("expires_at")
-
-  verifiedAt      DateTime?      @map("verified_at")
-  signatureData   Bytes?         @map("signature_data") // Leader's drawn signature at time of verification
-  createdAt       DateTime       @default(now()) @map("created_at")
-
-  @@unique([expenseClaimId, offSiteWorkId])
-  @@map("leader_verifications")
-  @@index([expenseClaimId])
-  @@index([offSiteWorkId])
-  @@index([leaderUserId])
-  @@index([token])
-  @@index([verifiedAt])
+enum LeaderVerificationStatus {
+  PENDING
+  CONFIRMED
+  SUPERSEDED
 }
 
+model LeaderVerification {
+  id                      String                          @id @default(uuid())
+  claimRevisionId         String                          @map("claim_revision_id")
+  claimRevision           ExpenseClaimRevision            @relation(fields: [claimRevisionId], references: [id], onDelete: Restrict)
+  revisionOffSiteWorkId   String                          @unique @map("revision_off_site_work_id")
+  revisionOffSiteWork     ExpenseClaimRevisionOffSiteWork @relation(fields: [revisionOffSiteWorkId], references: [id], onDelete: Restrict)
+  status                  LeaderVerificationStatus        @default(PENDING)
+  leaderUserId            String?                         @map("leader_user_id")
+  leaderUser              User?                           @relation("LeaderVerificationUser", fields: [leaderUserId], references: [id], onDelete: SetNull)
+  leaderEmpIdSnapshot     String?                         @map("leader_emp_id_snapshot")
+  leaderFirstNameSnapshot String                          @map("leader_first_name_snapshot")
+  leaderLastNameSnapshot  String                          @map("leader_last_name_snapshot")
+  leaderPositionSnapshot  String?                         @map("leader_position_snapshot")
+  leaderEmailSnapshot     String?                         @map("leader_email_snapshot")
+  tokenHash               String                          @unique @map("token_hash") @db.Char(64)
+  expiresAt               DateTime                        @map("expires_at") @db.Timestamptz(3)
+  payloadSnapshot         Json                            @map("payload_snapshot")
+  payloadHash             String                          @map("payload_hash") @db.Char(64)
+  confirmedAt             DateTime?                       @map("confirmed_at") @db.Timestamptz(3)
+  signatureData           Bytes?                          @map("signature_data")
+  supersededAt            DateTime?                       @map("superseded_at") @db.Timestamptz(3)
+  createdAt               DateTime                        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([claimRevisionId])
+  @@index([leaderUserId])
+  @@index([tokenHash])
+  @@index([status, confirmedAt])
+  @@map("leader_verifications")
+}

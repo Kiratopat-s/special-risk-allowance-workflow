@@ -1,23 +1,30 @@
-/**
- * MonthlyRequestCollection Domain - Public API
- *
- * @module lib/domains/monthly-request-collection
- */
-
 export type {
-    MonthlyRequestCollectionEntity,
-    MonthlyRequestCollectionWithRelations,
-    MrcApprovalStepEntity,
-    MrcApprovalStepWithReviewer,
-    MrcExpenseClaimSummary,
-    EligibleExpenseClaimForCollection,
-    CreateMrcInput,
-    UpdateMrcInput,
-    ReviewMrcStepInput,
-    MrcFilterCriteria,
-    MrcApprovalStage,
-    MrcStepStatus,
+  CompleteMrcInput,
+  CreateMrcInput,
+  CreateMrcReplacementInput,
+  EligibleExpenseClaimForCollection,
+  MrcDepartmentOption,
+  MrcExportAuditMetadata,
+  MrcFilterCriteria,
+  MonthlyRequestCollectionEntity,
+  MonthlyRequestCollectionItemSnapshot,
+  MonthlyRequestCollectionWithRelations,
+  MonthlyRequestItemDateSnapshot,
+  MonthlyRequestStatus,
+  UpdateMrcInput,
+  VoidMrcResult,
 } from "./types";
 
 export { monthlyRequestCollectionRepository } from "./repository";
 export { monthlyRequestCollectionService } from "./service";
+export {
+  MRC_TRANSITIONS,
+  validateMrcTransition,
+  validatePaperApprovalDate,
+  parseBangkokDateTime,
+} from "./policy";
+export {
+  buildMrcSnapshotCanonicalValue,
+  computeMrcSnapshotHash,
+  sortMrcSnapshotItems,
+} from "./snapshot";

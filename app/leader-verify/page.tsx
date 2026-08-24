@@ -1,7 +1,7 @@
 /**
  * Public leader-verification page
  *
- * Reached via `/leader-verify?token=<uuid>` (no login required).
+ * Reached via `/leader-verify?token=<opaque-token>` (no login required).
  * Internal users who follow a link here will also see this page,
  * but they can additionally use the internal /leader-verify flow
  * from their dashboard.

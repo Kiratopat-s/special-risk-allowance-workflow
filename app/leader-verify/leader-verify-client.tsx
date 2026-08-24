@@ -25,39 +25,14 @@ import {
   verifyByToken,
 } from "@/app/actions/leader-verify";
 import { monthDisplay, dateDisplay } from "@/lib/shared/format";
+import type { LeaderVerificationWithRelations } from "@/lib/domains/leader-verification";
 
 type LoadState = "loading" | "ready" | "not_found" | "already_verified";
 type SubmitState = "idle" | "submitting" | "done" | "error";
 /** choose = pick existing vs draw new; draw = canvas open; ready = signature captured */
 type SigStep = "choose" | "draw" | "ready";
 
-interface VerificationInfo {
-  id: string;
-  offSiteWorkId: string;
-  leaderEmail: string | null;
-  expiresAt: Date;
-  verifiedAt: Date | null;
-  expenseClaim: {
-    id: string;
-    expenseMonth: Date;
-    status: string;
-    claimant: {
-      firstName: string;
-      lastName: string;
-    };
-  };
-  offSiteWork: {
-    id: string;
-    innerRefDocumentId: string | null;
-    startDate: Date;
-    endDate: Date;
-    location: string | null;
-    objective: string | null;
-    leaderFirstName: string | null;
-    leaderLastName: string | null;
-    leaderPosition: string | null;
-  };
-}
+type VerificationInfo = LeaderVerificationWithRelations;
 
 // ─── Inline signature canvas ──────────────────────────────────────────────────
 
@@ -241,8 +216,8 @@ export function LeaderVerifyClient({
 
       const data = res.data;
 
-      if (data.verifiedAt) {
-        setInfo(data as unknown as VerificationInfo);
+      if (data.confirmedAt) {
+        setInfo(data);
         setLoadState("already_verified");
         return;
       }
@@ -252,7 +227,7 @@ export function LeaderVerifyClient({
         return;
       }
 
-      setInfo(data as unknown as VerificationInfo);
+      setInfo(data);
       setLoadState("ready");
     };
 
@@ -312,17 +287,41 @@ export function LeaderVerifyClient({
 
   if (loadState === "already_verified" && info) {
     return (
-      <div className="rounded-2xl border bg-card p-8 shadow-md text-center space-y-3">
+      <div className="rounded-2xl border bg-card p-8 shadow-md space-y-4">
         <ShieldCheck className="mx-auto h-12 w-12 text-green-500" />
-        <h1 className="text-lg font-semibold text-green-700 dark:text-green-400">
+        <h1 className="text-center text-lg font-semibold text-green-700 dark:text-green-400">
           ยืนยันการออกปฏิบัติงานเรียบร้อยแล้ว
         </h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-center text-sm text-muted-foreground">
           เลขที่เอกสาร: <strong>{info.offSiteWorkId}</strong>
         </p>
-        <p className="text-sm text-muted-foreground">
-          ยืนยันเมื่อ: {info.verifiedAt ? dateDisplay(info.verifiedAt) : "-"}
+        <p className="text-center text-sm text-muted-foreground">
+          ยืนยันเมื่อ: {info.confirmedAt ? dateDisplay(info.confirmedAt) : "-"}
         </p>
+        <div className="rounded-xl border p-4 text-sm">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <span className="font-medium">รายการที่ยืนยัน</span>
+            <strong>
+              {info.payloadSnapshot.countDates} วัน ·{" "}
+              {info.payloadSnapshot.amount.toLocaleString("th-TH")} บาท
+            </strong>
+          </div>
+          <div className="space-y-2">
+            {info.payloadSnapshot.dates.map((item) => (
+              <div key={item.date} className="rounded-lg bg-muted/50 p-3">
+                <div className="flex flex-wrap justify-between gap-2">
+                  <span>{dateDisplay(new Date(`${item.date}T00:00:00.000Z`))}</span>
+                  <span>{item.dayType === "TRAVEL" ? "เดินทาง" : "ปฏิบัติงาน"}</span>
+                </div>
+                {item.weSafeCodes.length > 0 ? (
+                  <p className="mt-1 break-all font-mono text-xs">
+                    We Safe: {item.weSafeCodes.join(", ")}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -503,6 +502,27 @@ export function LeaderVerifyClient({
               <span>{info.offSiteWork.objective}</span>
             </>
           ) : null}
+        </div>
+      </div>
+
+      <div className="rounded-xl border p-4 space-y-3 text-sm">
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-medium">วันที่ที่ขอให้ยืนยัน</p>
+          <strong>{info.payloadSnapshot.countDates} วัน · {info.payloadSnapshot.amount.toLocaleString("th-TH")} บาท</strong>
+        </div>
+        <div className="space-y-2">
+          {info.payloadSnapshot.dates.map((item) => (
+            <div key={item.date} className="rounded-lg bg-muted/50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium">{dateDisplay(new Date(`${item.date}T00:00:00.000Z`))}</span>
+                <span>{item.dayType === "TRAVEL" ? "วันเดินทาง" : "วันปฏิบัติงาน"} · {item.dailyRate.toLocaleString("th-TH")} บาท</span>
+              </div>
+              {item.holidayName ? <p className="mt-1 text-xs text-amber-700">{item.holidayName}</p> : null}
+              {item.weSafeCodes.length > 0 ? (
+                <p className="mt-1 break-all font-mono text-xs">We Safe: {item.weSafeCodes.join(", ")}</p>
+              ) : null}
+            </div>
+          ))}
         </div>
       </div>
 

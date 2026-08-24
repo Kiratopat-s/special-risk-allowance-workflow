@@ -1,383 +1,388 @@
-/**
- * MonthlyRequestCollection Domain - Service Layer
- *
- * Business logic and state-machine for the full MRC approval lifecycle.
- *
- * Status flow:
- *   DRAFT  ──(submit)──► PENDING  ──(HPA approve)──► PENDING
- *          ──(HPA reject)──► REJECTED
- *          ──(RK approve)──► PENDING
- *          ──(RK reject)──► REJECTED
- *          ──(OK approve)──► APPROVED  (expense claims set to APPROVED)
- *          ──(OK reject)──► REJECTED
- *   DRAFT/PENDING (no APPROVED steps) ──(cancel)──► CANCELLED
- *
- * @module lib/domains/monthly-request-collection/service
- */
+/** Paper-first Monthly Request Collection business service. */
 
-import { monthlyRequestCollectionRepository as repo } from "./repository";
-import { permissionRepository } from "@/lib/domains/permission/repository";
+import { ActionType, type Prisma } from "@/lib/generated/prisma/client";
 import { actionLogService } from "@/lib/domains/action-log/service";
 import { notificationService } from "@/lib/domains/notification";
-import { ActionType } from "@/lib/shared/types";
-import { success, error, type Result } from "@/lib/shared/types";
-import type { Prisma } from "@/lib/generated/prisma/client";
-import type { PaginatedResult } from "@/lib/shared/types";
+import {
+  error,
+  success,
+  type PaginatedResult,
+  type Result,
+} from "@/lib/shared/types";
+import {
+  MrcInvariantError,
+  monthlyRequestCollectionRepository as repo,
+} from "./repository";
 import type {
-    MonthlyRequestCollectionEntity,
-    MonthlyRequestCollectionWithRelations,
-    CreateMrcInput,
-    UpdateMrcInput,
-    ReviewMrcStepInput,
-    MrcFilterCriteria,
-    EligibleExpenseClaimForCollection,
+  CompleteMrcInput,
+  CreateMrcInput,
+  CreateMrcReplacementInput,
+  EligibleExpenseClaimForCollection,
+  MrcDepartmentOption,
+  MrcExportAuditMetadata,
+  MrcFilterCriteria,
+  MonthlyRequestCollectionEntity,
+  MonthlyRequestCollectionWithRelations,
+  UpdateMrcInput,
+  VoidMrcResult,
 } from "./types";
 
 type JsonValue = Prisma.JsonValue;
 
-// Linear sequence of approval stages used by the reviewStep logic to determine
-// the current position in the multi-level workflow and which role should act next.
-// Changing this order will directly affect the progression of approvals.
-const STAGE_ORDER = ["HPA_CHECK", "RK_CHECK", "OK_APPROVE"] as const;
+function handleFailure(cause: unknown): ReturnType<typeof error> {
+  if (cause instanceof MrcInvariantError) {
+    return error(cause.message, cause.code);
+  }
+  console.error("Monthly request collection operation failed", cause);
+  return error("Unable to process monthly request collection", "MRC_OPERATION_FAILED");
+}
 
-function normalizeMonth(value: Date | string): Date {
-    const d = new Date(value);
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+async function notifyParticipants(
+  mrcId: string,
+  actorId: string,
+  type: "MRC_FINALIZED" | "MRC_ALL_DONE" | "MRC_CANCELLED" | "MRC_VOIDED",
+  title: string,
+  body: string,
+): Promise<void> {
+  const mrc = await repo.findById(mrcId);
+  if (!mrc) return;
+  const claimantIds = await repo.findClaimantUserIds(mrcId);
+  await notificationService.sendToMany(
+    [...new Set([mrc.collectorId, actorId, ...claimantIds])],
+    type,
+    title,
+    body,
+    "/dashboard?tab=monthly-requests",
+  );
+}
+
+function dispatchParticipantNotification(
+  ...args: Parameters<typeof notifyParticipants>
+): void {
+  void notifyParticipants(...args).catch((cause) => {
+    console.error("Failed to notify monthly request participants", cause);
+  });
+}
+
+async function audit(
+  actorId: string,
+  actionType: ActionType,
+  id: string,
+  description: string,
+  previousData?: JsonValue,
+  newData?: JsonValue,
+): Promise<void> {
+  await actionLogService.log({
+    userId: actorId,
+    actionType,
+    actionDescription: description,
+    targetEntityType: "MonthlyRequestCollection",
+    targetEntityId: id,
+    previousData,
+    newData,
+  });
 }
 
 export const monthlyRequestCollectionService = {
-    // -----------------------------------------------------------------------
-    // Queries
-    // -----------------------------------------------------------------------
+  async getById(
+    id: string,
+  ): Promise<Result<MonthlyRequestCollectionWithRelations>> {
+    const mrc = await repo.findWithRelations(id);
+    return mrc
+      ? success(mrc)
+      : error("Monthly request collection not found", "MRC_NOT_FOUND");
+  },
 
-    async getById(id: string): Promise<Result<MonthlyRequestCollectionWithRelations>> {
-        const mrc = await repo.findWithRelations(id);
-        if (!mrc) return error("Monthly request collection not found", "MRC_NOT_FOUND");
-        return success(mrc);
-    },
+  async list(
+    criteria: MrcFilterCriteria,
+  ): Promise<Result<PaginatedResult<MonthlyRequestCollectionWithRelations>>> {
+    try {
+      return success(await repo.findMany(criteria));
+    } catch (cause) {
+      return handleFailure(cause);
+    }
+  },
 
-    async list(
-        criteria: MrcFilterCriteria
-    ): Promise<Result<PaginatedResult<MonthlyRequestCollectionWithRelations>>> {
-        const result = await repo.findMany(criteria);
-        return success(result);
-    },
+  async listDepartments(): Promise<Result<MrcDepartmentOption[]>> {
+    return success(await repo.listDepartments());
+  },
 
-    async listEligibleExpenseClaims(
-        month: Date,
-        existingMrcId?: string
-    ): Promise<Result<EligibleExpenseClaimForCollection[]>> {
-        const claims = await repo.findEligibleExpenseClaimsForMonth(month, existingMrcId);
-        return success(claims);
-    },
+  async listEligibleExpenseClaims(
+    month: Date | string,
+    departmentId: string,
+    existingMrcId?: string,
+  ): Promise<Result<EligibleExpenseClaimForCollection[]>> {
+    try {
+      return success(
+        await repo.findEligibleExpenseClaimsForMonth(
+          month,
+          departmentId,
+          existingMrcId,
+        ),
+      );
+    } catch (cause) {
+      return handleFailure(cause);
+    }
+  },
 
-    // -----------------------------------------------------------------------
-    // Mutations
-    // -----------------------------------------------------------------------
+  async create(
+    data: CreateMrcInput,
+    actorId: string,
+  ): Promise<Result<MonthlyRequestCollectionEntity>> {
+    try {
+      const mrc = await repo.createDraft(data, actorId);
+      await audit(
+        actorId,
+        ActionType.OTHER,
+        mrc.id,
+        `Monthly request draft "${mrc.id}" created`,
+        undefined,
+        {
+          status: mrc.status,
+          departmentId: mrc.departmentId,
+          collectForMonth: mrc.collectForMonth.toISOString(),
+          claimCount: mrc.claimCount,
+        },
+      );
+      return success(mrc, "Monthly request draft created");
+    } catch (cause) {
+      return handleFailure(cause);
+    }
+  },
 
-    /**
-     * Admin creates a new MRC for a given month (DRAFT status).
-     * Immediately associates the chosen expense claims and sets them to COLLECTED.
-     */
-    async create(
-        data: CreateMrcInput,
-        actorId: string
-    ): Promise<Result<MonthlyRequestCollectionEntity>> {
-        if (!data.expenseClaimIds || data.expenseClaimIds.length === 0) {
-            return error("Please select at least one expense claim to collect", "NO_CLAIMS_SELECTED");
-        }
+  async update(
+    id: string,
+    data: UpdateMrcInput,
+    actorId: string,
+  ): Promise<Result<MonthlyRequestCollectionEntity>> {
+    try {
+      const mrc = await repo.updateDraftItems(id, data.expenseClaimIds, actorId);
+      await audit(
+        actorId,
+        ActionType.OTHER,
+        id,
+        `Monthly request draft "${id}" updated`,
+        undefined,
+        { claimCount: mrc.claimCount },
+      );
+      return success(mrc, "Monthly request draft updated");
+    } catch (cause) {
+      return handleFailure(cause);
+    }
+  },
 
-        const month = normalizeMonth(data.collectForMonth);
-
-        // Guard: only one active (non-CANCELLED) MRC is allowed per month
-        const hasActive = await repo.findActiveForMonth(month);
-        if (hasActive) {
-            return error(
-                "มีรายการรวบรวมคำขอรายเดือนที่ยังดำเนินการอยู่สำหรับเดือนนี้แล้ว — กรุณายกเลิกหรือรอให้รายการเดิมเสร็จสิ้นก่อน",
-                "MRC_MONTH_CONFLICT"
-            );
-        }
-
-        const mrc = await repo.create({ collectForMonth: month, expenseClaimIds: data.expenseClaimIds }, actorId);
-        await repo.setExpenseClaims(mrc.id, data.expenseClaimIds);
-
-        await actionLogService.log({
-            userId: actorId,
-            actionType: ActionType.OTHER,
-            actionDescription: `Monthly request collection "${mrc.id}" created`,
-            targetEntityType: "MonthlyRequestCollection",
-            targetEntityId: mrc.id,
-            newData: { month: month.toISOString(), claimsCount: data.expenseClaimIds.length } as JsonValue,
-        });
-
-        return success(mrc, "Monthly request collection created");
-    },
-
-    /**
-     * Admin updates (replaces) the linked expense claims while still in DRAFT.
-     */
-    async update(
-        id: string,
-        data: UpdateMrcInput,
-        actorId: string
-    ): Promise<Result<MonthlyRequestCollectionEntity>> {
-        const mrc = await repo.findById(id);
-        if (!mrc) return error("Monthly request collection not found", "MRC_NOT_FOUND");
-
-        if (mrc.status !== "DRAFT") {
-            return error("Only a DRAFT collection can be edited", "MRC_NOT_DRAFT");
-        }
-
-        if (data.expenseClaimIds !== undefined) {
-            if (data.expenseClaimIds.length === 0) {
-                return error("Please select at least one expense claim", "NO_CLAIMS_SELECTED");
-            }
-            await repo.setExpenseClaims(id, data.expenseClaimIds);
-        }
-
-        const updated = await repo.findById(id);
-
-        await actionLogService.log({
-            userId: actorId,
-            actionType: ActionType.OTHER,
-            actionDescription: `Monthly request collection "${id}" updated`,
-            targetEntityType: "MonthlyRequestCollection",
-            targetEntityId: id,
-            newData: data as unknown as JsonValue,
-        });
-
-        return success(updated!, "Monthly request collection updated");
-    },
-
-    /**
-     * Admin submits a DRAFT collection — creates the first approval step (HPA_CHECK).
-     */
-    async submit(id: string, actorId: string): Promise<Result<MonthlyRequestCollectionEntity>> {
-        const mrc = await repo.findById(id);
-        if (!mrc) return error("Monthly request collection not found", "MRC_NOT_FOUND");
-
-        if (mrc.status !== "DRAFT") {
-            return error("Only a DRAFT collection can be submitted", "MRC_NOT_DRAFT");
-        }
-
-        await repo.updateStatus(id, "PENDING");
-        await repo.createApprovalStep(id, "HPA_CHECK");
-
-        await actionLogService.log({
-            userId: actorId,
-            actionType: ActionType.OTHER,
-            actionDescription: `Monthly request collection "${id}" submitted for HPA review`,
-            targetEntityType: "MonthlyRequestCollection",
-            targetEntityId: id,
-            previousData: { status: "DRAFT" } as JsonValue,
-            newData: { status: "PENDING" } as JsonValue,
-        });
-
-        const updated = await repo.findById(id);
-
-        // Notify HPA reviewers + collector + claimants
-        const mrcWithRelations = await repo.findWithRelations(id);
-        const claimantIds = mrcWithRelations
-            ? [...new Set(mrcWithRelations.expenseClaims.map((c) => c.userId))]
-            : [];
-        void permissionRepository.findUserIdsByPermissionCode("monthly-request:review:hpa").then(
-            (hpaIds) => {
-                notificationService.sendToMany(
-                    [...new Set([actorId, ...claimantIds, ...hpaIds])],
-                    "MRC_SUBMITTED",
-                    "มีรายการรวบรวมคำขอรายเดือนรอการตรวจสอบ",
-                    "มีรายการรวบรวมคำขอรายเดือนใหม่รอการตรวจสอบในขั้นตอน HPA",
-                    "/dashboard?tab=monthly-requests"
-                );
-            }
+  async finalize(
+    id: string,
+    actorId: string,
+  ): Promise<Result<MonthlyRequestCollectionEntity>> {
+    try {
+      const before = await repo.findById(id);
+      const mrc = await repo.finalizeDraft(id, actorId);
+      if (before?.status !== "FINALIZED") {
+        await audit(
+          actorId,
+          ActionType.MRC_FINALIZED,
+          id,
+          `Monthly request "${id}" finalized for paper approval`,
+          { status: before?.status ?? null },
+          {
+            status: mrc.status,
+            batchNo: mrc.batchNo,
+            snapshotHash: mrc.snapshotHash,
+          },
         );
-
-        return success(updated!, "Submitted for review");
-    },
-
-    /**
-     * A reviewer (หผ/รก/อก) reviews the current pending approval step.
-     *
-     * - Approved + not last stage → advance to next stage (create next PENDING step)
-     * - Approved + last stage (OK_APPROVE) → set MRC to APPROVED, update linked expense claims to APPROVED
-     * - Rejected → set MRC to REJECTED, revert linked expense claims to PENDING
-     */
-    async reviewStep(
-        id: string,
-        input: ReviewMrcStepInput,
-        actorId: string
-    ): Promise<Result<MonthlyRequestCollectionEntity>> {
-        const mrc = await repo.findWithRelations(id);
-        if (!mrc) return error("Monthly request collection not found", "MRC_NOT_FOUND");
-
-        if (mrc.status !== "PENDING") {
-            return error("Only a PENDING collection can be reviewed", "MRC_NOT_PENDING");
-        }
-
-        // Verify the step exists and is PENDING
-        const step = await repo.findApprovalStep(id, input.stage);
-        if (!step || step.status !== "PENDING") {
-            return error(
-                "This review step is not currently open for action",
-                "STEP_NOT_PENDING"
-            );
-        }
-
-        // Explicit ordering guard — all prior stages must be APPROVED
-        const currentIndex = STAGE_ORDER.indexOf(input.stage as typeof STAGE_ORDER[number]);
-        for (let i = 0; i < currentIndex; i++) {
-            const priorStep = await repo.findApprovalStep(id, STAGE_ORDER[i]);
-            if (!priorStep || priorStep.status !== "APPROVED") {
-                return error(
-                    "ขั้นตอนก่อนหน้ายังไม่ได้รับการอนุมัติ",
-                    "STEP_SEQUENCE_VIOLATED"
-                );
-            }
-        }
-
-        const newStepStatus = input.approved ? "APPROVED" : "REJECTED";
-        await repo.reviewApprovalStep(id, input.stage, newStepStatus, actorId, input.remark);
-
-        if (!input.approved) {
-            // Rejection → MRC REJECTED, roll back ECDs to WAIT_FOR_COLLECTION + unlink
-            await repo.updateStatus(id, "REJECTED");
-            await repo.rollbackLinkedClaims(id);
-
-            await actionLogService.log({
-                userId: actorId,
-                actionType: ActionType.OTHER,
-                actionDescription: `Monthly request collection "${id}" rejected at stage ${input.stage}`,
-                targetEntityType: "MonthlyRequestCollection",
-                targetEntityId: id,
-                newData: { stage: input.stage, status: "REJECTED", remark: input.remark } as JsonValue,
-            });
-
-            // Notify collector + all claimants + previous approvers of rejection
-            const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
-            const priorApproverIds = mrc.approvalSteps
-                .filter((s) => s.status === "APPROVED" && s.reviewerId)
-                .map((s) => s.reviewerId!);
-            void notificationService.sendToMany(
-                [...new Set([mrc.collectorId, ...claimantIds, ...priorApproverIds])],
-                "MRC_REJECTED",
-                "คำขอรายเดือนถูกปฏิเสธ",
-                `รายการรวบรวมคำขอรายเดือนถูกปฏิเสธในขั้นตอน ${input.stage}`,
-                "/dashboard?tab=monthly-requests"
-            );
-
-            const updated = await repo.findById(id);
-            return success(updated!, "Rejected successfully");
-        }
-
-        // Approved — advance or finalise
-        const advanceIndex = STAGE_ORDER.indexOf(input.stage as typeof STAGE_ORDER[number]);
-        const isLastStage = advanceIndex === STAGE_ORDER.length - 1;
-
-        if (isLastStage) {
-            // Final approval
-            await repo.updateStatus(id, "APPROVED");
-            await repo.bulkUpdateLinkedClaimsStatus(id, "APPROVED");
-
-            await actionLogService.log({
-                userId: actorId,
-                actionType: ActionType.OTHER,
-                actionDescription: `Monthly request collection "${id}" fully approved`,
-                targetEntityType: "MonthlyRequestCollection",
-                targetEntityId: id,
-                newData: { stage: input.stage, status: "APPROVED" } as JsonValue,
-            });
-
-            // Notify collector + all claimants + previous approvers of final approval
-            const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
-            const priorApproverIds = mrc.approvalSteps
-                .filter((s) => s.status === "APPROVED" && s.reviewerId)
-                .map((s) => s.reviewerId!);
-            void notificationService.sendToMany(
-                [...new Set([mrc.collectorId, ...claimantIds, ...priorApproverIds])],
-                "MRC_APPROVED",
-                "คำขอรายเดือนได้รับการอนุมัติแล้ว",
-                "รายการรวบรวมคำขอรายเดือนได้รับการอนุมัติครบทุกขั้นตอนแล้ว",
-                "/dashboard?tab=monthly-requests"
-            );
-        } else {
-            // Advance to next stage — notify the next-stage reviewers
-            const nextStage = STAGE_ORDER[advanceIndex + 1];
-            await repo.createApprovalStep(id, nextStage);
-
-            await actionLogService.log({
-                userId: actorId,
-                actionType: ActionType.OTHER,
-                actionDescription: `Monthly request collection "${id}" approved at ${input.stage}, advancing to ${nextStage}`,
-                targetEntityType: "MonthlyRequestCollection",
-                targetEntityId: id,
-                newData: { stage: input.stage, nextStage } as JsonValue,
-            });
-
-            const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
-            const stagePermCode =
-                nextStage === "RK_CHECK" ? "monthly-request:review:rk" : "monthly-request:review:ok";
-            void permissionRepository.findUserIdsByPermissionCode(stagePermCode).then(
-                (nextReviewerIds) => notificationService.sendToMany(
-                    [...new Set([mrc.collectorId, ...claimantIds, ...nextReviewerIds])],
-                    "MRC_STEP_APPROVED",
-                    "ขั้นตอนการอนุมัติผ่านแล้ว — รอดำเนินการขั้นถัดไป",
-                    `คำขอรายเดือนผ่านขั้น ${input.stage} แล้ว กรุณาดำเนินการในขั้นตอน ${nextStage}`,
-                    "/dashboard?tab=monthly-requests"
-                )
-            );
-        }
-
-        const updated = await repo.findById(id);
-        return success(updated!, isLastStage ? "Fully approved" : "Step approved, advanced to next stage");
-    },
-
-    /**
-     * Admin cancels a collection.
-     * Allowed only when status=DRAFT or status=PENDING with no APPROVED steps.
-     * Reverts linked expense claims to WAIT_FOR_COLLECTION and unlinks them
-     * from the MRC so admin can collect them again in a future MRC.
-     */
-    async cancel(id: string, actorId: string): Promise<Result<void>> {
-        const mrc = await repo.findWithRelations(id);
-        if (!mrc) return error("Monthly request collection not found", "MRC_NOT_FOUND");
-
-        if (mrc.status === "CANCELLED") return error("Already cancelled", "MRC_ALREADY_CANCELLED");
-        if (mrc.status === "APPROVED") return error("An approved collection cannot be cancelled", "MRC_APPROVED");
-
-        const hasApprovedStep = mrc.approvalSteps.some((s) => s.status === "APPROVED");
-        if (hasApprovedStep) {
-            return error(
-                "Cannot cancel: a reviewer has already approved this collection",
-                "MRC_STEP_ALREADY_APPROVED"
-            );
-        }
-
-        await repo.updateStatus(id, "CANCELLED", new Date());
-        await repo.rollbackLinkedClaims(id);
-
-        await actionLogService.log({
-            userId: actorId,
-            actionType: ActionType.OTHER,
-            actionDescription: `Monthly request collection "${id}" cancelled`,
-            targetEntityType: "MonthlyRequestCollection",
-            targetEntityId: id,
-            previousData: { status: mrc.status } as JsonValue,
-            newData: { status: "CANCELLED" } as JsonValue,
-        });
-
-        // Notify collector + all claimants + any approvers
-        const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
-        const approverIds = mrc.approvalSteps
-            .filter((s) => s.reviewerId)
-            .map((s) => s.reviewerId!);
-        void notificationService.sendToMany(
-            [...new Set([mrc.collectorId, ...claimantIds, ...approverIds])],
-            "MRC_CANCELLED",
-            "รายการรวบรวมคำขอรายเดือนถูกยกเลิก",
-            "รายการรวบรวมคำขอรายเดือนถูกยกเลิกแล้ว เอกสารเบิกจ่ายที่เกี่ยวข้องกลับสู่สถานะรอรวบรวม",
-            "/dashboard?tab=monthly-requests"
+        dispatchParticipantNotification(
+          id,
+          actorId,
+          "MRC_FINALIZED",
+          "สรุปคำขอรายเดือนพร้อมพิมพ์แล้ว",
+          "Collector สรุปข้อมูลแล้ว เอกสารพร้อมพิมพ์เพื่อลงนามบนกระดาษ",
         );
+      }
+      return success(mrc, "Monthly request finalized");
+    } catch (cause) {
+      return handleFailure(cause);
+    }
+  },
 
-        return success(undefined, "Monthly request collection cancelled");
-    },
+  async complete(
+    id: string,
+    input: CompleteMrcInput,
+    actorId: string,
+  ): Promise<Result<MonthlyRequestCollectionEntity>> {
+    try {
+      const before = await repo.findById(id);
+      const mrc = await repo.complete(id, input, actorId);
+      if (before?.status !== "ALL_DONE") {
+        await audit(
+          actorId,
+          ActionType.MRC_ALL_DONE_RECORDED,
+          id,
+          `Paper approval recorded for monthly request "${id}"`,
+          { status: before?.status ?? null },
+          {
+            status: mrc.status,
+            paperApprovedAt: mrc.paperApprovedAt?.toISOString() ?? null,
+            note: mrc.allDoneNote,
+          },
+        );
+        dispatchParticipantNotification(
+          id,
+          actorId,
+          "MRC_ALL_DONE",
+          "บันทึกผลอนุมัติเอกสารแล้ว",
+          "Collector บันทึกว่า อก.ฝช. ยืนยันเอกสารกระดาษเรียบร้อยแล้ว",
+        );
+      }
+      return success(mrc, "Paper approval recorded");
+    } catch (cause) {
+      return handleFailure(cause);
+    }
+  },
+
+  async cancel(
+    id: string,
+    reason: string,
+    actorId: string,
+  ): Promise<Result<MonthlyRequestCollectionEntity>> {
+    if (!reason.trim()) return error("Cancel reason is required", "REASON_REQUIRED");
+    try {
+      const before = await repo.findById(id);
+      const mrc = await repo.cancelDraft(id, reason.trim(), actorId);
+      if (before?.status !== "CANCELLED") {
+        await audit(
+          actorId,
+          ActionType.MRC_DRAFT_CANCELLED,
+          id,
+          `Monthly request draft "${id}" cancelled`,
+          { status: before?.status ?? null },
+          { status: mrc.status, reason: mrc.cancelReason },
+        );
+        dispatchParticipantNotification(
+          id,
+          actorId,
+          "MRC_CANCELLED",
+          "ยกเลิกร่างสรุปคำขอรายเดือนแล้ว",
+          reason.trim(),
+        );
+      }
+      return success(mrc, "Monthly request draft cancelled");
+    } catch (cause) {
+      return handleFailure(cause);
+    }
+  },
+
+  async void(
+    id: string,
+    reason: string,
+    actorId: string,
+  ): Promise<Result<VoidMrcResult>> {
+    if (!reason.trim()) return error("Void reason is required", "REASON_REQUIRED");
+    try {
+      const before = await repo.findById(id);
+      const result = await repo.voidFinalized(id, reason.trim(), actorId);
+      if (before?.status !== "VOIDED") {
+        await audit(
+          actorId,
+          ActionType.MRC_VOIDED,
+          id,
+          `Finalized monthly request "${id}" voided`,
+          { status: before?.status ?? null },
+          {
+            status: result.voided.status,
+            reason: result.voided.voidReason,
+            replacementDraftId: result.replacementDraft.id,
+          },
+        );
+        dispatchParticipantNotification(
+          id,
+          actorId,
+          "MRC_VOIDED",
+          "ยกเลิกเอกสารสรุปคำขอรายเดือนแล้ว",
+          reason.trim(),
+        );
+      }
+      return success(
+        result,
+        "Monthly request voided and replacement draft prepared",
+      );
+    } catch (cause) {
+      return handleFailure(cause);
+    }
+  },
+
+  async createReplacement(
+    input: CreateMrcReplacementInput,
+    actorId: string,
+  ): Promise<Result<MonthlyRequestCollectionEntity>> {
+    try {
+      const mrc = await repo.createReplacementDraft(input.voidedMrcIds, actorId);
+      await audit(
+        actorId,
+        ActionType.OTHER,
+        mrc.id,
+        `Replacement monthly request draft "${mrc.id}" created`,
+        undefined,
+        { voidedMrcIds: input.voidedMrcIds },
+      );
+      return success(mrc, "Replacement draft created");
+    } catch (cause) {
+      return handleFailure(cause);
+    }
+  },
+
+  async recordPrintRendered(
+    id: string,
+    actorId: string,
+  ): Promise<Result<void>> {
+    const mrc = await repo.findById(id);
+    if (!mrc) return error("Monthly request collection not found", "MRC_NOT_FOUND");
+    if (mrc.status === "CANCELLED") {
+      return error("A cancelled draft cannot be printed", "MRC_NOT_PRINTABLE");
+    }
+    const preview = mrc.status === "DRAFT";
+    await audit(
+      actorId,
+      preview ? ActionType.MRC_PREVIEW_RENDERED : ActionType.MRC_OFFICIAL_RENDERED,
+      id,
+      preview
+        ? `Monthly request draft preview "${id}" rendered`
+        : `Monthly request official document "${id}" rendered`,
+      undefined,
+      { status: mrc.status, snapshotHash: mrc.snapshotHash },
+    );
+    return success(undefined);
+  },
+
+  async recordExported(
+    id: string,
+    actorId: string,
+    metadata: MrcExportAuditMetadata,
+  ): Promise<Result<void>> {
+    const mrc = await repo.findById(id);
+    if (!mrc) return error("Monthly request collection not found", "MRC_NOT_FOUND");
+    if (mrc.status !== "FINALIZED" && mrc.status !== "ALL_DONE") {
+      return error(
+        "Only finalized monthly requests can be exported",
+        "MRC_NOT_EXPORTABLE",
+      );
+    }
+    await audit(
+      actorId,
+      ActionType.DATA_EXPORTED,
+      id,
+      `Monthly request workbook "${id}" exported`,
+      undefined,
+      {
+        status: mrc.status,
+        collectForMonth: mrc.collectForMonth.toISOString().slice(0, 7),
+        batchNo: mrc.batchNo,
+        filename: metadata.filename,
+        dataRowCount: metadata.dataRowCount,
+        datesRowCount: metadata.datesRowCount,
+        snapshotHash: mrc.snapshotHash,
+      },
+    );
+    return success(undefined);
+  },
 };

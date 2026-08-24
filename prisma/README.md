@@ -1,233 +1,80 @@
-# Prisma Database Schema
+# Prisma data model
 
-This directory contains the Prisma ORM configuration for the Special Risk Allowance Workflow application.
+The PostgreSQL schema is the persistence layer for a revision-first special-risk
+allowance workflow. The repository intentionally uses a clean baseline: there
+is no legacy claim/MRC compatibility migration or data backfill.
 
-## Overview
+## Aggregate boundaries
 
-We use **Prisma 7** with the PostgreSQL driver adapter (`@prisma/adapter-pg`) for database operations. The schema follows a clean architecture domain model pattern.
+- `OffSiteWork` owns normalized `OffSiteWorkParticipant` rows. Once a submitted
+  claim references the record, its dates, participants, and leader are locked.
+- `ExpenseClaim` is the logical one-per-user/month lifecycle record.
+  `ExpenseClaimRevision` owns immutable submitted OSW snapshots, primary work
+  dates, holiday results, and We Safe metadata.
+- `LeaderVerification` belongs to one revision/OSW pair. Confirmed and
+  superseded payload/signature snapshots are historical records.
+- `MonthlyRequestCollection` is scoped by department/month. Membership is kept
+  in `MonthlyRequestCollectionItem`; item/date/code fields become the official
+  snapshot at finalization.
+- `ClaimReviewFlag` and `UserActionLog` preserve collector review and audit
+  history. `MrcReplacementSource` links voided documents to their replacement
+  Draft.
 
-## Directory Structure
+## Database-only invariants
 
-```
-prisma/
-├── schema.prisma          # Main schema definition
-├── migrations/            # Database migration history
-│   └── {timestamp}_{name}/
-│       └── migration.sql
-└── README.md              # This file
-```
+The baseline migration adds partial unique indexes that Prisma cannot express:
 
-## Schema Models
+- one non-cancelled claim per user/month;
+- one Draft MRC per department/month;
+- one active MRC membership per claim;
+- one OPEN suspicious flag per claim; and
+- one active replacement per off-site-work record.
 
-### 1. User
-
-Stores user information synchronized from Keycloak.
-
-| Field           | Type       | Description                          |
-| --------------- | ---------- | ------------------------------------ |
-| `id`            | UUID       | Primary key                          |
-| `keycloakId`    | String     | Unique Keycloak user ID              |
-| `email`         | String     | Unique email address                 |
-| `peaEmail`      | String?    | PEA organization email               |
-| `firstName`     | String     | First name                           |
-| `lastName`      | String     | Last name                            |
-| `phoneNumber`   | String?    | Contact phone number                 |
-| `position`      | String?    | Job position/title                   |
-| `positionShort` | String?    | Abbreviated position                 |
-| `positionLevel` | String?    | Position level                       |
-| `departmentId`  | UUID?      | FK to Department                     |
-| `status`        | UserStatus | ACTIVE, INACTIVE, SUSPENDED, PENDING |
-| `lastLoginAt`   | DateTime?  | Last login timestamp                 |
-| `createdAt`     | DateTime   | Record creation time                 |
-| `updatedAt`     | DateTime   | Last update time                     |
-
-### 2. Department
-
-Organizational department structure with hierarchy support.
-
-| Field         | Type     | Description                       |
-| ------------- | -------- | --------------------------------- |
-| `id`          | UUID     | Primary key                       |
-| `name`        | String   | Unique department name            |
-| `shortName`   | String?  | Unique abbreviated name           |
-| `description` | String?  | Department description            |
-| `parentId`    | UUID?    | FK for hierarchy (self-reference) |
-| `isActive`    | Boolean  | Active status flag                |
-| `createdAt`   | DateTime | Record creation time              |
-| `updatedAt`   | DateTime | Last update time                  |
-
-### 3. UserActionLog
-
-Audit trail for all user actions in the system.
-
-| Field                | Type       | Description                       |
-| -------------------- | ---------- | --------------------------------- |
-| `id`                 | UUID       | Primary key                       |
-| `userId`             | UUID       | FK to User (actor)                |
-| `actionType`         | ActionType | Type of action performed          |
-| `actionDescription`  | String?    | Human-readable description        |
-| `targetUserId`       | UUID?      | FK to target User (if applicable) |
-| `targetDepartmentId` | UUID?      | FK to target Department           |
-| `targetEntityType`   | String?    | Generic entity type               |
-| `targetEntityId`     | String?    | Generic entity ID                 |
-| `ipAddress`          | String?    | Request IP address                |
-| `userAgent`          | String?    | Browser user agent                |
-| `requestPath`        | String?    | API endpoint path                 |
-| `requestMethod`      | String?    | HTTP method (GET, POST, etc.)     |
-| `metadata`           | JSON?      | Additional structured data        |
-| `previousData`       | JSON?      | State before change               |
-| `newData`            | JSON?      | State after change                |
-| `isSuccess`          | Boolean    | Action success flag               |
-| `errorMessage`       | String?    | Error details if failed           |
-| `createdAt`          | DateTime   | Action timestamp                  |
-
-## Enums
-
-### UserStatus
-
-```prisma
-enum UserStatus {
-  ACTIVE      // User can access the system
-  INACTIVE    // User is deactivated
-  SUSPENDED   // User is temporarily suspended
-  PENDING     // Awaiting approval/activation
-}
-```
-
-### ActionType
-
-```prisma
-enum ActionType {
-  // Authentication
-  LOGIN, LOGOUT, LOGIN_FAILED, SESSION_REFRESH
-
-  // User Management
-  USER_CREATED, USER_UPDATED, USER_DELETED, USER_STATUS_CHANGED
-
-  // Profile Management
-  PROFILE_VIEWED, PROFILE_UPDATED, PASSWORD_CHANGED
-
-  // Department Management
-  DEPARTMENT_CREATED, DEPARTMENT_UPDATED, DEPARTMENT_DELETED
-
-  // System Actions
-  SYSTEM_ACCESS, PERMISSION_GRANTED, PERMISSION_REVOKED
-
-  // Data Operations
-  DATA_EXPORTED, DATA_IMPORTED
-
-  // Other
-  OTHER
-}
-```
-
-## Configuration
-
-### Generator
-
-```prisma
-generator client {
-  provider = "prisma-client"
-  output   = "../lib/generated/prisma"
-}
-```
-
-The Prisma Client is generated to `lib/generated/prisma/` for use with the domain layer.
-
-### Datasource
-
-```prisma
-datasource db {
-  provider = "postgresql"
-}
-```
-
-The connection string is read from the `DATABASE_URL` environment variable.
+It also adds checks for canonical month dates, fixed `150.00` rates, six-digit
+employee snapshots, submitted We Safe length, complete frozen MRC items, valid
+date ranges, and status metadata. Database triggers protect submitted revision
+snapshots and enforce participant/date/primary-OSW scope; domain services add
+authorization, current-revision, confirmation, totals, and lifecycle checks in
+the same transaction as each command.
 
 ## Commands
 
-### Generate Prisma Client
-
-After modifying the schema, regenerate the client:
-
 ```bash
+bunx prisma format
+bunx prisma validate
 bunx prisma generate
+bunx prisma migrate dev --name <name>
+bunx prisma db seed
+bun run db:seed:uat
 ```
 
-### Create Migration
+The optional UAT seed creates 20 deterministic claimants and 60 claims across
+June–August 2026. Every claim contains 15–28 dates; most claimants share the
+same 22-day pattern, while selected rows demonstrate longer, shorter, shifted,
+multi-off-site-work, and duplicate-WeSafe cases for Collector comparison. The
+seed uses its own `UAT-LARGE-*` namespace and is idempotent while those fixtures
+remain in their emitted shape. Existing finalized UAT monthly requests outside
+that namespace are preserved. If testers add append-only review history or
+correction revisions to these fixed claims, reset the explicitly selected test
+database before loading the fixtures again.
 
-Create a new migration after schema changes:
+## PostgreSQL integration tests
+
+The constraint suite under `tests/integration` is opt-in and only reads
+`TEST_DATABASE_URL`; it never falls back to the application's `DATABASE_URL`.
+Point it at a disposable PostgreSQL database that already has the clean-break
+baseline migration applied, then run:
 
 ```bash
-bunx prisma migrate dev --name <migration_name>
+TEST_DATABASE_URL="postgresql://user:password@localhost:5432/sraw_test?schema=public" bun run test:integration
 ```
 
-Example:
+When `TEST_DATABASE_URL` is absent, Bun reports the suite as skipped. Every test
+opens a transaction and rolls it back, including expected constraint failures,
+so fixtures are not committed to the test database.
 
-```bash
-bunx prisma migrate dev --name add_user_role
-```
+`prisma migrate reset` is destructive and is only appropriate for an explicitly
+selected local/test database. Production uses `prisma migrate deploy`.
 
-### Apply Migrations (Production)
-
-```bash
-bunx prisma migrate deploy
-```
-
-### Reset Database (Development Only)
-
-⚠️ **Warning**: This will delete all data!
-
-```bash
-bunx prisma migrate reset
-```
-
-### View Database
-
-Open Prisma Studio to view/edit data:
-
-```bash
-bunx prisma studio
-```
-
-### Database Status
-
-Check migration status:
-
-```bash
-bunx prisma migrate status
-```
-
-## Environment Variables
-
-Required in `.env`:
-
-```env
-DATABASE_URL="postgresql://user:password@host:5432/database?schema=public"
-```
-
-## Singleton Pattern
-
-The Prisma Client uses a singleton pattern to prevent connection issues during development hot reloads. See `lib/db/prisma.ts`:
-
-```typescript
-import { prisma } from "@/lib/db";
-
-// Use prisma for all database operations
-const user = await prisma.user.findUnique({ where: { id } });
-```
-
-## Best Practices
-
-1. **Always use migrations** - Never modify the database directly
-2. **Descriptive migration names** - Use clear names like `add_user_phone_field`
-3. **Review generated SQL** - Check migration files before applying
-4. **Test migrations locally** - Run `migrate dev` before deploying
-5. **Use transactions** - For operations that need to be atomic
-6. **Index frequently queried fields** - Already configured in schema
-
-## Related Documentation
-
-- [Prisma Documentation](https://www.prisma.io/docs)
-- [PostgreSQL Adapter](https://www.prisma.io/docs/orm/prisma-client/databases/postgresql)
-- [Domain Layer README](../lib/domains/README.md)
+Application components and server actions must call domain services. Only
+repositories should issue Prisma queries.

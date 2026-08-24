@@ -65,6 +65,15 @@ export const signatureService = {
         });
     },
 
+    async getActiveDataUrl(userId: string): Promise<Result<string | null>> {
+        const signature = await signatureRepository.findActiveByUserId(userId);
+        return success(
+            signature
+                ? `data:image/png;base64,${Buffer.from(signature.signatureData).toString("base64")}`
+                : null,
+        );
+    },
+
     // -------------------------------------------------------------------------
     // Write
     // -------------------------------------------------------------------------

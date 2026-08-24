@@ -1,90 +1,176 @@
-/**
- * OffSiteWork Domain - Service Layer
- *
- * Business logic layer for OffSiteWork operations
- *
- * @module lib/domains/off-site-work/service
- */
-
-import { offSiteWorkRepository } from "./repository";
 import { actionLogService } from "@/lib/domains/action-log/service";
-import { ActionType } from "@/lib/shared/types";
-import { success, error, type Result } from "@/lib/shared/types";
-import type { Prisma } from "@/lib/generated/prisma/client";
+import { ActionType, error, success, type PaginatedResult, type Result } from "@/lib/shared/types";
+import { offSiteWorkRepository as repo } from "./repository";
 import type {
-  OffSiteWorkEntity,
-  OffSiteWorkWithRelations,
   CreateOffSiteWorkInput,
-  UpdateOffSiteWorkInput,
+  OffSiteWorkEntity,
   OffSiteWorkFilterCriteria,
+  OffSiteWorkWithRelations,
+  ResolvedParticipant,
+  UpdateOffSiteWorkInput,
 } from "./types";
-import type { PaginatedResult } from "@/lib/shared/types";
 
-type JsonValue = Prisma.JsonValue;
-
-/**
- * Request context for logging
- */
-interface RequestContext {
-  ipAddress?: string;
-  userAgent?: string;
-  requestPath?: string;
-  requestMethod?: string;
+function snapshotEmployeeId(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  return /^[0-9]{1,6}$/.test(trimmed) ? trimmed.padStart(6, "0") : null;
 }
 
-/**
- * OffSiteWork Service - Business logic functions
- */
-export const offSiteWorkService = {
-  /**
-   * Get off-site work by ID
-   */
-  async getById(id: string): Promise<Result<OffSiteWorkWithRelations>> {
-    const record = await offSiteWorkRepository.findWithRelations(id);
+function participantIds(
+  input: { participantUserIds?: string[] },
+): string[] {
+  return [
+    ...new Set(
+      (input.participantUserIds ?? [])
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
 
-    if (!record) {
-      return error("Off-site work record not found", "OFF_SITE_WORK_NOT_FOUND");
+async function resolveParticipants(ids: string[]): Promise<Result<ResolvedParticipant[]>> {
+  const users = await repo.findUsersByIds(ids);
+  if (users.length !== ids.length) {
+    return error("พบผู้เดินทางที่ไม่มีอยู่หรือไม่ได้ใช้งาน", "INVALID_PARTICIPANTS");
+  }
+  return success(
+    users.map((user) => ({
+      userId: user.id,
+      employeeIdSnapshot: snapshotEmployeeId(user.employeeId),
+      firstNameSnapshot: user.firstName,
+      lastNameSnapshot: user.lastName,
+      positionSnapshot: user.position,
+      positionShortSnapshot: user.positionShort,
+      positionLevelSnapshot: user.positionLevel,
+      departmentIdSnapshot: user.departmentId,
+      departmentNameSnapshot: user.department?.name ?? null,
+    })),
+  );
+}
+
+async function resolveLeader<T extends CreateOffSiteWorkInput | UpdateOffSiteWorkInput>(
+  input: T,
+): Promise<Result<T>> {
+  if (!input.leaderUserId) {
+    if (
+      input.leaderEmpId?.trim() &&
+      snapshotEmployeeId(input.leaderEmpId) === null
+    ) {
+      return error(
+        "รหัสพนักงานหัวหน้าชุดต้องเป็นตัวเลข 1-6 หลัก",
+        "INVALID_LEADER_EMPLOYEE_ID",
+      );
     }
+    const hasExternalLeader = Boolean(
+      input.leaderFirstName?.trim() ||
+        input.leaderLastName?.trim() ||
+        input.leaderEmail?.trim(),
+    );
+    if (input.leaderUserId === null && !hasExternalLeader) {
+      return success({
+        ...input,
+        leaderEmpId: null,
+        leaderFirstName: null,
+        leaderLastName: null,
+        leaderPosition: null,
+        leaderEmail: null,
+      });
+    }
+    return success({
+      ...input,
+      leaderEmpId: snapshotEmployeeId(input.leaderEmpId),
+    });
+  }
+  const [leader] = await repo.findUsersByIds([input.leaderUserId]);
+  if (!leader) return error("ไม่พบหัวหน้าชุดที่เลือก", "LEADER_NOT_FOUND");
+  return success({
+    ...input,
+    leaderEmpId: snapshotEmployeeId(leader.employeeId),
+    leaderFirstName: leader.firstName,
+    leaderLastName: leader.lastName,
+    leaderPosition: leader.position,
+    leaderEmail: leader.peaEmail ?? leader.email,
+  });
+}
 
-    return success(record);
+function validDateRange(startValue: Date | string, endValue: Date | string): boolean {
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+  return !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end >= start;
+}
+
+export const offSiteWorkService = {
+  async getById(id: string): Promise<Result<OffSiteWorkWithRelations>> {
+    const record = await repo.findWithRelations(id);
+    return record
+      ? success(record)
+      : error("ไม่พบใบนำตัว", "OFF_SITE_WORK_NOT_FOUND");
   },
 
-  /**
-   * Create a new off-site work record
-   */
   async create(
-    data: CreateOffSiteWorkInput,
+    input: CreateOffSiteWorkInput,
     actorId: string,
-    context?: RequestContext
   ): Promise<Result<OffSiteWorkEntity>> {
-    // Validate date range
-    const startDate = new Date(data.startDate);
-    const endDate = new Date(data.endDate);
-
-    if (endDate < startDate) {
-      return error(
-        "End date must be after or equal to start date",
-        "INVALID_DATE_RANGE"
-      );
+    if (!input.id?.trim()) return error("กรุณาระบุเลขที่ใบนำตัว", "MISSING_ID");
+    if (!validDateRange(input.startDate, input.endDate)) {
+      return error("ช่วงวันที่ใบนำตัวไม่ถูกต้อง", "INVALID_DATE_RANGE");
+    }
+    if (input.supersedesId) {
+      const target = await repo.findAnyById(input.supersedesId);
+      if (!target || target.deletedAt || !target.lockedAt) {
+        return error(
+          "สร้างฉบับทดแทนได้เฉพาะใบนำตัวที่ถูกล็อกและยังไม่ถูกลบ",
+          "INVALID_REPLACEMENT_TARGET",
+        );
+      }
     }
 
-    // Validate ID is provided
-    if (!data.id || data.id.trim().length === 0) {
-      return error("Document ID is required", "MISSING_ID");
+    const ids = participantIds(input);
+    if (ids.length === 0) {
+      return error("กรุณาเลือกผู้เดินทางอย่างน้อย 1 คน", "PARTICIPANTS_REQUIRED");
     }
+    const participants = await resolveParticipants(ids);
+    if (!participants.success) return participants;
+    const leaderInput = await resolveLeader(input);
+    if (!leaderInput.success) return leaderInput;
 
-    // Check for duplicate ID
-    const existing = await offSiteWorkRepository.findById(data.id);
-    if (existing) {
-      return error(
-        "Off-site work with this ID already exists",
-        "DUPLICATE_ID"
-      );
+    let creation: {
+      record: OffSiteWorkEntity;
+      invalidatedClaimIds: string[];
+    };
+    try {
+      creation = await repo.create(leaderInput.data, actorId, participants.data);
+    } catch (cause) {
+      const code = cause instanceof Error ? cause.message : "";
+      const prismaCode =
+        cause && typeof cause === "object" && "code" in cause
+          ? String(cause.code)
+          : "";
+      if (code === "DUPLICATE_OFF_SITE_WORK_ID") {
+        return error("เลขที่ใบนำตัวนี้มีอยู่แล้ว", "DUPLICATE_ID");
+      }
+      if (code === "INVALID_REPLACEMENT_TARGET") {
+        return error("ใบนำตัวต้นฉบับไม่อยู่ในสถานะที่แทนที่ได้", code);
+      }
+      if (code === "REPLACEMENT_ALREADY_EXISTS") {
+        return error("ใบนำตัวต้นฉบับมีฉบับทดแทนที่ใช้งานอยู่แล้ว", code);
+      }
+      if (code === "CLAIM_COLLECTION_STATE_CHANGED" || prismaCode === "P2034") {
+        return error(
+          "ข้อมูลคำขอหรือ monthly request เปลี่ยนระหว่างสร้างฉบับทดแทน กรุณาลองใหม่",
+          "CONCURRENT_WORKFLOW_CHANGE",
+        );
+      }
+      if (prismaCode === "P2002") {
+        return input.supersedesId
+          ? error(
+              "ใบนำตัวต้นฉบับมีฉบับทดแทนที่ใช้งานอยู่แล้ว",
+              "REPLACEMENT_ALREADY_EXISTS",
+            )
+          : error("เลขที่ใบนำตัวนี้มีอยู่แล้ว", "DUPLICATE_ID");
+      }
+      throw cause;
     }
-
-    const record = await offSiteWorkRepository.create(data, actorId);
-
-    // Log creation
+    const { record, invalidatedClaimIds } = creation;
     await actionLogService.log({
       userId: actorId,
       actionType: ActionType.OTHER,
@@ -92,132 +178,118 @@ export const offSiteWorkService = {
       targetEntityType: "OffSiteWork",
       targetEntityId: record.id,
       newData: {
-        id: record.id,
+        participantCount: participants.data.length,
         startDate: record.startDate.toISOString(),
         endDate: record.endDate.toISOString(),
-        objective: record.objective,
-        location: record.location,
-      } as unknown as JsonValue,
-      ...context,
+      },
     });
-
-    return success(record, "Off-site work created successfully");
+    await Promise.all(
+      invalidatedClaimIds.map((claimId) =>
+        actionLogService.log({
+          userId: actorId,
+          actionType: ActionType.CLAIM_REJECTED,
+          actionDescription: `Expense claim "${claimId}" invalidated by replacement off-site work "${record.id}"`,
+          targetEntityType: "ExpenseClaim",
+          targetEntityId: claimId,
+          newData: {
+            replacementOffSiteWorkId: record.id,
+            supersededOffSiteWorkId: record.supersedesId,
+          },
+        }),
+      ),
+    );
+    return success(record, "สร้างใบนำตัวเรียบร้อย");
   },
 
-  /**
-   * Update an off-site work record
-   */
   async update(
     id: string,
-    data: UpdateOffSiteWorkInput,
+    input: UpdateOffSiteWorkInput,
     actorId: string,
-    context?: RequestContext
   ): Promise<Result<OffSiteWorkEntity>> {
-    const existing = await offSiteWorkRepository.findById(id);
-
-    if (!existing) {
-      return error("Off-site work record not found", "OFF_SITE_WORK_NOT_FOUND");
-    }
-
-    // Validate date range if both dates provided
-    const startDate = data.startDate
-      ? new Date(data.startDate)
-      : existing.startDate;
-    const endDate = data.endDate ? new Date(data.endDate) : existing.endDate;
-
-    if (endDate < startDate) {
+    const existing = await repo.findById(id);
+    if (!existing) return error("ไม่พบใบนำตัว", "OFF_SITE_WORK_NOT_FOUND");
+    if (existing.lockedAt) {
       return error(
-        "End date must be after or equal to start date",
-        "INVALID_DATE_RANGE"
+        "ใบนำตัวถูกล็อกหลังมีการส่งคำขอแล้ว กรุณาสร้างใบนำตัวฉบับทดแทน",
+        "OFF_SITE_WORK_LOCKED",
       );
     }
+    if (
+      !validDateRange(
+        input.startDate ?? existing.startDate,
+        input.endDate ?? existing.endDate,
+      )
+    ) {
+      return error("ช่วงวันที่ใบนำตัวไม่ถูกต้อง", "INVALID_DATE_RANGE");
+    }
 
-    const previousData = {
-      innerRefDocumentId: existing.innerRefDocumentId,
-      startDate: existing.startDate.toISOString(),
-      endDate: existing.endDate.toISOString(),
-      objective: existing.objective,
-      location: existing.location,
-    };
+    let participants: ResolvedParticipant[] | undefined;
+    if (input.participantUserIds !== undefined) {
+      const ids = participantIds(input);
+      if (ids.length === 0) {
+        return error("กรุณาเลือกผู้เดินทางอย่างน้อย 1 คน", "PARTICIPANTS_REQUIRED");
+      }
+      const result = await resolveParticipants(ids);
+      if (!result.success) return result;
+      participants = result.data;
+    }
+    const leaderInput = await resolveLeader(input);
+    if (!leaderInput.success) return leaderInput;
 
-    const record = await offSiteWorkRepository.update(id, data);
-
-    // Log update
+    let record: OffSiteWorkEntity;
+    try {
+      record = await repo.update(id, leaderInput.data, participants);
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === "OFF_SITE_WORK_LOCKED") {
+        return error(
+          "ใบนำตัวถูกล็อกระหว่างการแก้ไข กรุณาสร้างฉบับทดแทน",
+          "OFF_SITE_WORK_LOCKED",
+        );
+      }
+      throw cause;
+    }
     await actionLogService.log({
       userId: actorId,
       actionType: ActionType.OTHER,
       actionDescription: `Off-site work "${id}" updated`,
       targetEntityType: "OffSiteWork",
       targetEntityId: id,
-      previousData: previousData as unknown as JsonValue,
-      newData: data as unknown as JsonValue,
-      ...context,
+      newData: {
+        changedFields: Object.keys(input),
+        participantCount: record.participants.length,
+        lockedAt: record.lockedAt?.toISOString() ?? null,
+      },
     });
-
-    return success(record, "Off-site work updated successfully");
+    return success(record, "แก้ไขใบนำตัวเรียบร้อย");
   },
 
-  /**
-   * Soft-delete an off-site work record
-   */
-  async delete(
-    id: string,
-    actorId: string,
-    context?: RequestContext
-  ): Promise<Result<void>> {
-    const existing = await offSiteWorkRepository.findById(id);
-
-    if (!existing) {
-      return error("Off-site work record not found", "OFF_SITE_WORK_NOT_FOUND");
+  async delete(id: string, actorId: string): Promise<Result<void>> {
+    const existing = await repo.findById(id);
+    if (!existing) return error("ไม่พบใบนำตัว", "OFF_SITE_WORK_NOT_FOUND");
+    if (existing.lockedAt || (await repo.hasRevisionSnapshots(id))) {
+      return error("ไม่สามารถลบใบนำตัวที่ถูกใช้อ้างอิงแล้ว", "OFF_SITE_WORK_LOCKED");
     }
-
-    // Check for linked expense claims
-    const hasExpenseClaims = await offSiteWorkRepository.hasExpenseClaims(id);
-    if (hasExpenseClaims) {
-      return error(
-        "Cannot delete off-site work with linked expense claims",
-        "HAS_EXPENSE_CLAIMS"
-      );
+    try {
+      await repo.softDelete(id);
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === "OFF_SITE_WORK_LOCKED") {
+        return error("ใบนำตัวถูกใช้อ้างอิงแล้ว", "OFF_SITE_WORK_LOCKED");
+      }
+      throw cause;
     }
-
-    await offSiteWorkRepository.softDelete(id);
-
-    // Log soft-delete
     await actionLogService.log({
       userId: actorId,
       actionType: ActionType.OTHER,
       actionDescription: `Off-site work "${id}" deleted`,
       targetEntityType: "OffSiteWork",
       targetEntityId: id,
-      previousData: {
-        id: existing.id,
-        objective: existing.objective,
-        location: existing.location,
-      } as unknown as JsonValue,
-      ...context,
     });
-
-    return success(undefined, "Off-site work deleted successfully");
+    return success(undefined, "ยกเลิกใบนำตัวเรียบร้อย");
   },
 
-  /**
-   * List off-site work records with filters
-   */
   async list(
-    criteria: OffSiteWorkFilterCriteria
+    criteria: OffSiteWorkFilterCriteria,
   ): Promise<Result<PaginatedResult<OffSiteWorkWithRelations>>> {
-    const result = await offSiteWorkRepository.findMany(criteria);
-    return success(result);
-  },
-
-  /**
-   * Get off-site work records by user
-   */
-  async getByUser(
-    userId: string,
-    limit?: number
-  ): Promise<Result<OffSiteWorkWithRelations[]>> {
-    const records = await offSiteWorkRepository.findByUser(userId, limit);
-    return success(records);
+    return success(await repo.findMany(criteria));
   },
 };

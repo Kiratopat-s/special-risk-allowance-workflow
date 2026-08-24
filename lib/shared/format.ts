@@ -7,11 +7,18 @@
  * @module lib/shared/format
  */
 
+export const APP_TIME_ZONE = "Asia/Bangkok";
+
+const THAI_DATE_OPTIONS = {
+    timeZone: APP_TIME_ZONE,
+} as const;
+
 /**
  * Returns a full Thai month-year string, e.g. "มีนาคม 2568".
  */
 export function monthDisplay(value: Date | string): string {
     return new Date(value).toLocaleDateString("th-TH", {
+        ...THAI_DATE_OPTIONS,
         year: "numeric",
         month: "long",
     });
@@ -22,6 +29,7 @@ export function monthDisplay(value: Date | string): string {
  */
 export function dateDisplay(value: Date | string): string {
     return new Date(value).toLocaleDateString("th-TH", {
+        ...THAI_DATE_OPTIONS,
         day: "2-digit",
         month: "2-digit",
         year: "numeric",
@@ -38,6 +46,7 @@ export function longDateDisplay(
 ): string {
     if (!value) return fallback;
     return new Date(value).toLocaleDateString("th-TH", {
+        ...THAI_DATE_OPTIONS,
         day: "numeric",
         month: "long",
         year: "numeric",
@@ -49,6 +58,7 @@ export function longDateDisplay(
  */
 export function shortDateDisplay(value: Date | string): string {
     return new Date(value).toLocaleDateString("th-TH", {
+        ...THAI_DATE_OPTIONS,
         year: "numeric",
         month: "short",
         day: "numeric",
@@ -60,6 +70,7 @@ export function shortDateDisplay(value: Date | string): string {
  */
 export function dateTimeDisplay(value: Date | string): string {
     return new Date(value).toLocaleString("th-TH", {
+        ...THAI_DATE_OPTIONS,
         year: "numeric",
         month: "long",
         day: "numeric",
@@ -97,4 +108,17 @@ export function decimalText(value: unknown): string {
         return String((value as { toString(): string }).toString());
     }
     return String(value);
+}
+
+/**
+ * Formats money for the Thai UI while keeping exported workbook cells numeric.
+ */
+export function moneyDisplay(value: number | string): string {
+    const amount = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(amount)
+        ? amount.toLocaleString("th-TH", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        })
+        : "-";
 }

@@ -61,10 +61,12 @@ export const DEFAULT_PERMISSIONS: CreatePermissionInput[] = [
     { code: "expense-claim:list:department", name: "List Department Expense Claims", resource: "EXPENSE_CLAIM", action: "LIST", scope: "DEPARTMENT", isSystem: true },
     { code: "expense-claim:list:all", name: "List All Expense Claims", resource: "EXPENSE_CLAIM", action: "LIST", scope: "ALL", isSystem: true },
     { code: "expense-claim:submit", name: "Submit Expense Claims", resource: "EXPENSE_CLAIM", action: "SUBMIT", scope: "OWN", isSystem: true },
-    { code: "expense-claim:approve", name: "Approve Expense Claims", resource: "EXPENSE_CLAIM", action: "APPROVE", scope: "DEPARTMENT", isSystem: true },
-    { code: "expense-claim:approve:all", name: "Approve All Expense Claims", resource: "EXPENSE_CLAIM", action: "APPROVE", scope: "ALL", isSystem: true },
-    { code: "expense-claim:reject", name: "Reject Expense Claims", resource: "EXPENSE_CLAIM", action: "REJECT", scope: "DEPARTMENT", isSystem: true },
+    { code: "expense-claim:recheck:all", name: "Recheck All Expense Claims", resource: "EXPENSE_CLAIM", action: "RECHECK", scope: "ALL", isSystem: true },
     { code: "expense-claim:reject:all", name: "Reject All Expense Claims", resource: "EXPENSE_CLAIM", action: "REJECT", scope: "ALL", isSystem: true },
+    { code: "expense-claim:collect:all", name: "Collect All Expense Claims", resource: "EXPENSE_CLAIM", action: "COLLECT", scope: "ALL", isSystem: true },
+    { code: "expense-claim:remove:all", name: "Remove Claims From Draft Collections", resource: "EXPENSE_CLAIM", action: "REMOVE", scope: "ALL", isSystem: true },
+    { code: "expense-claim:flag:all", name: "Flag Suspicious Expense Claims", resource: "EXPENSE_CLAIM", action: "FLAG", scope: "ALL", isSystem: true },
+    { code: "expense-claim:resolve:all", name: "Resolve Suspicious Expense Claims", resource: "EXPENSE_CLAIM", action: "RESOLVE", scope: "ALL", isSystem: true },
     { code: "expense-claim:cancel", name: "Cancel Own Expense Claims", resource: "EXPENSE_CLAIM", action: "CANCEL", scope: "OWN", isSystem: true },
     { code: "expense-claim:manage", name: "Manage Expense Claims", resource: "EXPENSE_CLAIM", action: "MANAGE", scope: "ALL", isSystem: true },
 
@@ -81,18 +83,17 @@ export const DEFAULT_PERMISSIONS: CreatePermissionInput[] = [
     { code: "off-site-work:manage", name: "Manage Off-Site Work", resource: "OFF_SITE_WORK", action: "MANAGE", scope: "ALL", isSystem: true },
 
     // MONTHLY REQUEST PERMISSIONS
-    { code: "monthly-request:create", name: "Create Monthly Requests", resource: "MONTHLY_REQUEST", action: "CREATE", scope: "DEPARTMENT", isSystem: true },
-    { code: "monthly-request:read", name: "Read Monthly Requests", resource: "MONTHLY_REQUEST", action: "READ", scope: "DEPARTMENT", isSystem: true },
+    { code: "monthly-request:create", name: "Create Monthly Requests", resource: "MONTHLY_REQUEST", action: "CREATE", scope: "ALL", isSystem: true },
     { code: "monthly-request:read:all", name: "Read All Monthly Requests", resource: "MONTHLY_REQUEST", action: "READ", scope: "ALL", isSystem: true },
-    { code: "monthly-request:update", name: "Update Monthly Requests", resource: "MONTHLY_REQUEST", action: "UPDATE", scope: "DEPARTMENT", isSystem: true },
+    { code: "monthly-request:update", name: "Update Draft Monthly Requests", resource: "MONTHLY_REQUEST", action: "UPDATE", scope: "ALL", isSystem: true },
     { code: "monthly-request:list", name: "List Monthly Requests", resource: "MONTHLY_REQUEST", action: "LIST", scope: "ALL", isSystem: true },
-    { code: "monthly-request:submit", name: "Submit Monthly Requests", resource: "MONTHLY_REQUEST", action: "SUBMIT", scope: "DEPARTMENT", isSystem: true },
-    { code: "monthly-request:approve", name: "Approve Monthly Requests", resource: "MONTHLY_REQUEST", action: "APPROVE", scope: "ALL", isSystem: true },
+    { code: "monthly-request:cancel", name: "Cancel Draft Monthly Requests", resource: "MONTHLY_REQUEST", action: "CANCEL", scope: "ALL", isSystem: true },
+    { code: "monthly-request:finalize", name: "Finalize Monthly Requests", resource: "MONTHLY_REQUEST", action: "FINALIZE", scope: "ALL", isSystem: true },
+    { code: "monthly-request:complete", name: "Record Paper Approval", resource: "MONTHLY_REQUEST", action: "COMPLETE", scope: "ALL", isSystem: true },
+    { code: "monthly-request:void", name: "Void Monthly Requests", resource: "MONTHLY_REQUEST", action: "VOID", scope: "ALL", isSystem: true },
+    { code: "monthly-request:print", name: "Print Monthly Requests", resource: "MONTHLY_REQUEST", action: "PRINT", scope: "ALL", isSystem: true },
+    { code: "monthly-request:export", name: "Export Monthly Requests", resource: "MONTHLY_REQUEST", action: "EXPORT", scope: "ALL", isSystem: true },
     { code: "monthly-request:manage", name: "Manage Monthly Requests", resource: "MONTHLY_REQUEST", action: "MANAGE", scope: "ALL", isSystem: true },
-    // Per-approval-stage review permissions (1-to-1 with MrcApprovalStage)
-    { code: "monthly-request:review:hpa", name: "Review MRC — HPA_CHECK Stage", resource: "MONTHLY_REQUEST", action: "REVIEW_HPA", scope: "ALL", isSystem: true },
-    { code: "monthly-request:review:rk", name: "Review MRC — RK_CHECK Stage", resource: "MONTHLY_REQUEST", action: "REVIEW_RK", scope: "ALL", isSystem: true },
-    { code: "monthly-request:review:ok", name: "Review MRC — OK_APPROVE Stage", resource: "MONTHLY_REQUEST", action: "REVIEW_OK", scope: "ALL", isSystem: true },
 
     // SIGNATURE PERMISSIONS
     { code: "signature:create", name: "Create Own Signature", resource: "SIGNATURE", action: "CREATE", scope: "OWN", isSystem: true },
@@ -130,10 +131,7 @@ export const DEFAULT_PERMISSIONS: CreatePermissionInput[] = [
  * Default system roles
  *
  * employee  — Regular employee with basic permissions (can create OSW, ECD, signature)
- * collector — Employee extended with MRC management permissions
- * hpa       — Employee extended with HPA_CHECK review permission
- * rk        — Employee extended with RK_CHECK review permission
- * drt       — Employee extended with OK_APPROVE permission
+ * collector — Employee extended with cross-department review and MRC permissions
  * super-admin — Full system access with all permissions
  */
 export const DEFAULT_ROLES: CreateRoleInput[] = [
@@ -158,33 +156,9 @@ export const DEFAULT_ROLES: CreateRoleInput[] = [
         level: 20,
         isSystem: true,
     },
-    // -------------------------------------------------------------------------
-    // MRC Approval workflow roles (1-to-1 with approval stages)
-    // -------------------------------------------------------------------------
-    {
-        code: "hpa",
-        name: "หัวหน้าแผนก (HPA)",
-        description: "ผู้ตรวจสอบในขั้นตอน HPA_CHECK — หัวหน้าแผนก",
-        level: 45,
-        isSystem: true,
-    },
-    {
-        code: "rk",
-        name: "รองผู้อำนวยการกอง (RK)",
-        description: "ผู้ตรวจสอบในขั้นตอน RK_CHECK — รองผู้อำนวยการกอง",
-        level: 55,
-        isSystem: true,
-    },
-    {
-        code: "drt",
-        name: "ผู้อำนวยการกอง (DRT)",
-        description: "ผู้อนุมัติขั้นสุดท้าย OK_APPROVE — ผู้อำนวยการกอง",
-        level: 70,
-        isSystem: true,
-    },
 ];
 
-// Base permissions shared by all employees (including collector, hpa, rk, drt)
+// Base permissions shared by all employees (including collectors).
 const EMPLOYEE_BASE_PERMISSIONS = [
     "user:read",
     "user:update",
@@ -226,9 +200,6 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         "off-site-work:manage",
         "monthly-request:manage",
         "monthly-request:list",
-        "monthly-request:review:hpa",
-        "monthly-request:review:rk",
-        "monthly-request:review:ok",
         "signature:manage",
         "file:manage",
         "action-log:read:all",
@@ -253,46 +224,23 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         "expense-claim:list:all",
         "off-site-work:read:all",
         "off-site-work:list:all",
+        "expense-claim:recheck:all",
+        "expense-claim:reject:all",
+        "expense-claim:collect:all",
+        "expense-claim:remove:all",
+        "expense-claim:flag:all",
+        "expense-claim:resolve:all",
         // MRC management
         "monthly-request:create",
         "monthly-request:read:all",
         "monthly-request:update",
         "monthly-request:list",
-        "monthly-request:submit",
-        "monthly-request:manage",
-    ],
-    // -------------------------------------------------------------------------
-    // MRC workflow approver roles — employee base + stage-specific review
-    // -------------------------------------------------------------------------
-    hpa: [
-        ...EMPLOYEE_BASE_PERMISSIONS,
-        "user:read:department",
-        "department:read",
-        "department:list",
-        "monthly-request:read:all",
-        "monthly-request:list",
-        "monthly-request:submit",       // sidebar visibility
-        "monthly-request:review:hpa",   // stage gate
-    ],
-    rk: [
-        ...EMPLOYEE_BASE_PERMISSIONS,
-        "user:read:department",
-        "department:read",
-        "department:list",
-        "monthly-request:read:all",
-        "monthly-request:list",
-        "monthly-request:submit",       // sidebar visibility
-        "monthly-request:review:rk",    // stage gate
-    ],
-    drt: [
-        ...EMPLOYEE_BASE_PERMISSIONS,
-        "user:read:department",
-        "department:read",
-        "department:list",
-        "monthly-request:read:all",
-        "monthly-request:list",
-        "monthly-request:approve",      // sidebar visibility
-        "monthly-request:review:ok",    // stage gate
+        "monthly-request:cancel",
+        "monthly-request:finalize",
+        "monthly-request:complete",
+        "monthly-request:void",
+        "monthly-request:print",
+        "monthly-request:export",
     ],
 };
 

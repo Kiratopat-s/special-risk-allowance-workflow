@@ -13,7 +13,7 @@ import {
   ExternalLink,
   FileText,
   MapPin,
-  PenLine,
+  SearchCheck,
   ShieldCheck,
   Star,
 } from "lucide-react";
@@ -43,16 +43,16 @@ const MODULES = [
     desc: "ติดตามและบันทึกการปฏิบัติงานในพื้นที่เสี่ยงภัย เพื่อใช้ประกอบการเบิกค่าตอบแทน",
   },
   {
-    icon: PenLine,
-    label: "Digital Signatures",
-    title: "ลายเซ็นดิจิทัล",
-    desc: "วาดและจัดเก็บลายเซ็นส่วนตัวสำหรับผู้อนุมัติ ระบบพิมพ์ลายเซ็นลงเอกสารโดยอัตโนมัติ",
+    icon: CheckCircle2,
+    label: "Leader Confirmation",
+    title: "หัวหน้ารับรองออนไลน์",
+    desc: "หัวหน้าชุดตรวจ snapshot ของแต่ละใบนำตัวและวันที่รับผิดชอบ ก่อนยืนยัน revision ด้วยลายเซ็นออนไลน์",
   },
   {
-    icon: CheckCircle2,
-    label: "Multi-stage Approval",
-    title: "ขั้นตอนอนุมัติ",
-    desc: "กระบวนการ 3 ขั้น: หผ. ตรวจสอบ → รก. ตรวจสอบ → อก. อนุมัติ พร้อม Audit Trail",
+    icon: SearchCheck,
+    label: "Collector Recheck",
+    title: "ตรวจสอบจากหน้าเดียว",
+    desc: "เปรียบเทียบ participant คำขอ วันที่ และสถานะ พร้อม Reject ติดธงน่าสงสัย และรวบรวมข้ามหน่วยงาน",
   },
   {
     icon: ShieldCheck,
@@ -70,13 +70,13 @@ const STEPS = [
   },
   {
     n: "02",
-    title: "ตรวจสอบ",
-    desc: "หัวหน้าและรองหัวหน้าตรวจสอบความถูกต้องก่อนส่งต่อผู้มีอำนาจอนุมัติ",
+    title: "หัวหน้ารับรอง",
+    desc: "หัวหน้าชุดยืนยันเฉพาะวันและใบนำตัวในความรับผิดชอบจาก snapshot ของ revision",
   },
   {
     n: "03",
-    title: "อนุมัติ & ออกเอกสาร",
-    desc: "ผู้อำนวยการอนุมัติและระบบสร้างเอกสารทางการพร้อมลายเซ็นดิจิทัลโดยอัตโนมัติ",
+    title: "รวบรวม & ส่งกระดาษ",
+    desc: "Collector ตรวจ Finalize พิมพ์ และ Export Excel ส่วน Monthly Request ลงนามจริงบนกระดาษ",
   },
 ] as const;
 
@@ -136,7 +136,8 @@ export default async function Home() {
                     Special Risk Allowance Workflow
                   </span>{" "}
                   — ระบบจัดการเบิกค่าตอบแทนเสี่ยงภัยพิเศษครบวงจร
-                  ตั้งแต่การยื่นคำขอ ตรวจสอบ อนุมัติ จนถึงออกเอกสารทางการ
+                  ตั้งแต่การยื่นคำขอ รับรองโดยหัวหน้าชุด ตรวจรวบรวม
+                  จนถึงออกเอกสารกระดาษและ Excel
                 </p>
               </div>
 

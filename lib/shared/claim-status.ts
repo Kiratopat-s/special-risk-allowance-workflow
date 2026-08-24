@@ -1,17 +1,17 @@
 /**
  * Claim Status Helpers
  *
- * Shared badge-variant mapping for `ClaimDocumentStatus`.
+ * Shared badge-variant mapping for `ExpenseClaimStatus`.
  * Each feature page supplies its own label strings (they differ by context /
  * audience), but the colour-coding is identical everywhere.
  *
  * @module lib/shared/claim-status
  */
 
-import type { ClaimDocumentStatus } from "./types";
+import type { ExpenseClaimStatus } from "./types";
 
 /**
- * Maps a `ClaimDocumentStatus` value to a shadcn `Badge` variant.
+ * Maps an `ExpenseClaimStatus` value to a shadcn `Badge` variant.
  *
  * - `"default"`     → green-ish (approved / ready)
  * - `"secondary"`   → neutral   (in-progress)
@@ -19,12 +19,12 @@ import type { ClaimDocumentStatus } from "./types";
  * - `"outline"`     → subtle    (draft / unknown)
  */
 export function claimStatusVariant(
-    status: ClaimDocumentStatus,
+    status: ExpenseClaimStatus,
 ): "default" | "secondary" | "destructive" | "outline" {
-    if (status === "APPROVED" || status === "WAIT_FOR_COLLECTION")
+    if (status === "COMPLETED" || status === "READY_FOR_COLLECTION")
         return "default";
     if (status === "REJECTED" || status === "CANCELLED") return "destructive";
-    if (status === "PENDING" || status === "PENDING_LEADER_VERIFY")
+    if (status === "PENDING_LEADER_CONFIRMATION" || status === "COLLECTED")
         return "secondary";
     return "outline";
 }

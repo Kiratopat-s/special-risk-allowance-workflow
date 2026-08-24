@@ -1,151 +1,208 @@
-/**
- * ExpenseClaimDocument Domain - Entity Types
- *
- * Pure domain types for expense claim document entity
- *
- * @module lib/domains/expense-claim-document/types
- */
+import type {
+  ExpenseClaimRevisionStatus,
+  ExpenseClaimStatus,
+  HolidaySource,
+  HolidayType,
+  WorkDayType,
+} from "@/lib/shared/types";
 
-import type { ClaimDocumentStatus } from "@/lib/shared/types";
-import type { Prisma } from "@/lib/generated/prisma/client";
+export interface ClaimWorkDateInput {
+  date: string;
+  offSiteWorkId: string;
+  weSafeCodes?: string[];
+}
 
-/**
- * Core ExpenseClaim entity interface
- */
+export interface ClaimWorkDateView {
+  id: string;
+  date: string;
+  offSiteWorkId: string;
+  dayType: WorkDayType;
+  holidayType: HolidayType;
+  holidayName: string | null;
+  holidaySource: HolidaySource;
+  requiresWeSafe: boolean;
+  dailyRate: number;
+  weSafeCodes: string[];
+}
+
+export interface ClaimRevisionOffSiteWorkView {
+  id: string;
+  offSiteWorkId: string;
+  innerRefDocumentId: string | null;
+  startDate: Date;
+  endDate: Date;
+  objective: string | null;
+  location: string | null;
+  leaderUserId: string | null;
+  leaderEmpId: string | null;
+  leaderFirstName: string;
+  leaderLastName: string;
+  leaderPosition: string | null;
+  leaderEmail: string | null;
+}
+
+export interface ClaimRevisionView {
+  id: string;
+  revisionNo: number;
+  status: ExpenseClaimRevisionStatus;
+  claimantPositionAtSubmission: string;
+  totalDays: number;
+  totalAmount: number;
+  ratePerDay: number;
+  remark: string | null;
+  submittedAt: Date | null;
+  supersededAt: Date | null;
+  offSiteWorks: ClaimRevisionOffSiteWorkView[];
+  workDates: ClaimWorkDateView[];
+}
+
 export interface ExpenseClaimDocumentEntity {
+  id: string;
+  expenseMonth: Date;
+  userId: string;
+  createdById: string;
+  status: ExpenseClaimStatus;
+  currentRevisionNo: number;
+  collectedAt: Date | null;
+  completedAt: Date | null;
+  rejectedAt: Date | null;
+  rejectionReason: string | null;
+  cancelledAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  currentRevision: ClaimRevisionView;
+  claimantPositionAtSubmission: string;
+  countDates: number;
+  amount: number;
+  remark: string | null;
+  monthlyRequestCollectionId: string | null;
+}
+
+export interface ExpenseClaimDocumentWithRelations extends ExpenseClaimDocumentEntity {
+  claimant: {
     id: string;
-    expenseMonth: Date;
-    userId: string;
-    claimantPositionAtSubmission: string;
-    selectedDates: string[] | null;
-    countDates: number | null;
-    amount: number | null;
-    remark: string | null;
-    createdById: string;
-    createdAt: Date;
-    status: ClaimDocumentStatus;
-    updatedAt: Date | null;
-    cancelledAt: Date | null;
-    monthlyRequestCollectionId: string | null;
-    collectedAt: Date | null;
+    firstName: string;
+    lastName: string;
+    employeeId: string | null;
+    departmentId: string | null;
+  };
+  createdBy: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    employeeId: string | null;
+  };
+  expenseClaimOffSiteWorks: Array<{
+    offSiteWorkId: string;
+    offSiteWork: {
+      id: string;
+      innerRefDocumentId: string | null;
+      startDate: Date;
+      endDate: Date;
+      location: string | null;
+      objective: string | null;
+      leaderUserId: string | null;
+      leaderEmpId: string | null;
+      leaderFirstName: string | null;
+      leaderLastName: string | null;
+      leaderPosition: string | null;
+      leaderEmail: string | null;
+    };
+  }>;
+  leaderVerifications: Array<{
+    id: string;
+    revisionNo: number;
+    offSiteWorkId: string;
+    leaderUserId: string | null;
+    leaderEmail: string | null;
+    expiresAt: Date;
+    confirmedAt: Date | null;
+    status: "PENDING" | "CONFIRMED" | "SUPERSEDED";
+  }>;
 }
 
-/**
- * Expense claim with selected relations
- */
-export interface ExpenseClaimDocumentWithRelations
-    extends ExpenseClaimDocumentEntity {
-    claimant: {
-        id: string;
-        firstName: string;
-        lastName: string;
-        employeeId: string | null;
-        departmentId: string | null;
-    };
-    createdBy: {
-        id: string;
-        firstName: string;
-        lastName: string;
-        employeeId: string | null;
-    };
-    expenseClaimOffSiteWorks: Array<{
-        offSiteWorkId: string;
-        offSiteWork: {
-            id: string;
-            innerRefDocumentId: string | null;
-            startDate: Date;
-            endDate: Date;
-            location: string | null;
-            objective: string | null;
-            leaderUserId: string | null;
-            leaderEmpId: string | null;
-            leaderFirstName: string | null;
-            leaderLastName: string | null;
-            leaderPosition: string | null;
-            leaderEmail: string | null;
-        };
-    }>;
-    leaderVerifications: Array<{
-        id: string;
-        offSiteWorkId: string;
-        leaderUserId: string | null;
-        leaderEmail: string | null;
-        token: string;
-        expiresAt: Date;
-        verifiedAt: Date | null;
-    }>;
-}
-
-/**
- * Data required to create a claim document
- */
 export interface CreateExpenseClaimDocumentInput {
-    expenseMonth: Date | string;
-    userId?: string;
-    claimantPositionAtSubmission: string;
-    selectedDates?: string[];
-    countDates?: number | string | Prisma.Decimal;
-    amount?: number | string | Prisma.Decimal;
-    remark?: string;
-    status?: ClaimDocumentStatus;
-    monthlyRequestCollectionId?: string;
-    collectedAt?: Date | string;
-    offSiteWorkIds?: string[];
+  expenseMonth: Date | string;
+  userId?: string;
+  remark?: string;
+  workDates: ClaimWorkDateInput[];
 }
 
-/**
- * Data required to update a claim document
- */
 export interface UpdateExpenseClaimDocumentInput {
-    expenseMonth?: Date | string;
-    claimantPositionAtSubmission?: string;
-    selectedDates?: string[] | null;
-    countDates?: number | string | Prisma.Decimal | null;
-    amount?: number | string | Prisma.Decimal | null;
-    remark?: string | null;
-    status?: ClaimDocumentStatus;
-    monthlyRequestCollectionId?: string | null;
-    collectedAt?: Date | string | null;
-    offSiteWorkIds?: string[];
+  remark?: string | null;
+  workDates: ClaimWorkDateInput[];
+  expenseMonth?: Date | string;
 }
 
-/**
- * Filter criteria for listing claim documents
- */
 export interface ExpenseClaimDocumentFilterCriteria {
-    search?: string;
-    userId?: string;
-    createdById?: string;
-    status?: ClaimDocumentStatus;
-    expenseMonthFrom?: Date | string;
-    expenseMonthTo?: Date | string;
-    includeCancelled?: boolean;
-    page?: number;
-    pageSize?: number;
+  search?: string;
+  userId?: string;
+  createdById?: string;
+  status?: ExpenseClaimStatus;
+  expenseMonthFrom?: Date | string;
+  expenseMonthTo?: Date | string;
+  includeCancelled?: boolean;
+  page?: number;
+  pageSize?: number;
 }
 
-/**
- * Off-site work option eligible for creating claim documents
- */
 export interface EligibleOffSiteWorkOption {
+  id: string;
+  supersedesId: string | null;
+  innerRefDocumentId: string | null;
+  startDate: Date;
+  endDate: Date;
+  location: string | null;
+  objective: string | null;
+  hasLeader: boolean;
+  leaderFirstName: string | null;
+  leaderLastName: string | null;
+  leaderEmail: string | null;
+}
+
+export interface PreparedWorkDate {
+  date: Date;
+  dateIso: string;
+  offSiteWorkId: string;
+  dayType: WorkDayType;
+  holidayType: HolidayType;
+  holidayName: string | null;
+  holidaySource: HolidaySource;
+  requiresWeSafe: boolean;
+  weSafeCodes: string[];
+}
+
+export interface ClaimantSnapshot {
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  position: string | null;
+  positionShort: string;
+  positionLevel: string | null;
+  departmentId: string;
+  departmentName: string;
+  departmentShort: string | null;
+}
+
+export interface PreparedRevision {
+  claimant: ClaimantSnapshot;
+  remark: string | null;
+  workDates: PreparedWorkDate[];
+  offSiteWorks: Array<{
     id: string;
     innerRefDocumentId: string | null;
     startDate: Date;
     endDate: Date;
-    location: string | null;
     objective: string | null;
-    /** True when this OSW has an assigned leader (internal or external). */
-    hasLeader: boolean;
-    leaderFirstName: string | null;
-    leaderLastName: string | null;
+    location: string | null;
+    leaderUserId: string | null;
+    leaderEmpId: string | null;
+    leaderFirstName: string;
+    leaderLastName: string;
+    leaderPosition: string | null;
     leaderEmail: string | null;
+  }>;
+  totalDays: number;
+  totalAmount: number;
+  materialHash: string;
 }
-
-/**
- * Normalize selectedDates JSON field into typed array
- */
-export function toSelectedDates(data: unknown): string[] | null {
-    if (!data || !Array.isArray(data)) return null;
-    return data.filter((item): item is string => typeof item === "string");
-}
-

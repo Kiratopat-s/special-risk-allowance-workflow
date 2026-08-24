@@ -56,9 +56,14 @@ interface DashboardTabMeta {
 
 interface MonthlyAccess {
   canManage: boolean;
-  canHpa: boolean;
-  canRk: boolean;
-  canDrt: boolean;
+  canCreate: boolean;
+  canUpdate: boolean;
+  canFinalize: boolean;
+  canComplete: boolean;
+  canCancel: boolean;
+  canVoid: boolean;
+  canPrint: boolean;
+  canExport: boolean;
 }
 
 interface PermissionCheck {
@@ -231,9 +236,14 @@ async function renderMonthlyRequestsTab(monthlyAccess: MonthlyAccess) {
       initialItems={data.items}
       initialPagination={data.pagination}
       canManage={monthlyAccess.canManage}
-      canHpa={monthlyAccess.canHpa}
-      canRk={monthlyAccess.canRk}
-      canDrt={monthlyAccess.canDrt}
+      canCreate={monthlyAccess.canCreate}
+      canUpdate={monthlyAccess.canUpdate}
+      canFinalize={monthlyAccess.canFinalize}
+      canComplete={monthlyAccess.canComplete}
+      canCancel={monthlyAccess.canCancel}
+      canVoid={monthlyAccess.canVoid}
+      canPrint={monthlyAccess.canPrint}
+      canExport={monthlyAccess.canExport}
     />
   );
 }
@@ -321,13 +331,6 @@ export default async function DashboardPage({
   const userId = session.user.dbUserId;
   const requestedTab = getParam(params, "tab");
   const claimId = getParam(params, "claimId");
-  const legacyViewId = getParam(params, "view");
-
-  if (legacyViewId) {
-    redirect(
-      dashboardHref("expense-claims", { claimId: claimId ?? legacyViewId }),
-    );
-  }
 
   if (claimId && requestedTab !== "expense-claims") {
     redirect(dashboardHref("expense-claims", { claimId }));
@@ -338,21 +341,11 @@ export default async function DashboardPage({
   const permissions = effectivePermissions.success
     ? effectivePermissions.data.permissions
     : [];
-  const roles = effectivePermissions.success ? effectivePermissions.data.roles : [];
-
   const hasPermission = (resource: PermissionResource, action: PermissionAction) =>
     permissions.some(
       (permission) =>
         permission.resource === resource &&
         (permission.action === action || permission.action === "MANAGE"),
-    );
-  const hasExactPermission = (
-    resource: PermissionResource,
-    action: PermissionAction,
-  ) =>
-    permissions.some(
-      (permission) =>
-        permission.resource === resource && permission.action === action,
     );
   const hasAnyPermission = (checks: PermissionCheck[]) =>
     checks.some((check) => hasPermission(check.resource, check.action));
@@ -376,22 +369,23 @@ export default async function DashboardPage({
     { resource: "SIGNATURE", action: "MANAGE" },
   ]);
   const canManageMonthly = hasPermission("MONTHLY_REQUEST", "MANAGE");
-  const isSuperAdmin = roles.some((role) => role.code === "super-admin");
-  const exactHpa = hasExactPermission("MONTHLY_REQUEST", "REVIEW_HPA");
-  const exactRk = hasExactPermission("MONTHLY_REQUEST", "REVIEW_RK");
-  const exactDrt = hasExactPermission("MONTHLY_REQUEST", "REVIEW_OK");
-
   const monthlyAccess = {
     canManage: canManageMonthly,
-    canHpa: exactHpa || isSuperAdmin,
-    canRk: exactRk || isSuperAdmin,
-    canDrt: exactDrt || isSuperAdmin,
+    canCreate: hasPermission("MONTHLY_REQUEST", "CREATE"),
+    canUpdate: hasPermission("MONTHLY_REQUEST", "UPDATE"),
+    canFinalize: hasPermission("MONTHLY_REQUEST", "FINALIZE"),
+    canComplete: hasPermission("MONTHLY_REQUEST", "COMPLETE"),
+    canCancel: hasPermission("MONTHLY_REQUEST", "CANCEL"),
+    canVoid: hasPermission("MONTHLY_REQUEST", "VOID"),
+    canPrint: hasPermission("MONTHLY_REQUEST", "PRINT"),
+    canExport: hasPermission("MONTHLY_REQUEST", "EXPORT"),
   };
-  const hasMonthlyRequestAccess =
-    monthlyAccess.canManage ||
-    monthlyAccess.canHpa ||
-    monthlyAccess.canRk ||
-    monthlyAccess.canDrt;
+  const hasMonthlyRequestAccess = hasAnyPermission([
+    { resource: "MONTHLY_REQUEST", action: "READ" },
+    { resource: "MONTHLY_REQUEST", action: "LIST" },
+    { resource: "MONTHLY_REQUEST", action: "CREATE" },
+    { resource: "MONTHLY_REQUEST", action: "MANAGE" },
+  ]);
 
   const tabAccess: Record<DashboardTabId, boolean> = {
     "off-site-work": hasOffSiteWorkAccess,

@@ -48,10 +48,10 @@ A permission defines what action can be performed on a resource.
 
 ```typescript
 {
-  code: "expense-claim:approve",
+  code: "expense-claim:collect:all",
   resource: "EXPENSE_CLAIM",
-  action: "APPROVE",
-  scope: "DEPARTMENT"  // OWN | DEPARTMENT | ALL
+  action: "COLLECT",
+  scope: "ALL"  // OWN | DEPARTMENT | ALL
 }
 ```
 
@@ -61,9 +61,9 @@ A role groups multiple permissions together.
 
 ```typescript
 {
-  code: "manager",
-  name: "Manager",
-  level: 50,  // Higher = more authority
+  code: "collector",
+  name: "Collector",
+  level: 20,  // Higher = more authority
   permissions: [...]
 }
 ```
@@ -89,10 +89,10 @@ Assigns a role to a user, optionally scoped to a department.
 import { can, hasRole } from "@/lib/auth";
 
 // Check single permission
-const canApprove = await can(userId, "EXPENSE_CLAIM", "APPROVE");
+const canCollect = await can(userId, "EXPENSE_CLAIM", "COLLECT");
 
 // Check with department scope
-const canApproveInDept = await can(userId, "EXPENSE_CLAIM", "APPROVE", {
+const canReadInDept = await can(userId, "EXPENSE_CLAIM", "READ", {
   departmentId: "dept-123",
 });
 
@@ -102,7 +102,7 @@ const canEdit = await can(userId, "EXPENSE_CLAIM", "UPDATE", {
 });
 
 // Check role
-const isManager = await hasRole(userId, "manager");
+const isCollector = await hasRole(userId, "collector");
 ```
 
 ### Protected Server Actions
@@ -147,10 +147,10 @@ function MyPage() {
   return (
     <PermissionGate
       resource="EXPENSE_CLAIM"
-      action="APPROVE"
+      action="COLLECT"
       fallback={<p>Access denied</p>}
     >
-      <ApprovalPanel />
+      <CollectionPanel />
     </PermissionGate>
   );
 }
@@ -158,7 +158,7 @@ function MyPage() {
 // Role gate usage
 function AdminPanel() {
   return (
-    <RoleGate role="admin">
+    <RoleGate role="super-admin">
       <AdminControls />
     </RoleGate>
   );
@@ -226,20 +226,17 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
 ### 4. Run Seed
 
 ```bash
-npx prisma db seed
+bunx prisma db seed
 # Or call seedPermissions() programmatically
 ```
 
 ## Default Roles
 
-| Role        | Level | Description                      |
-| ----------- | ----- | -------------------------------- |
-| super-admin | 100   | Full system access               |
-| admin       | 90    | User & system management         |
-| manager     | 50    | Department management, approvals |
-| supervisor  | 40    | Team oversight                   |
-| employee    | 10    | Basic self-service access        |
-| viewer      | 5     | Read-only access                 |
+| Role        | Level | Description                                                    |
+| ----------- | ----- | -------------------------------------------------------------- |
+| super-admin | 100   | Full system administration and manage-all permissions          |
+| collector   | 20    | Cross-department recheck, collection, MRC, print, and export   |
+| employee    | 10    | Own claims, off-site work, signatures, and leader confirmation |
 
 ## Database Tables
 

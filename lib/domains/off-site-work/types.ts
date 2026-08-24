@@ -1,27 +1,27 @@
-/**
- * OffSiteWork Domain - Entity Types
- *
- * Pure domain types for OffSiteWork entity
- *
- * @module lib/domains/off-site-work/types
- */
-
-/**
- * Employee list item structure
- */
-export interface EmployeeListItem {
+export interface ParticipantListItem {
   userId: string;
   employeeId: string | null;
   firstName: string;
   lastName: string;
   position: string | null;
+  positionShort?: string | null;
+  positionLevel?: string | null;
   departmentId: string | null;
   departmentName: string | null;
 }
 
-/**
- * Core OffSiteWork entity interface
- */
+export interface ResolvedParticipant {
+  userId: string;
+  employeeIdSnapshot: string | null;
+  firstNameSnapshot: string;
+  lastNameSnapshot: string;
+  positionSnapshot: string | null;
+  positionShortSnapshot: string | null;
+  positionLevelSnapshot: string | null;
+  departmentIdSnapshot: string | null;
+  departmentNameSnapshot: string | null;
+}
+
 export interface OffSiteWorkEntity {
   id: string;
   innerRefDocumentId: string | null;
@@ -29,15 +29,17 @@ export interface OffSiteWorkEntity {
   endDate: Date;
   objective: string | null;
   location: string | null;
-  employeeList: EmployeeListItem[] | null;
+  participants: ResolvedParticipant[];
+  /** UI-friendly projection of the normalized participant rows. */
+  participantList: ParticipantListItem[];
   postedAt: Date;
   postedByUserId: string;
   updatedAt: Date | null;
   deletedAt: Date | null;
+  lockedAt: Date | null;
   originalFileId: string | null;
-  // Leader — internal
+  supersedesId: string | null;
   leaderUserId: string | null;
-  // Leader — external
   leaderEmpId: string | null;
   leaderFirstName: string | null;
   leaderLastName: string | null;
@@ -45,17 +47,6 @@ export interface OffSiteWorkEntity {
   leaderEmail: string | null;
 }
 
-/**
- * Helper type to safely extract employeeList as typed array
- */
-export function toEmployeeListItem(data: unknown): EmployeeListItem[] | null {
-  if (!data || !Array.isArray(data)) return null;
-  return data as EmployeeListItem[];
-}
-
-/**
- * OffSiteWork with user and file relations
- */
 export interface OffSiteWorkWithRelations extends OffSiteWorkEntity {
   postedByUser: {
     id: string;
@@ -79,9 +70,6 @@ export interface OffSiteWorkWithRelations extends OffSiteWorkEntity {
   } | null;
 }
 
-/**
- * Data required to create an off-site work record
- */
 export interface CreateOffSiteWorkInput {
   id: string;
   innerRefDocumentId?: string;
@@ -89,9 +77,9 @@ export interface CreateOffSiteWorkInput {
   endDate: Date | string;
   objective?: string;
   location?: string;
-  employeeList?: EmployeeListItem[];
+  participantUserIds: string[];
   originalFileId?: string;
-  // Leader
+  supersedesId?: string | null;
   leaderUserId?: string | null;
   leaderEmpId?: string | null;
   leaderFirstName?: string | null;
@@ -100,18 +88,14 @@ export interface CreateOffSiteWorkInput {
   leaderEmail?: string | null;
 }
 
-/**
- * Data required to update an off-site work record
- */
 export interface UpdateOffSiteWorkInput {
   innerRefDocumentId?: string | null;
   startDate?: Date | string;
   endDate?: Date | string;
   objective?: string | null;
   location?: string | null;
-  employeeList?: EmployeeListItem[] | null;
+  participantUserIds?: string[];
   originalFileId?: string | null;
-  // Leader
   leaderUserId?: string | null;
   leaderEmpId?: string | null;
   leaderFirstName?: string | null;
@@ -120,12 +104,10 @@ export interface UpdateOffSiteWorkInput {
   leaderEmail?: string | null;
 }
 
-/**
- * OffSiteWork filter criteria
- */
 export interface OffSiteWorkFilterCriteria {
   search?: string;
   postedByUserId?: string;
+  participantUserId?: string;
   startDateFrom?: Date | string;
   startDateTo?: Date | string;
   includeDeleted?: boolean;

@@ -7,6 +7,9 @@
  */
 
 export type {
+    ClaimWorkDateInput,
+    ClaimWorkDateView,
+    ClaimRevisionView,
     ExpenseClaimDocumentEntity,
     ExpenseClaimDocumentWithRelations,
     EligibleOffSiteWorkOption,
@@ -15,8 +18,6 @@ export type {
     ExpenseClaimDocumentFilterCriteria,
 } from "./types";
 
-export { toSelectedDates } from "./types";
-
 export { expenseClaimDocumentRepository } from "./repository";
 export { expenseClaimDocumentService } from "./service";
-
+export * from "./validation";

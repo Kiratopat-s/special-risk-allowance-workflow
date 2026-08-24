@@ -1,15 +1,17 @@
 # Special Risk Allowance Workflow
 
-Special Risk Allowance Workflow is a Next.js application for managing PEA special-risk allowance operations from off-site work records through expense claims, leader verification, monthly collection, multi-stage approval, signatures, and notifications.
+Special Risk Allowance Workflow is a Next.js application for managing PEA special-risk allowance operations from off-site work records through per-day claims, leader confirmation, collector review, frozen monthly snapshots, paper approval, and finance-ready exports.
 
 ## What It Does
 
 - Records off-site work used as evidence for special-risk allowance claims.
-- Creates and tracks individual expense claim documents for selected work dates.
-- Requests leader verification from internal leaders or external leaders through one-time links.
-- Collects eligible expense claims into monthly request collections.
-- Runs monthly collections through a three-stage approval flow: `HPA_CHECK`, `RK_CHECK`, then `OK_APPROVE`.
-- Stores active user signatures and prints them into approval documents.
+- Creates one logical claim per employee/month with immutable submitted revisions.
+- Assigns every claimed day to one primary off-site-work record and calculates `days × 150.00` on the server.
+- Requires We Safe metadata for travel days, weekends, and cached Thai public holidays.
+- Requests revision-scoped leader confirmation from an internal queue or a secure external link.
+- Gives collectors a cross-department recheck view, suspicious flags, rejection, and transactional collection commands.
+- Finalizes immutable monthly snapshots per department and supports supplemental/replacement batches.
+- Produces paper-signature print documents and copy-friendly Excel workbooks from finalized snapshots.
 - Provides role-based access control, audit logging, in-app notifications, web push, and SMTP email for verification links.
 
 ## Tech Stack
@@ -20,6 +22,8 @@ Special Risk Allowance Workflow is a Next.js application for managing PEA specia
 - Auth.js v5 with Keycloak
 - Prisma 7 with PostgreSQL and `@prisma/adapter-pg`
 - Bun 1.3.14 for dependency management and scripts
+- ExcelJS for `.xlsx` output
+- Google Calendar Events API (optional) for Thai public-holiday cache
 - Nodemailer for email and Web Push API for browser notifications
 
 ## Project Structure
@@ -57,9 +61,11 @@ Application code should call services from `lib/domains/*`. Repositories own dat
 - `department` - Organization hierarchy and department lookup.
 - `permission` - RBAC permissions, roles, scopes, guards, and seed data.
 - `off-site-work` - Off-site work records and attached source files.
-- `expense-claim-document` - Claim creation, submission, status changes, and collection readiness.
-- `leader-verification` - Internal leader queues and public token verification links.
-- `monthly-request-collection` - Monthly claim collection, approval steps, and printable documents.
+- `expense-claim-document` - Logical claims, revisions, primary work dates, We Safe metadata, and lifecycle rules.
+- `holiday-calendar` - Bangkok-time weekend rules and provider-backed public-holiday snapshots.
+- `leader-verification` - Immutable revision/OSW confirmation snapshots and secure token links.
+- `monthly-request-recheck` - Cross-department comparison metrics and collector review actions.
+- `monthly-request-collection` - Department batches, snapshot finalization, paper completion, void/replacement, print, and Excel.
 - `signature` - User signature capture, activation, and retrieval.
 - `notification` - Persisted notifications and push subscriptions.
 - `action-log` - Audit trail records.
@@ -71,10 +77,7 @@ The seed script creates these system roles:
 | Role | Purpose |
 | --- | --- |
 | `employee` | Creates own off-site work, expense claims, and signatures. |
-| `collector` | Collects claims into monthly request collections and manages MRC records. |
-| `hpa` | Reviews monthly request collections at the `HPA_CHECK` stage. |
-| `rk` | Reviews monthly request collections at the `RK_CHECK` stage. |
-| `drt` | Performs final approval at the `OK_APPROVE` stage. |
+| `collector` | Reviews claims across departments and manages the complete MRC lifecycle and outputs. |
 | `super-admin` | Full system administration. |
 
 ## Requirements
@@ -107,6 +110,11 @@ EMAIL_FROM="Special Risk Allowance Workflow <noreply@example.com>"
 VAPID_PUBLIC_KEY=""
 VAPID_PRIVATE_KEY=""
 VAPID_SUBJECT="mailto:admin@example.com"
+
+# Optional. When missing or unavailable, uncached weekdays are snapshotted as fallback workdays.
+GOOGLE_CALENDAR_API_KEY=""
+GOOGLE_CALENDAR_ACCESS_TOKEN=""
+GOOGLE_HOLIDAY_CALENDAR_ID="th.th%23holiday%40group.v.calendar.google.com"
 ```
 
 Notes:
@@ -166,23 +174,28 @@ Make sure `local.sraw.space` resolves to your local machine and update `NEXTAUTH
 | `bun dev` | Start the Next.js development server. |
 | `bun devh` | Start development with experimental HTTPS on `local.sraw.space`. |
 | `bun run lint` | Run ESLint with Next.js and TypeScript rules. |
+| `bun test` | Run unit and pure rendering tests. |
+| `bun run test:integration` | Run PostgreSQL constraint tests against `TEST_DATABASE_URL`; skips safely when unset. |
+| `bun run test:e2e` | Run the Playwright A4 print smoke tests. |
 | `bun run build` | Create a production build. |
 | `bun run start` | Serve the production build. |
 | `bunx prisma generate` | Regenerate the Prisma client. |
 | `bunx prisma migrate dev --name <name>` | Create and apply a local migration. |
 | `bunx prisma migrate deploy` | Apply migrations in production. |
 | `bunx prisma db seed` | Seed default roles, permissions, and role-permission mappings. |
+| `bun run db:seed:uat` | Load deterministic June–August 2026 UAT fixtures (20 claimants and 60 claims) into the configured test database. |
 | `bunx prisma studio` | Inspect and edit local data. |
 
 ## Workflow Overview
 
 1. Users authenticate through Keycloak. Profile claims are synchronized into the local `User` table.
 2. Employees create off-site work records and prepare expense claim documents.
-3. Submitted claims create leader verification records when linked off-site work has leaders.
-4. Internal leaders verify through their queue; external leaders verify through a public one-time token link.
-5. Verified or pending claims become eligible for collector-managed monthly request collections.
-6. Monthly collections move through `HPA_CHECK`, `RK_CHECK`, and `OK_APPROVE` approval steps.
-7. Approved documents can be printed with stored signatures and audit context.
+3. On submit, the server validates participant eligibility, day/OSW assignment, required We Safe codes, profile snapshots, and the fixed rate.
+4. Every linked OSW gets a revision-scoped leader confirmation. Confirmed payloads and signatures remain immutable history.
+5. Collectors compare all overlapping off-site work, resolve suspicious items, reject corrections, and pass eligible claims into one Draft MRC per department/month.
+6. Finalize allocates a batch number and freezes claimant/date/totals snapshots atomically. Draft output is watermarked; official print and Excel require `FINALIZED` or `ALL_DONE`.
+7. The single final signature, name stamp, and date are completed on paper. The collector records the external อก.ฝช. confirmation datetime as `ALL_DONE`.
+8. Corrections after finalization use `VOIDED` plus a supplemental/replacement Draft; the old snapshot remains auditable.
 
 ## Database Notes
 
@@ -217,9 +230,12 @@ Operational behavior:
 
 ## Quality Checks
 
-No automated test framework is configured yet. Before opening a PR or deploying, run:
+Run the automated checks before opening a PR or deploying:
 
 ```bash
+bun test
+bun run test:integration # requires a separate disposable TEST_DATABASE_URL
+bun run test:e2e
 bun run lint
 bun run build
 ```
@@ -230,8 +246,10 @@ For risky changes, manually verify the affected workflow, especially:
 - Permission-gated server actions
 - Prisma migrations and seed behavior
 - Expense claim submission and leader verification
-- Monthly collection approval steps
-- Signature capture and print pages
+- Claim correction and leader snapshot history
+- Recheck metrics and concurrent collection
+- Monthly finalization, paper completion, void/replacement
+- Draft/official/voided print output and Excel export
 - Notifications, email, and push subscriptions
 
 ## Deployment

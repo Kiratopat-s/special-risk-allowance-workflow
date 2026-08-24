@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
   CalendarDays,
+  CopyPlus,
   Eye,
   FileText,
   Loader2,
@@ -41,7 +42,7 @@ import {
 import { searchUsersForLeader } from "@/app/actions/user";
 import type {
   OffSiteWorkWithRelations,
-  EmployeeListItem,
+  ParticipantListItem,
 } from "@/lib/domains/off-site-work";
 import type { Pagination } from "@/lib/shared/types";
 import { shortDateDisplay, toDateInputValue } from "@/lib/shared/format";
@@ -74,7 +75,7 @@ interface FormState {
   endDate: string;
   location: string;
   objective: string;
-  employeeList: EmployeeListItem[];
+  participantList: ParticipantListItem[];
   // leader
   leaderType: LeaderType;
   leaderUserId: string;
@@ -162,6 +163,9 @@ export function OffSiteWorkClient({
   const [selected, setSelected] = useState<OffSiteWorkWithRelations | null>(
     null,
   );
+  const [replacementTargetId, setReplacementTargetId] = useState<string | null>(
+    null,
+  );
   const [form, setForm] = useState<FormState>({
     id: "",
     innerRefDocumentId: "",
@@ -169,7 +173,7 @@ export function OffSiteWorkClient({
     endDate: "",
     location: "",
     objective: "",
-    employeeList: [],
+    participantList: [],
     ...blankLeader(),
   });
   const [isPending, startTransition] = useTransition();
@@ -219,6 +223,7 @@ export function OffSiteWorkClient({
   const openCreate = () => {
     const today = toDateInputValue(new Date());
     setSelected(null);
+    setReplacementTargetId(null);
     setSelectedLeaderUser(null);
     setLeaderSearch("");
     setLeaderResults([]);
@@ -231,14 +236,48 @@ export function OffSiteWorkClient({
       endDate: today,
       location: "",
       objective: "",
-      employeeList: [],
+      participantList: [],
       ...blankLeader(),
+    });
+    setMode("create");
+  };
+
+  const openReplacement = (item: OffSiteWorkWithRelations) => {
+    const leaderData = leaderFromItem(item);
+    setSelected(item);
+    setReplacementTargetId(item.id);
+    setSelectedLeaderUser(
+      item.leaderUser
+        ? {
+            id: item.leaderUser.id,
+            employeeId: item.leaderUser.employeeId,
+            firstName: item.leaderUser.firstName,
+            lastName: item.leaderUser.lastName,
+            position: item.leaderUser.position,
+            email: item.leaderEmail,
+          }
+        : null,
+    );
+    setLeaderSearch("");
+    setLeaderResults([]);
+    setEmpSearch("");
+    setEmpResults([]);
+    setForm({
+      id: nextPrefixId(),
+      innerRefDocumentId: item.innerRefDocumentId || "",
+      startDate: toDateInputValue(item.startDate),
+      endDate: toDateInputValue(item.endDate),
+      location: item.location || "",
+      objective: item.objective || "",
+      participantList: item.participantList ?? [],
+      ...leaderData,
     });
     setMode("create");
   };
 
   const openEdit = (item: OffSiteWorkWithRelations) => {
     setSelected(item);
+    setReplacementTargetId(null);
     const leaderData = leaderFromItem(item);
     const internalUser =
       leaderData.leaderType === "internal" && item.leaderUser
@@ -263,7 +302,7 @@ export function OffSiteWorkClient({
       endDate: toDateInputValue(item.endDate),
       location: item.location || "",
       objective: item.objective || "",
-      employeeList: item.employeeList ?? [],
+      participantList: item.participantList ?? [],
       ...leaderData,
     });
     setMode("edit");
@@ -289,8 +328,8 @@ export function OffSiteWorkClient({
 
   const addEmployee = (u: LeaderUser) => {
     setForm((prev) => {
-      if (prev.employeeList.some((e) => e.userId === u.id)) return prev;
-      const newItem: EmployeeListItem = {
+      if (prev.participantList.some((e) => e.userId === u.id)) return prev;
+      const newItem: ParticipantListItem = {
         userId: u.id,
         employeeId: u.employeeId,
         firstName: u.firstName,
@@ -299,7 +338,7 @@ export function OffSiteWorkClient({
         departmentId: null,
         departmentName: null,
       };
-      return { ...prev, employeeList: [...prev.employeeList, newItem] };
+      return { ...prev, participantList: [...prev.participantList, newItem] };
     });
     setEmpResults([]);
     setEmpSearch("");
@@ -308,7 +347,7 @@ export function OffSiteWorkClient({
   const removeEmployee = (userId: string) => {
     setForm((prev) => ({
       ...prev,
-      employeeList: prev.employeeList.filter((e) => e.userId !== userId),
+      participantList: prev.participantList.filter((e) => e.userId !== userId),
     }));
   };
 
@@ -368,8 +407,8 @@ export function OffSiteWorkClient({
         endDate: form.endDate,
         location: form.location.trim() || undefined,
         objective: form.objective.trim() || undefined,
-        employeeList:
-          form.employeeList.length > 0 ? form.employeeList : undefined,
+        participantUserIds: form.participantList.map((item) => item.userId),
+        supersedesId: replacementTargetId,
         ...buildLeaderPayload(form),
       });
 
@@ -409,7 +448,7 @@ export function OffSiteWorkClient({
           form.objective !== (selected.objective || "")
             ? form.objective || null
             : undefined,
-        employeeList: form.employeeList,
+        participantUserIds: form.participantList.map((item) => item.userId),
         ...buildLeaderPayload(form),
       });
 
@@ -552,13 +591,18 @@ export function OffSiteWorkClient({
                   </span>
                 </p>
               ) : null}
-              {item.employeeList && item.employeeList.length > 0 ? (
+              {item.participantList && item.participantList.length > 0 ? (
                 <p className="flex items-center gap-2 text-xs">
                   <Users className="h-3.5 w-3.5 text-slate-500" />
                   <span className="text-slate-600">
-                    {item.employeeList.length} คน
+                    {item.participantList.length} คน
                   </span>
                 </p>
+              ) : null}
+              {item.lockedAt ? (
+                <Badge variant="warning" className="w-fit">
+                  ล็อกหลังส่งคำขอ
+                </Badge>
               ) : null}
             </div>
 
@@ -584,6 +628,7 @@ export function OffSiteWorkClient({
                     openEdit(item);
                   }}
                   aria-label={`แก้ไขคำสั่ง ${item.id}`}
+                  disabled={Boolean(item.lockedAt)}
                 >
                   <Pencil className="h-4 w-4" />
                 </Button>
@@ -597,9 +642,24 @@ export function OffSiteWorkClient({
                     setMode("delete");
                   }}
                   aria-label={`ลบคำสั่ง ${item.id}`}
+                  disabled={Boolean(item.lockedAt)}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
+                {item.lockedAt ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openReplacement(item);
+                    }}
+                    aria-label={`สร้างฉบับทดแทน ${item.id}`}
+                    title="สร้างใบนำตัวฉบับทดแทน"
+                  >
+                    <CopyPlus className="h-4 w-4" />
+                  </Button>
+                ) : null}
               </div>
             </div>
           </article>
@@ -627,10 +687,16 @@ export function OffSiteWorkClient({
         <DialogClose onClose={() => setMode(null)} />
         <DialogHeader>
           <DialogTitle>
-            {mode === "create" ? "เพิ่มคำสั่งใหม่" : "แก้ไขคำสั่ง"}
+            {mode === "create"
+              ? replacementTargetId
+                ? `สร้างฉบับทดแทน ${replacementTargetId}`
+                : "เพิ่มคำสั่งใหม่"
+              : "แก้ไขคำสั่ง"}
           </DialogTitle>
           <DialogDescription>
-            กรอกข้อมูลเอกสารคำสั่งออกปฏิบัติงานนอกสถานที่
+            {replacementTargetId
+              ? "ตรวจแก้ข้อมูลที่คัดลอกมา เมื่อบันทึกระบบจะยกเลิกการยืนยันของคำขอที่ยังไม่ปิดงาน"
+              : "กรอกข้อมูลเอกสารคำสั่งออกปฏิบัติงานนอกสถานที่"}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -714,7 +780,7 @@ export function OffSiteWorkClient({
               <div className="flex items-center gap-2">
                 <Users className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-medium">
-                  รายชื่อพนักงาน ({form.employeeList.length} คน)
+                  รายชื่อพนักงาน ({form.participantList.length} คน)
                 </span>
               </div>
 
@@ -760,7 +826,7 @@ export function OffSiteWorkClient({
               ) : empResults.length > 0 ? (
                 <ul className="max-h-40 overflow-y-auto rounded-lg border divide-y text-sm">
                   {empResults.map((u) => {
-                    const already = form.employeeList.some(
+                    const already = form.participantList.some(
                       (e) => e.userId === u.id,
                     );
                     return (
@@ -797,9 +863,9 @@ export function OffSiteWorkClient({
               ) : null}
 
               {/* Added employees */}
-              {form.employeeList.length > 0 ? (
+              {form.participantList.length > 0 ? (
                 <ul className="space-y-1.5">
-                  {form.employeeList.map((emp) => (
+                  {form.participantList.map((emp) => (
                     <li
                       key={emp.userId}
                       className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2 text-sm"
@@ -1147,11 +1213,11 @@ export function OffSiteWorkClient({
               <div>
                 <p className="text-xs text-muted-foreground flex items-center gap-1 mb-2">
                   <Users className="h-3.5 w-3.5" />
-                  รายชื่อพนักงาน ({selected.employeeList?.length ?? 0} คน)
+                  รายชื่อพนักงาน ({selected.participantList?.length ?? 0} คน)
                 </p>
-                {selected.employeeList && selected.employeeList.length > 0 ? (
+                {selected.participantList && selected.participantList.length > 0 ? (
                   <ul className="space-y-1.5">
-                    {selected.employeeList.map((emp) => (
+                    {selected.participantList.map((emp) => (
                       <li
                         key={emp.userId}
                         className="rounded-lg border bg-muted/40 px-3 py-2 text-sm"

@@ -1,147 +1,179 @@
 /**
- * MonthlyRequestCollection Domain - Entity Types
+ * Monthly Request Collection domain types.
  *
- * @module lib/domains/monthly-request-collection/types
+ * MRCs use their own paper-first lifecycle and immutable item/date snapshots.
  */
 
-import type { ClaimDocumentStatus } from "@/lib/shared/types";
-import type { Prisma } from "@/lib/generated/prisma/client";
-import type { MrcApprovalStage, MrcStepStatus } from "@/lib/generated/prisma/client";
+import type {
+  ExpenseClaimStatus,
+  HolidayType,
+  MonthlyRequestStatus,
+  WorkDayType,
+} from "@/lib/generated/prisma/client";
 
-// Re-export for convenience
-export type { MrcApprovalStage, MrcStepStatus };
-
-// ---------------------------------------------------------------------------
-// Core entities
-// ---------------------------------------------------------------------------
-
-export interface MrcApprovalStepEntity {
-    id: string;
-    monthlyRequestCollectionId: string;
-    stage: MrcApprovalStage;
-    status: MrcStepStatus;
-    reviewerId: string | null;
-    reviewedAt: Date | null;
-    remark: string | null;
-    createdAt: Date;
-    updatedAt: Date | null;
-}
+export type { MonthlyRequestStatus };
 
 export interface MonthlyRequestCollectionEntity {
+  id: string;
+  departmentId: string;
+  collectorId: string;
+  collectForMonth: Date;
+  batchNo: number | null;
+  status: MonthlyRequestStatus;
+  claimCount: number;
+  countDates: number;
+  amount: number;
+  snapshotVersion: number;
+  snapshotHash: string | null;
+  finalizedAt: Date | null;
+  finalizedById: string | null;
+  paperApprovedAt: Date | null;
+  allDoneNote: string | null;
+  allDoneAt: Date | null;
+  allDoneById: string | null;
+  cancelledAt: Date | null;
+  cancelledById: string | null;
+  cancelReason: string | null;
+  voidedAt: Date | null;
+  voidedById: string | null;
+  voidReason: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MrcPersonSummary {
+  id: string;
+  firstName: string;
+  lastName: string;
+  employeeId: string | null;
+}
+
+export interface MonthlyRequestItemDateSnapshot {
+  id: string;
+  workDate: Date;
+  offSiteWorkIdSnapshot: string;
+  offSiteWorkRefSnapshot: string | null;
+  dayType: WorkDayType;
+  holidayType: HolidayType;
+  holidayName: string | null;
+  dailyRate: number;
+  weSafeCodes: Array<{ id: string; code: string }>;
+}
+
+export interface MonthlyRequestCollectionItemSnapshot {
+  id: string;
+  expenseClaimId: string;
+  claimRevisionId: string;
+  claimRevisionNo: number;
+  addedById: string;
+  addedAt: Date;
+  removedAt: Date | null;
+  removalReason: string | null;
+  rowNo: number | null;
+  employeeIdSnapshot: string | null;
+  firstNameSnapshot: string;
+  lastNameSnapshot: string;
+  positionShortSnapshot: string;
+  positionLevelSnapshot: string | null;
+  departmentIdSnapshot: string;
+  departmentNameSnapshot: string;
+  departmentShortSnapshot: string | null;
+  dayCountSnapshot: number;
+  amountSnapshot: number;
+  remarkSnapshot: string | null;
+  claimStatus: ExpenseClaimStatus;
+  dates: MonthlyRequestItemDateSnapshot[];
+}
+
+export interface MrcReplacementSourceSummary {
+  id: string;
+  collectForMonth: Date;
+  batchNo: number | null;
+  status: MonthlyRequestStatus;
+  voidReason: string | null;
+}
+
+export interface MonthlyRequestCollectionWithRelations
+  extends MonthlyRequestCollectionEntity {
+  department: {
     id: string;
-    collectorId: string;
-    collectForMonth: Date;
-    countDates: Prisma.Decimal | null;
-    amount: Prisma.Decimal | null;
-    status: ClaimDocumentStatus;
-    createdAt: Date;
-    updatedAt: Date | null;
-    cancelledAt: Date | null;
+    name: string;
+    shortName: string | null;
+  };
+  collector: MrcPersonSummary;
+  finalizedBy: MrcPersonSummary | null;
+  allDoneBy: MrcPersonSummary | null;
+  cancelledBy: MrcPersonSummary | null;
+  voidedBy: MrcPersonSummary | null;
+  items: MonthlyRequestCollectionItemSnapshot[];
+  replacementSources: MrcReplacementSourceSummary[];
 }
 
-// ---------------------------------------------------------------------------
-// With relations
-// ---------------------------------------------------------------------------
-
-export interface MrcApprovalStepWithReviewer extends MrcApprovalStepEntity {
-    reviewer: {
-        id: string;
-        firstName: string;
-        lastName: string;
-        positionShort: string | null;
-        positionLevel: string | null;
-        /** Active signature binary rows (0 or 1 element) */
-        signatures?: Array<{ signatureData: Buffer }>;
-    } | null;
+export interface MrcDepartmentOption {
+  id: string;
+  name: string;
+  shortName: string | null;
 }
 
-export interface MrcExpenseClaimSummary {
-    id: string;
-    expenseMonth: Date;
-    userId: string;
-    claimantPositionAtSubmission: string;
-    countDates: Prisma.Decimal | null;
-    amount: Prisma.Decimal | null;
-    remark: string | null;
-    status: ClaimDocumentStatus;
-    claimant: {
-        id: string;
-        firstName: string;
-        lastName: string;
-        employeeId: string | null;
-        position: string | null;
-        positionShort: string | null;
-        positionLevel: string | null;
-        departmentId: string | null;
-        department: { shortName: string | null } | null;
-    };
+export interface EligibleExpenseClaimForCollection {
+  id: string;
+  expenseMonth: Date;
+  status: ExpenseClaimStatus;
+  currentRevisionNo: number;
+  revisionId: string;
+  employeeId: string;
+  firstName: string;
+  lastName: string;
+  positionShort: string;
+  positionLevel: string | null;
+  departmentId: string;
+  departmentName: string;
+  departmentShort: string | null;
+  dayCount: number;
+  amount: number;
+  remark: string | null;
+  workDates: Date[];
+  weSafeCodeCount: number;
+  isInCurrentDraft: boolean;
 }
-
-export interface MonthlyRequestCollectionWithRelations extends MonthlyRequestCollectionEntity {
-    collector: {
-        id: string;
-        firstName: string;
-        lastName: string;
-        employeeId: string | null;
-    };
-    expenseClaims: MrcExpenseClaimSummary[];
-    approvalSteps: MrcApprovalStepWithReviewer[];
-}
-
-// ---------------------------------------------------------------------------
-// Input types
-// ---------------------------------------------------------------------------
 
 export interface CreateMrcInput {
-    collectForMonth: Date | string;
-    expenseClaimIds: string[];
+  collectForMonth: Date | string;
+  departmentId: string;
+  expenseClaimIds: string[];
 }
 
 export interface UpdateMrcInput {
-    expenseClaimIds?: string[];
+  expenseClaimIds: string[];
 }
 
-export interface ReviewMrcStepInput {
-    stage: MrcApprovalStage;
-    approved: boolean;
-    remark?: string;
+export interface CompleteMrcInput {
+  paperApprovedAt: Date | string;
+  note?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Filter / pagination
-// ---------------------------------------------------------------------------
+export interface CreateMrcReplacementInput {
+  voidedMrcIds: string[];
+}
+
+export interface VoidMrcResult {
+  voided: MonthlyRequestCollectionEntity;
+  replacementDraft: MonthlyRequestCollectionEntity;
+}
+
+export interface MrcExportAuditMetadata {
+  filename: string;
+  dataRowCount: number;
+  datesRowCount: number;
+}
 
 export interface MrcFilterCriteria {
-    search?: string;
-    status?: ClaimDocumentStatus;
-    collectForMonthFrom?: Date | string;
-    collectForMonthTo?: Date | string;
-    collectorId?: string;
-    page?: number;
-    pageSize?: number;
-}
-
-// ---------------------------------------------------------------------------
-// Eligible expense claims (for admin to pick)
-// ---------------------------------------------------------------------------
-
-export interface EligibleExpenseClaimForCollection {
-    id: string;
-    expenseMonth: Date;
-    userId: string;
-    claimantPositionAtSubmission: string;
-    countDates: Prisma.Decimal | null;
-    amount: Prisma.Decimal | null;
-    remark: string | null;
-    status: ClaimDocumentStatus;
-    isVerified: boolean;
-    claimant: {
-        id: string;
-        firstName: string;
-        lastName: string;
-        employeeId: string | null;
-        position: string | null;
-        positionShort: string | null;
-        positionLevel: string | null;
-    };
+  search?: string;
+  status?: MonthlyRequestStatus;
+  departmentId?: string;
+  collectForMonthFrom?: Date | string;
+  collectForMonthTo?: Date | string;
+  collectorId?: string;
+  page?: number;
+  pageSize?: number;
 }
