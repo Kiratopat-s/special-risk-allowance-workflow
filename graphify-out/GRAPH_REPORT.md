@@ -5,12 +5,12 @@
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 992 nodes · 2357 edges · 62 communities (54 shown, 8 thin omitted)
+- 1011 nodes · 2375 edges · 68 communities (59 shown, 9 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 27 edges (avg confidence: 0.88)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `43b62248`
+- Built from commit: `d050e73a`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -72,6 +72,12 @@
 - [[_COMMUNITY_Community 58|Community 58]]
 - [[_COMMUNITY_Community 59|Community 59]]
 - [[_COMMUNITY_Community 60|Community 60]]
+- [[_COMMUNITY_Community 62|Community 62]]
+- [[_COMMUNITY_Community 63|Community 63]]
+- [[_COMMUNITY_Community 64|Community 64]]
+- [[_COMMUNITY_Community 65|Community 65]]
+- [[_COMMUNITY_Community 66|Community 66]]
+- [[_COMMUNITY_Community 67|Community 67]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `cn()` - 63 edges
@@ -108,35 +114,35 @@
 - **PEA Logo Visual Identity Elements** — logo_pea_logo_big_provincial_electricity_authority_logo, logo_pea_logo_big_thai_text, logo_pea_logo_big_thailand_map, logo_pea_logo_big_lightning_bolts, logo_pea_logo_big_power_lines, logo_pea_logo_big_laurel_wreath, logo_pea_logo_big_purple_gold_seal [EXTRACTED 1.00]
 - **Browser Icon Visual System** — public_window_window_icon, public_window_browser_window_interface, public_window_title_bar_controls, public_window_gray_vector_style [INFERRED 0.85]
 
-## Communities (62 total, 8 thin omitted)
+## Communities (68 total, 9 thin omitted)
 
 ### Community 0 - "Allowance Workflow Actions"
-Cohesion: 0.13
-Nodes (34): permissionRepository, roleRepository, userRoleRepository, assignDefaultRolePermissions(), DEFAULT_PERMISSIONS, DEFAULT_ROLES, EMPLOYEE_BASE_PERMISSIONS, ROLE_PERMISSIONS (+26 more)
+Cohesion: 0.15
+Nodes (32): permissionRepository, roleRepository, userRoleRepository, assignDefaultRolePermissions(), DEFAULT_PERMISSIONS, DEFAULT_ROLES, EMPLOYEE_BASE_PERMISSIONS, ROLE_PERMISSIONS (+24 more)
 
 ### Community 1 - "Leader Verification"
-Cohesion: 0.09
-Nodes (37): dataUrlToBuffer(), refreshVerificationToken(), verifyAsLeader(), verifyByToken(), buildLeaderVerifyUrl(), createTransport(), sendLeaderVerifyEmail(), LeaderVerificationItem (+29 more)
+Cohesion: 0.10
+Nodes (27): dataUrlToBuffer(), getVerificationByToken(), refreshVerificationToken(), verifyAsLeader(), verifyByToken(), buildLeaderVerifyUrl(), createTransport(), sendLeaderVerifyEmail() (+19 more)
 
 ### Community 2 - "Profile Sync Admin"
-Cohesion: 0.07
-Nodes (32): syncProfileFromKeycloak(), SyncProfileResult, AdminNav(), navItems, AdminLayout(), AdminLayoutProps, authEvents, AuthRequestContext (+24 more)
+Cohesion: 0.17
+Nodes (16): AdminNav(), navItems, AdminLayout(), AdminLayoutProps, AuthRequestContext, ActionResult, canAll(), createAllPermissionGuard() (+8 more)
 
 ### Community 3 - "Action Log Domain"
-Cohesion: 0.06
-Nodes (58): actionLogRepository, actionLogService, JsonValue, ActionLogEntity, ActionLogFilterCriteria, ActionLogSummary, ActionLogWithDetails, CreateActionLogInput (+50 more)
+Cohesion: 0.07
+Nodes (52): actionLogRepository, actionLogService, JsonValue, ActionLogEntity, ActionLogFilterCriteria, ActionLogSummary, ActionLogWithDetails, CreateActionLogInput (+44 more)
 
 ### Community 4 - "Monthly Request Collections"
-Cohesion: 0.14
-Nodes (30): createMonthlyRequestCollection(), getMonthlyRequestCollection(), listMonthlyRequestCollections(), reviewMonthlyRequestCollectionStep(), serializeDecimal(), serializeEligibleClaim(), serializeMrc(), serializeMrcEntity() (+22 more)
+Cohesion: 0.21
+Nodes (17): claimantSelect, collectorSelect, monthlyRequestCollectionRepository, reviewerSelect, JsonValue, monthlyRequestCollectionService, STAGE_ORDER, CreateMrcInput (+9 more)
 
 ### Community 5 - "Notifications System"
 Cohesion: 0.10
 Nodes (18): getMyNotificationPageState(), markAllNotificationsRead(), markNotificationRead(), sendSystemNotification(), globalForBroker, notificationBroker, SseWriter, globalForWebPush (+10 more)
 
 ### Community 6 - "Expense Claim Documents"
-Cohesion: 0.40
-Nodes (5): listExpenseClaimDocuments(), ExpenseClaimDocumentClient(), ExpenseClaimDocumentPage(), ExpenseClaimDocumentPageProps, claimStatusVariant()
+Cohesion: 0.18
+Nodes (20): createDepartment(), deleteDepartment(), getDepartment(), listAllDepartments(), toggleDepartmentStatus(), updateDepartment(), departmentRepository, departmentService (+12 more)
 
 ### Community 7 - "Off Site Work"
 Cohesion: 0.15
@@ -148,27 +154,27 @@ Nodes (25): dependencies, class-variance-authority, clsx, @hookform/resolvers, l
 
 ### Community 9 - "Department Domain"
 Cohesion: 0.06
-Nodes (52): createDepartment(), deleteDepartment(), getDepartment(), listAllDepartments(), listDepartments(), toggleDepartmentStatus(), updateDepartment(), createExpenseClaimDocument() (+44 more)
+Nodes (51): listDepartments(), createExpenseClaimDocument(), deleteExpenseClaimDocument(), getExpenseClaimDocument(), listEligibleOffSiteWorksForClaim(), listExpenseClaimDocuments(), submitDraftExpenseClaimDocument(), updateExpenseClaimDocument() (+43 more)
 
 ### Community 10 - "User Signatures"
 Cohesion: 0.15
 Nodes (20): activateMySignature(), assertAuth(), createMySignature(), deleteMySignature(), getMySignatureState(), updateMySignature(), SignaturePage(), signatureHistorySelect (+12 more)
 
 ### Community 11 - "Profile Roles UI"
-Cohesion: 0.12
-Nodes (7): CardGridSkeleton(), DetailPanelSkeleton(), FormSkeleton(), PageHeaderSkeleton(), Skeleton(), TableSkeleton(), ToolbarSkeleton()
+Cohesion: 0.18
+Nodes (7): CardGridSkeleton(), DetailPanelSkeleton(), FormSkeleton(), NotificationListSkeleton(), PageHeaderSkeleton(), Skeleton(), ToolbarSkeleton()
 
 ### Community 12 - "Navigation Notifications UI"
 Cohesion: 0.14
-Nodes (16): NotificationBell(), ThemeToggle(), useNotifications(), usePushSubscription(), DropdownMenu(), DropdownMenuCheckboxItem(), DropdownMenuContent(), DropdownMenuItem() (+8 more)
+Nodes (15): NotificationBell(), ThemeToggle(), useNotifications(), usePushSubscription(), DropdownMenu(), DropdownMenuCheckboxItem(), DropdownMenuContent(), DropdownMenuItem() (+7 more)
 
 ### Community 13 - "Dialog Admin Clients"
 Cohesion: 0.09
-Nodes (26): ExpenseClaimDocumentClientProps, FormState, getCalendarGridDates(), getClaimDatePool(), getMonthDateRange(), Mode, STATUS_LABEL, toISODate() (+18 more)
+Nodes (26): ExpenseClaimDocumentClient(), ExpenseClaimDocumentClientProps, FormState, getCalendarGridDates(), getClaimDatePool(), getMonthDateRange(), Mode, STATUS_LABEL (+18 more)
 
 ### Community 14 - "Work Client Forms"
-Cohesion: 0.22
-Nodes (12): Props, UserRow, Button(), buttonVariants, Input(), ScrollArea(), ScrollBar(), Select() (+4 more)
+Cohesion: 0.11
+Nodes (25): cn(), Props, UserRow, groupByResource(), PermissionsClient(), Checkbox(), CheckboxProps, Select() (+17 more)
 
 ### Community 15 - "TypeScript Config"
 Cohesion: 0.10
@@ -179,20 +185,20 @@ Cohesion: 0.11
 Nodes (18): aliases, components, hooks, lib, ui, utils, iconLibrary, registries (+10 more)
 
 ### Community 17 - "Shared Form Controls"
-Cohesion: 0.08
-Nodes (27): getVerificationByToken(), PrintPageControls(), LeaderVerifyClient(), LoadState, SigStep, SubmitState, VerificationInfo, ApprovalTimeline() (+19 more)
+Cohesion: 0.14
+Nodes (19): LeaderVerifyClient(), ApprovalTimeline(), MRC_STATUS_LABEL, MrcStatusBadge(), mrcStatusLabel(), mrcStatusVariant(), stageLabel(), Mode (+11 more)
 
 ### Community 18 - "Permission RBAC Docs"
 Cohesion: 0.17
 Nodes (19): can, Default Roles, Department-Scoped Roles, Effective Permissions Cache, expiresAt, Fine-Grained Permissions, hasRole, MANAGE Action Principle (+11 more)
 
 ### Community 19 - "Profile Form UI"
-Cohesion: 0.23
-Nodes (19): DialogMode, FormData, Mode, groupPermissionsByResource(), roleLevelBadge(), RolesClient(), Badge(), ConfirmDialog() (+11 more)
+Cohesion: 0.21
+Nodes (21): DialogMode, FormData, groupPermissionsByResource(), roleLevelBadge(), RolesClient(), ConfirmDialogProps, Dialog(), DialogBody() (+13 more)
 
 ### Community 20 - "Permission Gates"
-Cohesion: 0.19
-Nodes (9): geistMono, geistSans, metadata, Footer(), Providers(), ServiceWorkerRegistration(), PushPermissionState, subscribeToPush() (+1 more)
+Cohesion: 0.21
+Nodes (8): geistMono, geistSans, metadata, Footer(), ServiceWorkerRegistration(), PushPermissionState, subscribeToPush(), urlBase64ToUint8Array()
 
 ### Community 21 - "Claim Calendar Client"
 Cohesion: 0.40
@@ -231,8 +237,8 @@ Cohesion: 0.10
 Nodes (20): Authentication And Authorization, Common Commands, Core Domains, Database Notes, Default Roles, Deploy and update, Deployment, Environment Variables (+12 more)
 
 ### Community 30 - "Providers Session"
-Cohesion: 0.33
-Nodes (7): getMyActiveSignatureDataUrl(), listMyPendingVerifications(), renderLeaderQueueTab(), LeaderVerifyPage(), metadata, PendingVerificationsPage(), PendingVerificationsClient()
+Cohesion: 0.36
+Nodes (6): getMyActiveSignatureDataUrl(), listMyPendingVerifications(), LeaderVerifyPage(), metadata, PendingVerificationsPage(), PendingVerificationsClient()
 
 ### Community 31 - "PWA Manifest"
 Cohesion: 0.25
@@ -240,7 +246,7 @@ Nodes (7): background_color, display, icons, name, short_name, start_url, theme_
 
 ### Community 32 - "Community 32"
 Cohesion: 0.14
-Nodes (23): UserAvatar(), profileFormSchema, ProfileFormValues, cn(), Card(), CardAction(), CardContent(), CardDescription() (+15 more)
+Nodes (18): UserAvatar(), profileFormSchema, ProfileFormValues, getParam(), metadata, normalizeCallbackUrl(), SearchParams, SignInPage() (+10 more)
 
 ### Community 33 - "File Icon Asset"
 Cohesion: 0.33
@@ -287,44 +293,64 @@ Cohesion: 0.11
 Nodes (17): APPROVAL_STAGES, EVENT_GROUPS, EventGroup, EXPENSE_CLAIM_STATUSES, FLOW_STAGES, FlowStage, HowToUsePage(), metadata (+9 more)
 
 ### Community 56 - "Community 56"
-Cohesion: 0.43
-Nodes (4): ProvidersProps, SessionGuard(), useSessionGuard(), Toaster()
+Cohesion: 0.36
+Nodes (5): Providers(), ProvidersProps, SessionGuard(), useSessionGuard(), Toaster()
 
 ### Community 57 - "Community 57"
-Cohesion: 0.20
-Nodes (7): MODULES, STEPS, TECH, CursorSpotlight(), BadgeProps, BadgeVariant, badgeVariants
+Cohesion: 0.33
+Nodes (4): MODULES, STEPS, TECH, CursorSpotlight()
 
 ### Community 58 - "Community 58"
-Cohesion: 0.31
-Nodes (7): getParam(), metadata, normalizeCallbackUrl(), SearchParams, SignInPage(), SignInClient(), SignInClientProps
+Cohesion: 0.15
+Nodes (12): canAny(), ExpenseClaimDocumentLayout(), ExpenseClaimDocumentLayoutProps, config, { handlers, auth, signIn, signOut }, Session, MrcLayout(), MrcLayoutProps (+4 more)
 
 ### Community 59 - "Community 59"
 Cohesion: 0.43
 Nodes (5): sizeClasses, UserAvatarProps, Avatar(), AvatarFallback(), AvatarImage()
 
 ### Community 60 - "Community 60"
-Cohesion: 0.40
-Nodes (4): Checkbox(), CheckboxProps, Select(), SelectProps
+Cohesion: 0.11
+Nodes (18): 3.1 Move `@types/nodemailer` from dependencies to devDependencies, 3.2 Add `dotenv` as devDependency, Changes in `package.json`:, Changes in `package.json`:, Current State, Dependency Security Upgrade Plan, Key Finding: Zero Source Code Changes Required, Out of Scope (separate work items) (+10 more)
+
+### Community 62 - "Community 62"
+Cohesion: 0.30
+Nodes (13): createMonthlyRequestCollection(), getMonthlyRequestCollection(), listMonthlyRequestCollections(), reviewMonthlyRequestCollectionStep(), serializeDecimal(), serializeEligibleClaim(), serializeMrc(), serializeMrcEntity() (+5 more)
+
+### Community 63 - "Community 63"
+Cohesion: 0.25
+Nodes (8): PrintPageControls(), decimalText(), decimalToNumber(), metadata, MrcPrintPage(), paginateClaimsForPrint(), PrintPageProps, longDateDisplay()
+
+### Community 64 - "Community 64"
+Cohesion: 0.36
+Nodes (4): syncProfileFromKeycloak(), SyncProfileResult, authEvents, UseProfileSyncOptions
+
+### Community 66 - "Community 66"
+Cohesion: 0.33
+Nodes (6): listOffSiteWorks(), renderOffSiteWorkTab(), blankLeader(), leaderFromItem(), OffSiteWorkClient(), OffSiteWorkPage()
+
+### Community 67 - "Community 67"
+Cohesion: 0.50
+Nodes (3): createPool(), createPrismaClient(), globalForPrisma
 
 ## Knowledge Gaps
-- **285 isolated node(s):** `name`, `version`, `private`, `packageManager`, `dev` (+280 more)
+- **299 isolated node(s):** `Current State`, `Key Finding: Zero Source Code Changes Required`, `Changes in `package.json`:`, `Why no code changes:`, `Verification:` (+294 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **8 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **9 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `cn()` connect `Community 32` to `Profile Sync Admin`, `Off Site Work`, `Profile Roles UI`, `Navigation Notifications UI`, `Dialog Admin Clients`, `Work Client Forms`, `Profile Form UI`, `Claim Calendar Client`, `Community 55`, `Community 57`, `Community 59`, `Community 60`?**
-  _High betweenness centrality (0.050) - this node is a cross-community bridge._
-- **Why does `Button()` connect `Work Client Forms` to `Community 32`, `Navigation Notifications UI`, `Dialog Admin Clients`, `Shared Form Controls`, `Profile Form UI`, `Community 55`, `Community 57`, `Community 58`?**
-  _High betweenness centrality (0.029) - this node is a cross-community bridge._
-- **Why does `can()` connect `Department Domain` to `Leader Verification`, `Profile Sync Admin`, `Action Log Domain`, `Monthly Request Collections`, `Expense Claim Documents`, `Off Site Work`, `User Signatures`?**
-  _High betweenness centrality (0.025) - this node is a cross-community bridge._
-- **What connects `name`, `version`, `private` to the rest of the system?**
-  _293 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Allowance Workflow Actions` be split into smaller, more focused modules?**
-  _Cohesion score 0.1273532668881506 - nodes in this community are weakly interconnected._
+- **Why does `cn()` connect `Work Client Forms` to `Community 32`, `Profile Sync Admin`, `Off Site Work`, `Profile Roles UI`, `Navigation Notifications UI`, `Dialog Admin Clients`, `Shared Form Controls`, `Profile Form UI`, `Claim Calendar Client`, `Community 55`, `Community 59`?**
+  _High betweenness centrality (0.040) - this node is a cross-community bridge._
+- **Why does `Button()` connect `Dialog Admin Clients` to `Community 32`, `Leader Verification`, `Navigation Notifications UI`, `Work Client Forms`, `Shared Form Controls`, `Profile Form UI`, `Community 55`, `Community 57`?**
+  _High betweenness centrality (0.026) - this node is a cross-community bridge._
+- **Why does `Badge()` connect `Shared Form Controls` to `Community 32`, `Dialog Admin Clients`, `Work Client Forms`, `Profile Form UI`, `Community 55`, `Community 57`?**
+  _High betweenness centrality (0.020) - this node is a cross-community bridge._
+- **What connects `Current State`, `Key Finding: Zero Source Code Changes Required`, `Changes in `package.json`:` to the rest of the system?**
+  _307 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Leader Verification` be split into smaller, more focused modules?**
-  _Cohesion score 0.0859538784067086 - nodes in this community are weakly interconnected._
-- **Should `Profile Sync Admin` be split into smaller, more focused modules?**
-  _Cohesion score 0.07123034227567067 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.09957325746799431 - nodes in this community are weakly interconnected._
+- **Should `Action Log Domain` be split into smaller, more focused modules?**
+  _Cohesion score 0.06842105263157895 - nodes in this community are weakly interconnected._
+- **Should `Notifications System` be split into smaller, more focused modules?**
+  _Cohesion score 0.1021021021021021 - nodes in this community are weakly interconnected._
