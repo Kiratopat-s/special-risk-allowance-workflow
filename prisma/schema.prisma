@@ -62,7 +62,7 @@ enum ActionType {
 // =============================================================================
 
 model User {
-  id                String     @id @default(uuid())
+  id                String     @id @default(uuid(7))
   keycloakId        String     @unique @map("keycloak_id")
   
   // Personal Information
@@ -119,7 +119,7 @@ model User {
 // =============================================================================
 
 model Department {
-  id                String     @id @default(uuid())
+  id                String     @id @default(uuid(7))
   
   // Department Information
   name              String     @unique
@@ -152,7 +152,7 @@ model Department {
 // =============================================================================
 
 model UserActionLog {
-  id                String     @id @default(uuid())
+  id                String     @id @default(uuid(7))
   
   // Actor Information
   userId            String     @map("user_id")
@@ -240,7 +240,7 @@ model OffSiteWork {
 }
 
 model Files {
-  id                    String     @id @default(uuid())
+  id                    String     @id @default(uuid(7))
   fileName               String      @map("file_name")
   fileType               String?     @map("file_type")
   fileSize               Int?        @map("file_size")
@@ -269,7 +269,7 @@ enum ClaimDocumentStatus {
   CANCELLED              // Status when a claim has been cancelled by the claimant or due to other reasons
 }
 model ExpenseClaim {
-  id                     String     @id @default(uuid())
+  id                     String     @id @default(uuid(7))
   expenseMonth           DateTime    @map("expense_month") // Represents the month for which expenses are claimed (e.g. 2024-01-01 for January 2024)
   userId                 String      @map("user_id")
   claimant               User        @relation("ExpenseClaimUser", fields: [userId], references: [id], onDelete: Cascade)
@@ -334,7 +334,7 @@ enum MrcStepStatus {
 }
 
 model MonthlyRequestCollection {
-  id                 String     @id @default(uuid())
+  id                 String     @id @default(uuid(7))
   collectorId        String     @map("collector_id")
   collector          User       @relation(fields: [collectorId], references: [id], onDelete: Cascade)
   collectForMonth    DateTime   @map("collect_for_month") // Represents the month for which data is being collected (e.g. 2024-01-01 for January 2024)
@@ -359,7 +359,7 @@ model MonthlyRequestCollection {
 
 /// Tracks each approval step in the MRC review chain
 model MrcApprovalStep {
-  id                          String            @id @default(uuid())
+  id                          String            @id @default(uuid(7))
   monthlyRequestCollectionId  String            @map("monthly_request_collection_id")
   monthlyRequestCollection    MonthlyRequestCollection @relation(fields: [monthlyRequestCollectionId], references: [id], onDelete: Cascade)
   
@@ -383,7 +383,7 @@ model MrcApprovalStep {
 }
 
 model Signature {
-  id                String     @id @default(uuid())
+  id                String     @id @default(uuid(7))
   userId            String     @map("user_id")
   user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   signatureData     Bytes      @map("signature_data") // Binary data for the signature (e.g. image bytes)
@@ -452,7 +452,7 @@ enum PermissionScope {
 
 /// Permission model - Defines individual permissions
 model Permission {
-  id                String            @id @default(uuid())
+  id                String            @id @default(uuid(7))
   
   // Permission identification
   code              String            @unique // e.g., "expense-claim:create", "user:manage"
@@ -482,7 +482,7 @@ model Permission {
 
 /// Role model - Defines named roles that group permissions
 model Role {
-  id                String            @id @default(uuid())
+  id                String            @id @default(uuid(7))
   
   // Role identification
   code              String            @unique // e.g., "admin", "manager", "employee"
@@ -515,7 +515,7 @@ model Role {
 /// UserRole - Junction table linking users to roles
 /// Supports department-scoped role assignments
 model UserRole {
-  id                String            @id @default(uuid())
+  id                String            @id @default(uuid(7))
   
   // User and Role
   userId            String            @map("user_id")
@@ -546,7 +546,7 @@ model UserRole {
 
 /// RolePermission - Junction table linking roles to permissions
 model RolePermission {
-  id                String            @id @default(uuid())
+  id                String            @id @default(uuid(7))
   
   roleId            String            @map("role_id")
   role              Role              @relation(fields: [roleId], references: [id], onDelete: Cascade)
@@ -591,7 +591,7 @@ enum NotificationType {
 
 /// Persisted notification record linked to a single recipient
 model Notification {
-  id          String           @id @default(uuid())
+  id          String           @id @default(uuid(7))
 
   // Recipient
   userId      String           @map("user_id")
@@ -617,7 +617,7 @@ model Notification {
 
 /// Stores Web Push API subscriptions on a per-device basis
 model PushSubscription {
-  id          String   @id @default(uuid())
+  id          String   @id @default(uuid(7))
 
   userId      String   @map("user_id")
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -641,7 +641,7 @@ model PushSubscription {
 /// Internal leaders are linked via leaderUserId; external leaders use leaderEmail.
 /// The token is a one-time share link sent to external leaders.
 model LeaderVerification {
-  id              String         @id @default(uuid())
+  id              String         @id @default(uuid(7))
 
   // Claim being verified
   expenseClaimId  String         @map("expense_claim_id")
@@ -659,7 +659,7 @@ model LeaderVerification {
   leaderEmail     String?        @map("leader_email")
 
   // One-time token for external share link
-  token           String         @unique @default(uuid())
+  token           String         @unique @default(uuid(7))
   expiresAt       DateTime       @map("expires_at")
 
   verifiedAt      DateTime?      @map("verified_at")

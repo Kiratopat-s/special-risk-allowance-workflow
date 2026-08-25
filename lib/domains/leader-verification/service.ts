@@ -4,6 +4,7 @@
  * @module lib/domains/leader-verification/service
  */
 
+import { uuidv7 } from "uuidv7";
 import { leaderVerificationRepository } from "./repository";
 import { prisma } from "@/lib/db";
 import { success, error, type Result } from "@/lib/shared/types";
@@ -244,7 +245,7 @@ export const leaderVerificationService = {
 
         const updated = await prisma.leaderVerification.update({
             where: { id },
-            data: { token: crypto.randomUUID(), expiresAt: makeExpiresAt() },
+            data: { token: uuidv7(), expiresAt: makeExpiresAt() },
         });
 
         void requestingUserId; // for future audit log use
