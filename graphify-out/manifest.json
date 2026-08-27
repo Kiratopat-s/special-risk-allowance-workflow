@@ -2078,5 +2078,20 @@
     "mtime": 1787802992.140651,
     "ast_hash": "147f25732e3467eac7c50dc1178e175f",
     "semantic_hash": ""
+  },
+  "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/scripts/setup-runner.sh": {
+    "mtime": 1787803708.3185089,
+    "ast_hash": "649170bcce3d602699d0acad11bd6460",
+    "semantic_hash": ""
+  },
+  "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/.github/workflows/ci.yml": {
+    "mtime": 1787803904.8117363,
+    "ast_hash": "8a7a7f2c7fd7ea2afda8884010b69e68",
+    "semantic_hash": ""
+  },
+  "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/.github/workflows/deploy.yml": {
+    "mtime": 1787803952.2657719,
+    "ast_hash": "436496da9c7637a44c1c866502bddbc1",
+    "semantic_hash": ""
   }
 }

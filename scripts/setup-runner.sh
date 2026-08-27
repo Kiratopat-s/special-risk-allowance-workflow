@@ -27,6 +27,11 @@ if ! docker compose version &>/dev/null; then
   exit 1
 fi
 
+if ! command -v unzip &>/dev/null; then
+  echo "Installing unzip..."
+  sudo apt-get update && sudo apt-get install -y --no-install-recommends unzip
+fi
+
 echo "All prerequisites met."
 echo ""
 
