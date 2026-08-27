@@ -46,6 +46,14 @@ if ! command -v bun &>/dev/null; then
 else
   echo "Bun already installed: $(bun --version)"
 fi
+
+# Ensure Bun is available to the runner's systemd service
+if [ ! -f /etc/profile.d/bun.sh ]; then
+  echo "Adding Bun to system PATH..."
+  echo "export BUN_INSTALL=\"\$HOME/.bun\"" | sudo tee /etc/profile.d/bun.sh > /dev/null
+  echo "export PATH=\"\$BUN_INSTALL/bin:\$PATH\"" | sudo tee -a /etc/profile.d/bun.sh > /dev/null
+  sudo chmod +x /etc/profile.d/bun.sh
+fi
 echo ""
 
 # --- Download Runner ---
@@ -90,9 +98,14 @@ echo ""
 
 # --- Install as systemd Service ---
 
-echo "Installing runner as systemd service..."
-sudo ./svc.sh install
-sudo ./svc.sh start
+SERVICE_NAME="actions.runner.$(cat .runner | jq -r '.agentName // empty' 2>/dev/null || echo '*').service"
+if sudo ./svc.sh status 2>/dev/null | grep -q "active"; then
+  echo "Runner service already installed and active."
+else
+  echo "Installing runner as systemd service..."
+  sudo ./svc.sh install 2>/dev/null || echo "Service already installed."
+  sudo ./svc.sh start
+fi
 
 echo ""
 echo "=== Setup Complete ==="
