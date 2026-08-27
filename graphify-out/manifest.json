@@ -2090,8 +2090,13 @@
     "semantic_hash": ""
   },
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/.github/workflows/deploy.yml": {
-    "mtime": 1787818638.4250793,
-    "ast_hash": "32898d9e99670f5dd592513ac1edd52d",
+    "mtime": 1787821460.2035325,
+    "ast_hash": "2d38a64356f4f4ed290ef73b231a3b46",
+    "semantic_hash": ""
+  },
+  "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/.github/workflows/deploy-env.yml": {
+    "mtime": 1787821460.1931975,
+    "ast_hash": "8ac14903255ee1c5d38ec460801d567f",
     "semantic_hash": ""
   }
 }
