@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Test
+        run: bun run test
+
+  build:
+    needs: lint-and-test
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build app image
+        run: docker build --target runner -t sraw-app:ci-${{ github.sha }} .
+
+      - name: Build migrator image
+        run: docker build --target migrator -t sraw-migrator:ci-${{ github.sha }} .
+
+      - name: Clean up CI images
+        if: always()
+        run: docker rmi sraw-app:ci-${{ github.sha }} sraw-migrator:ci-${{ github.sha }} 2>/dev/null || true
