@@ -38,8 +38,8 @@ echo ""
 # --- Install Bun ---
 
 if ! command -v bun &>/dev/null; then
-  echo "Installing Bun 1.3.14..."
-  curl -fsSL https://bun.sh/install | bash -s -- bun-v1.3.14
+  echo "Installing Bun 1.4.0..."
+  curl -fsSL https://bun.sh/install | bash -s -- bun-v1.4.0
   export BUN_INSTALL="$HOME/.bun"
   export PATH="$BUN_INSTALL/bin:$PATH"
   echo "Bun installed: $(bun --version)"
