@@ -11,7 +11,6 @@ vi.mock("@/lib/db", () => ({
 import { expenseClaimDocumentRepository } from "./repository";
 import { actionLogService } from "@/lib/domains/action-log/service";
 import { leaderVerificationService } from "@/lib/domains/leader-verification";
-import { leaderVerificationRepository } from "@/lib/domains/leader-verification/repository";
 import { prisma } from "@/lib/db";
 import { expenseClaimDocumentService } from "./service";
 
@@ -28,7 +27,6 @@ const repo = expenseClaimDocumentRepository as unknown as {
 
 const mockLogService = actionLogService as unknown as { log: vi.Mock };
 const mockLvService = leaderVerificationService as unknown as { createForClaim: vi.Mock };
-const mockLvRepo = leaderVerificationRepository as unknown as { deleteAllByClaimId: vi.Mock };
 const mockPrisma = prisma as unknown as { offSiteWork: { findMany: vi.Mock } };
 
 const makeClaim = (overrides = {}) => ({
