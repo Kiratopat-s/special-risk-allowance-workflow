@@ -607,11 +607,16 @@ model Notification {
   isRead      Boolean          @default(false) @map("is_read")
   readAt      DateTime?        @map("read_at")
 
+  // Soft-delete
+  isDeleted   Boolean          @default(false) @map("is_deleted")
+  deletedAt   DateTime?        @map("deleted_at")
+
   createdAt   DateTime         @default(now()) @map("created_at")
 
   @@map("notifications")
   @@index([userId])
   @@index([userId, isRead])
+  @@index([userId, isDeleted, createdAt])
   @@index([createdAt])
 }
 

@@ -74,6 +74,24 @@ export async function markAllNotificationsRead(): Promise<Result<void>> {
     return notificationService.markAllRead(userId);
 }
 
+/** Soft-delete a single notification. */
+export async function clearNotification(id: string): Promise<Result<void>> {
+    const session = await auth();
+    const userId = session?.user?.dbUserId;
+    if (!userId) return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
+
+    return notificationService.softDelete(id, userId);
+}
+
+/** Soft-delete all read notifications for the current user. */
+export async function clearAllReadNotifications(): Promise<Result<number>> {
+    const session = await auth();
+    const userId = session?.user?.dbUserId;
+    if (!userId) return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
+
+    return notificationService.softDeleteAllRead(userId);
+}
+
 /**
  * Broadcast a system announcement to specific users or all users.
  * Requires ADMIN role.

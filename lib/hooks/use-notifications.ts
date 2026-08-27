@@ -15,10 +15,13 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { toast } from "sonner";
 import {
     getMyNotificationPageState,
     markNotificationRead,
     markAllNotificationsRead,
+    clearNotification,
+    clearAllReadNotifications,
 } from "@/app/actions/notifications";
 import type { NotificationViewModel, NotificationPayload } from "@/lib/domains/notification";
 
@@ -32,6 +35,8 @@ export function useNotifications() {
     const [isLoading, setIsLoading] = useState(true);
     const backoffRef = useRef(BASE_BACKOFF_MS);
     const esRef = useRef<EventSource | null>(null);
+    const notificationsRef = useRef(notifications);
+    useEffect(() => { notificationsRef.current = notifications; }, [notifications]);
 
     // ---------------------------------------------------------------------------
     // Initial load
@@ -184,5 +189,38 @@ export function useNotifications() {
         await markAllNotificationsRead();
     }, []);
 
-    return { notifications, unreadCount, isLoading, markRead, markAllRead };
+    const clearOne = useCallback(async (id: string) => {
+        const removed = notificationsRef.current.find((n) => n.id === id);
+        setNotifications((prev) => prev.filter((n) => n.id !== id));
+        if (removed && !removed.isRead) setUnreadCount((c) => Math.max(0, c - 1));
+
+        const result = await clearNotification(id);
+        if (!result.success && removed) {
+            setNotifications((prev) => {
+                const next = [...prev, removed];
+                next.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                return next;
+            });
+            if (!removed.isRead) setUnreadCount((c) => c + 1);
+            toast.error("ไม่สามารถลบการแจ้งเตือนได้");
+        }
+    }, []);
+
+    const clearAllRead = useCallback(async () => {
+        const readItems = notificationsRef.current.filter((n) => n.isRead);
+        setNotifications((prev) => prev.filter((n) => !n.isRead));
+
+        const result = await clearAllReadNotifications();
+        if (!result.success) {
+            setNotifications((prev) => {
+                const next = [...prev, ...readItems];
+                next.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                return next.slice(0, MAX_LOCAL);
+            });
+            toast.error("ไม่สามารถลบการแจ้งเตือนได้");
+        }
+        return result;
+    }, []);
+
+    return { notifications, unreadCount, isLoading, markRead, markAllRead, clearOne, clearAllRead };
 }

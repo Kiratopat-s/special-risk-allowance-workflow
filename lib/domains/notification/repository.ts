@@ -52,12 +52,12 @@ export const notificationRepository = {
         const skip = (page - 1) * pageSize;
         const [rows, total] = await prisma.$transaction([
             prisma.notification.findMany({
-                where: { userId },
+                where: { userId, isDeleted: false },
                 orderBy: { createdAt: "desc" },
                 skip,
                 take: pageSize,
             }),
-            prisma.notification.count({ where: { userId } }),
+            prisma.notification.count({ where: { userId, isDeleted: false } }),
         ]);
 
         return {
@@ -74,7 +74,7 @@ export const notificationRepository = {
     },
 
     async countUnread(userId: string): Promise<number> {
-        return prisma.notification.count({ where: { userId, isRead: false } });
+        return prisma.notification.count({ where: { userId, isRead: false, isDeleted: false } });
     },
 
     async markRead(id: string, userId: string): Promise<void> {
@@ -86,9 +86,24 @@ export const notificationRepository = {
 
     async markAllRead(userId: string): Promise<void> {
         await prisma.notification.updateMany({
-            where: { userId, isRead: false },
+            where: { userId, isRead: false, isDeleted: false },
             data: { isRead: true, readAt: new Date() },
         });
+    },
+
+    async softDelete(id: string, userId: string): Promise<void> {
+        await prisma.notification.updateMany({
+            where: { id, userId, isDeleted: false },
+            data: { isDeleted: true, deletedAt: new Date() },
+        });
+    },
+
+    async softDeleteAllRead(userId: string): Promise<number> {
+        const result = await prisma.notification.updateMany({
+            where: { userId, isRead: true, isDeleted: false },
+            data: { isDeleted: true, deletedAt: new Date() },
+        });
+        return result.count;
     },
 
     // -------------------------------------------------------------------------

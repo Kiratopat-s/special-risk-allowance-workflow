@@ -134,6 +134,16 @@ export const notificationService = {
         return success(undefined);
     },
 
+    async softDelete(id: string, userId: string): Promise<Result<void>> {
+        await notificationRepository.softDelete(id, userId);
+        return success(undefined);
+    },
+
+    async softDeleteAllRead(userId: string): Promise<Result<number>> {
+        const count = await notificationRepository.softDeleteAllRead(userId);
+        return success(count);
+    },
+
     // ---------------------------------------------------------------------------
     // Push subscription management
     // ---------------------------------------------------------------------------

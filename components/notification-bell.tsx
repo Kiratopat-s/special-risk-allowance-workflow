@@ -11,10 +11,12 @@
  * @module components/notification-bell
  */
 
-import { Bell, BellRing, Check, CheckCheck } from "lucide-react";
+import { useState } from "react";
+import { Bell, BellRing, Check, CheckCheck, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { LoadingButton } from "@/components/ui/loading-button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,7 +44,7 @@ function formatRelativeTime(date: Date): string {
 }
 
 export function NotificationBell() {
-  const { notifications, unreadCount, isLoading, markRead, markAllRead } =
+  const { notifications, unreadCount, isLoading, markRead, markAllRead, clearOne, clearAllRead } =
     useNotifications();
   const {
     permission,
@@ -50,9 +52,12 @@ export function NotificationBell() {
     subscribe,
   } = usePushSubscription();
 
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const badgeCount = Math.min(unreadCount, 99);
+  const readCount = notifications.filter((n) => n.isRead).length;
 
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
@@ -127,17 +132,30 @@ export function NotificationBell() {
               </span>
             )}
           </DropdownMenuLabel>
-          {unreadCount > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => markAllRead()}
-            >
-              <CheckCheck className="h-3 w-3" />
-              อ่านทั้งหมด
-            </Button>
-          )}
+          <div className="flex items-center gap-1">
+            {readCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-destructive"
+                onClick={() => setShowClearConfirm(true)}
+              >
+                <Trash2 className="h-3 w-3" />
+                ล้างที่อ่านแล้ว
+              </Button>
+            )}
+            {unreadCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => markAllRead()}
+              >
+                <CheckCheck className="h-3 w-3" />
+                อ่านทั้งหมด
+              </Button>
+            )}
+          </div>
         </div>
 
         <DropdownMenuSeparator />
@@ -157,7 +175,7 @@ export function NotificationBell() {
                 <DropdownMenuItem
                   key={n.id}
                   className={cn(
-                    "flex flex-col items-start gap-0.5 px-3 py-2.5 cursor-pointer",
+                    "group relative flex flex-col items-start gap-0.5 px-3 py-2.5 cursor-pointer pr-8",
                     !n.isRead && "bg-accent/40",
                   )}
                   onClick={() => {
@@ -165,6 +183,16 @@ export function NotificationBell() {
                     if (n.link) window.location.href = n.link;
                   }}
                 >
+                  <button
+                    className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-sm opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void clearOne(n.id);
+                    }}
+                    aria-label="ลบการแจ้งเตือน"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
                   <div className="flex w-full items-start justify-between gap-2">
                     <span
                       className={cn(
@@ -198,5 +226,20 @@ export function NotificationBell() {
         </ScrollArea>
       </DropdownMenuContent>
     </DropdownMenu>
+    <ConfirmDialog
+      open={showClearConfirm}
+      onClose={() => setShowClearConfirm(false)}
+      title="ล้างการแจ้งเตือนที่อ่านแล้ว"
+      description={`จะลบ ${readCount} รายการที่อ่านแล้วออก`}
+      confirmLabel="ล้างทั้งหมด"
+      cancelLabel="ยกเลิก"
+      onConfirm={() => {
+        void clearAllRead().then((result) => {
+          setShowClearConfirm(false);
+          if (result?.success) toast.success(`ล้าง ${result.data} รายการแล้ว`);
+        });
+      }}
+    />
+    </>
   );
 }
