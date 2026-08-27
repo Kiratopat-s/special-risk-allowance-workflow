@@ -41,10 +41,10 @@ function Dialog({ open, onClose, children, className }: DialogProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-100 flex min-h-dvh items-center justify-center overflow-y-auto p-4 sm:p-6">
       {/* Overlay */}
       <div
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+        className="fixed inset-0 z-100 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       />
       {/* Content */}
@@ -52,7 +52,7 @@ function Dialog({ open, onClose, children, className }: DialogProps) {
         role="dialog"
         aria-modal="true"
         className={cn(
-          "relative z-50 flex w-full max-w-lg flex-col overflow-hidden rounded-xl border bg-background shadow-lg",
+          "relative z-101 flex w-full max-w-lg flex-col overflow-hidden rounded-xl border bg-background shadow-lg",
           "max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)]",
           "animate-in fade-in-0 zoom-in-95",
           className,
