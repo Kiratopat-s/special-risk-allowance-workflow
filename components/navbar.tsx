@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   LayoutDashboard,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
 import { usePermissions } from "@/lib/hooks/use-permissions";
@@ -65,6 +66,16 @@ export function Navbar() {
           <span className="hidden font-semibold sm:inline-block">
             Special Risk Allowance
           </span>
+          {process.env.NEXT_PUBLIC_APP_ENV === "uat" && (
+            <Badge variant="warning" className="hidden text-[10px] px-1.5 py-0 sm:inline-flex">
+              UAT
+            </Badge>
+          )}
+          {process.env.NEXT_PUBLIC_APP_ENV === "development" && (
+            <Badge variant="secondary" className="hidden text-[10px] px-1.5 py-0 sm:inline-flex">
+              LOCAL
+            </Badge>
+          )}
         </Link>
 
         <nav className="flex items-center gap-2">
