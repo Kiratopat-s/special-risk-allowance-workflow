@@ -975,8 +975,8 @@
     "semantic_hash": ""
   },
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/app/actions/notifications.ts": {
-    "mtime": 1787799827.3780189,
-    "ast_hash": "31a6ca120c199a6102d10fe2d947c3e0",
+    "mtime": 1783609820.9582639,
+    "ast_hash": "860512a515701f4504e0a6b98d19ee5c",
     "semantic_hash": ""
   },
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/app/actions/off-site-work.ts": {
@@ -1245,8 +1245,8 @@
     "semantic_hash": ""
   },
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/components/notification-bell.tsx": {
-    "mtime": 1787799918.4785974,
-    "ast_hash": "7937601fdb0cff3028a60e7c3a35fc91",
+    "mtime": 1783616035.2934127,
+    "ast_hash": "c2f57aa54a4606b7d3d602795468d4d1",
     "semantic_hash": ""
   },
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/components/providers.tsx": {
@@ -1510,13 +1510,13 @@
     "semantic_hash": ""
   },
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/lib/domains/notification/repository.ts": {
-    "mtime": 1787799796.66798,
-    "ast_hash": "8b007b56993ddfec76513c6dd06974a0",
+    "mtime": 1783609821.0790281,
+    "ast_hash": "c6c44d37bb2a7c046ab856867dea78f0",
     "semantic_hash": ""
   },
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/lib/domains/notification/service.ts": {
-    "mtime": 1787799812.0870018,
-    "ast_hash": "61446ecebd4df3d53bdb78592522b7a3",
+    "mtime": 1786285511.2709403,
+    "ast_hash": "3b171c3ceddf46bd36917951c23fdd57",
     "semantic_hash": ""
   },
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/lib/domains/notification/types.ts": {
@@ -1615,8 +1615,8 @@
     "semantic_hash": ""
   },
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/lib/hooks/use-notifications.ts": {
-    "mtime": 1787799859.7156165,
-    "ast_hash": "e093b089db174c9a4a1751892eb041a8",
+    "mtime": 1783614407.2625852,
+    "ast_hash": "cbab4673f97040dd55447120060531fa",
     "semantic_hash": ""
   },
   "/Users/kiratipatsawangsisombat/Desktop/github/special-risk-allowance-workflow/lib/hooks/use-permissions.ts": {
