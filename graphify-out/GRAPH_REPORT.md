@@ -1,16 +1,16 @@
 # Graph Report - special-risk-allowance-workflow  (2026-08-27)
 
 ## Corpus Check
-- 218 files · ~95,390 words
+- 218 files · ~95,457 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1065 nodes · 2458 edges · 66 communities (56 shown, 10 thin omitted)
+- 1065 nodes · 2459 edges · 66 communities (56 shown, 10 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 27 edges (avg confidence: 0.88)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `f3826dcc`
+- Built from commit: `be1e8844`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -84,7 +84,7 @@
 5. `PaginatedResult` - 19 edges
 6. `compilerOptions` - 17 edges
 7. `Special Risk Allowance Workflow` - 17 edges
-8. `Badge()` - 16 edges
+8. `Badge()` - 17 edges
 9. `actionLogService` - 16 edges
 10. `canAny()` - 15 edges
 
@@ -322,10 +322,10 @@ Nodes (5): Providers(), ProvidersProps, SessionGuard(), useSessionGuard(), Toast
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `cn()` connect `Dialog Admin Clients` to `Community 32`, `Off Site Work`, `Navigation Notifications UI`, `Profile Form UI`, `Community 20`, `Claim Calendar Client`, `Community 55`, `Community 57`, `Community 58`, `Community 59`?**
-  _High betweenness centrality (0.041) - this node is a cross-community bridge._
+  _High betweenness centrality (0.042) - this node is a cross-community bridge._
 - **Why does `Button()` connect `Community 32` to `Community 64`, `Leader Verification`, `Profile Roles UI`, `Navigation Notifications UI`, `Dialog Admin Clients`, `Profile Form UI`, `Community 55`, `Community 57`?**
   _High betweenness centrality (0.027) - this node is a cross-community bridge._
-- **Why does `can()` connect `Allowance Workflow Actions` to `Profile Sync Admin`, `Monthly Request Collections`, `Expense Claim Documents`, `Off Site Work`, `Department Domain`, `User Signatures`, `Community 56`, `Community 58`?**
+- **Why does `Badge()` connect `Community 57` to `Allowance Workflow Actions`, `Leader Verification`, `Community 32`, `Community 64`, `Monthly Request Collections`, `Profile Roles UI`, `Navigation Notifications UI`, `Dialog Admin Clients`, `Profile Form UI`, `Community 55`?**
   _High betweenness centrality (0.025) - this node is a cross-community bridge._
 - **What connects `eslintConfig`, `repo`, `mockLogService` to the rest of the system?**
   _338 weakly-connected nodes found - possible documentation gaps or missing edges._
