@@ -50,6 +50,21 @@ export const workflowTheme = createTheme({
       styleOverrides: { paper: { backgroundImage: "none", borderRadius: 16 } },
     },
     MuiDrawer: { styleOverrides: { paper: { backgroundImage: "none" } } },
+    MuiMenu: {
+      styleOverrides: {
+        paper: {
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+          backgroundImage: "none",
+        },
+        list: { padding: 6 },
+      },
+    },
+    MuiMenuItem: {
+      styleOverrides: {
+        root: { minHeight: 40, borderRadius: 6, fontSize: "0.875rem" },
+      },
+    },
     MuiTableCell: {
       styleOverrides: {
         root: {

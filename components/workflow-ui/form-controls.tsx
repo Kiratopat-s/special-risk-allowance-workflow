@@ -2,8 +2,11 @@
 import * as React from "react";
 import MuiCheckbox from "@mui/material/Checkbox";
 import NativeSelect from "@mui/material/NativeSelect";
+import MuiSelect from "@mui/material/Select";
+import MenuItem from "@mui/material/MenuItem";
 import OutlinedInput from "@mui/material/OutlinedInput";
 import { cn } from "@/lib/utils";
+import { useDesktopPicker } from "@/lib/hooks/use-desktop-picker";
 
 export function Checkbox({
   label,
@@ -39,39 +42,106 @@ export function Checkbox({
     </label>
   );
 }
+export interface DropdownOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
+}
+interface SelectProps {
+  options: DropdownOption[];
+  value?: string;
+  defaultValue?: string;
+  onValueChange: (value: string) => void;
+  label: string;
+  hideLabel?: boolean;
+  className?: string;
+  id?: string;
+  name?: string;
+  disabled?: boolean;
+  required?: boolean;
+}
 export function Select({
   label,
+  hideLabel = false,
   className,
-  children,
+  options,
   value,
-  defaultValue,
+  defaultValue = "",
   disabled,
-  onChange,
-  ...props
-}: React.SelectHTMLAttributes<HTMLSelectElement> & { label?: string }) {
+  onValueChange,
+  id: suppliedId,
+  name,
+  required,
+}: SelectProps) {
   const generated = React.useId();
-  const id = props.id || generated;
+  const id = suppliedId || generated;
+  const desktop = useDesktopPicker();
+  const [localValue, setLocalValue] = React.useState(defaultValue);
+  const selected = value ?? localValue;
+  const change = (next: string) => {
+    setLocalValue(next);
+    onValueChange(next);
+  };
   return (
     <div className={cn("min-w-0", className)}>
-      {label && (
-        <label
-          htmlFor={id}
-          className="block text-sm text-muted-foreground mb-2"
-        >
-          {label}
-        </label>
-      )}
-      <NativeSelect
-        fullWidth
-        input={<OutlinedInput />}
-        value={value}
-        defaultValue={defaultValue}
-        disabled={disabled}
-        onChange={onChange}
-        inputProps={{ ...props, id }}
+      <label
+        id={`${id}-label`}
+        htmlFor={id}
+        className={
+          hideLabel ? "sr-only" : "block text-sm text-muted-foreground mb-2"
+        }
       >
-        {children}
-      </NativeSelect>
+        {label}
+      </label>
+      {desktop ? (
+        <MuiSelect
+          id={id}
+          labelId={`${id}-label`}
+          name={name}
+          fullWidth
+          size="small"
+          displayEmpty
+          value={selected}
+          disabled={disabled}
+          required={required}
+          input={<OutlinedInput />}
+          onChange={(event) => change(event.target.value)}
+          MenuProps={{
+            slotProps: {
+              paper: { sx: { maxHeight: "min(360px, calc(100dvh - 32px))" } },
+            },
+          }}
+        >
+          {options.map((option) => (
+            <MenuItem
+              key={option.value}
+              value={option.value}
+              disabled={option.disabled}
+            >
+              {option.label}
+            </MenuItem>
+          ))}
+        </MuiSelect>
+      ) : (
+        <NativeSelect
+          fullWidth
+          input={<OutlinedInput />}
+          value={selected}
+          disabled={disabled}
+          onChange={(event) => change(event.target.value)}
+          inputProps={{ id, name, required, "aria-labelledby": `${id}-label` }}
+        >
+          {options.map((option) => (
+            <option
+              key={option.value}
+              value={option.value}
+              disabled={option.disabled}
+            >
+              {option.label}
+            </option>
+          ))}
+        </NativeSelect>
+      )}
     </div>
   );
 }

@@ -9,6 +9,8 @@ import {
   within,
 } from "@testing-library/react";
 import { ThemeProvider } from "@mui/material/styles";
+import userEvent from "@testing-library/user-event";
+import { installPickerMedia } from "./helpers/picker-media";
 import { workflowTheme } from "@/components/workflow-ui/theme";
 import type { ExpenseClaimDocumentWithRelations } from "@/lib/domains/expense-claim-document/types";
 const mock = vi.hoisted(() => ({
@@ -113,7 +115,10 @@ beforeEach(() => {
     },
   });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 async function startNew() {
   fireEvent.click(screen.getByRole("button", { name: "สร้างเอกสาร" }));
   await waitFor(() => expect(mock.eligible).toHaveBeenCalled());
@@ -124,6 +129,17 @@ async function startNew() {
   fireEvent.click(await screen.findByRole("button", { name: /คำสั่งทดสอบ/ }));
 }
 describe("claim presentation preserves behavior", () => {
+  it("applies a desktop menu filter with the existing URL and pagination contract", async () => {
+    installPickerMedia(true);
+    mock.query = new URLSearchParams("tab=expense-claims&page=4&month=2026-09");
+    mount();
+    await userEvent.click(screen.getByRole("combobox", { name: /^สถานะ/ }));
+    await userEvent.click(screen.getByRole("option", { name: "รอดำเนินการ" }));
+    expect(mock.push).toHaveBeenCalledWith(
+      "/dashboard?tab=expense-claims&month=2026-09&status=PENDING",
+      { scroll: false },
+    );
+  });
   it("retains values after a transport failure and blocks duplicate submission while pending", async () => {
     let rejectRequest!: (reason: Error) => void;
     mock.create.mockImplementation(

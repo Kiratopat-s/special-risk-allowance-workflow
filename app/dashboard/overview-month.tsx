@@ -1,22 +1,23 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Input } from "@/components/workflow-ui/input";
+import { DatePicker } from "@/components/workflow-ui/date-picker";
 export function OverviewMonth({ month }: { month: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   return (
     <div className="w-44">
-      <label className="sr-only" htmlFor="overview-month">
-        เดือนที่แสดง
-      </label>
-      <Input
+      <DatePicker
         id="overview-month"
-        type="month"
+        kind="month"
+        label="เดือนที่แสดง"
+        hideLabel
+        commitOnBlur
+        required
         value={month}
-        onChange={(event) => {
-          if (/^\d{4}-(0[1-9]|1[0-2])$/.test(event.target.value)) {
+        onValueChange={(value) => {
+          if (/^\d{4}-(0[1-9]|1[0-2])$/.test(value)) {
             const query = new URLSearchParams(searchParams);
-            query.set("month", event.target.value);
+            query.set("month", value);
             router.push(`/dashboard?${query}`, { scroll: false });
           }
         }}

@@ -40,6 +40,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/workflow-ui/button";
 import { LoadingButton } from "@/components/workflow-ui/loading-button";
 import { Input } from "@/components/workflow-ui/input";
+import { DatePicker } from "@/components/workflow-ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/workflow-ui/textarea";
 import {
@@ -691,24 +692,24 @@ export function OffSiteWorkClient({
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="startDate">วันเริ่มต้น</Label>
-                <Input
+                <DatePicker
                   id="startDate"
-                  type="date"
+                  kind="date"
+                  label="วันเริ่มต้น"
                   value={form.startDate}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, startDate: e.target.value }))
+                  onValueChange={(value) =>
+                    setForm((prev) => ({ ...prev, startDate: value }))
                   }
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="endDate">วันสิ้นสุด</Label>
-                <Input
+                <DatePicker
                   id="endDate"
-                  type="date"
+                  kind="date"
+                  label="วันสิ้นสุด"
                   value={form.endDate}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, endDate: e.target.value }))
+                  onValueChange={(value) =>
+                    setForm((prev) => ({ ...prev, endDate: value }))
                   }
                 />
               </div>

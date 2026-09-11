@@ -12,7 +12,8 @@ import {
 import { getClaimDatePool, getCalendarGridDates } from "@/lib/ui/claim-dates";
 import { parseClaimListQuery, updateListQuery } from "@/lib/ui/list-query";
 import { useScopedPermission } from "@/lib/hooks/use-scoped-permission";
-import { Select as NativeSelect } from "@/components/workflow-ui/form-controls";
+import { Select as Dropdown } from "@/components/workflow-ui/form-controls";
+import { DatePicker } from "@/components/workflow-ui/date-picker";
 import { StatusBadge } from "@/components/workflow-ui/status-badge";
 import {
   Table,
@@ -684,45 +685,44 @@ export function ExpenseClaimDocumentClient({
 
       <div className="grid grid-cols-2 gap-4 sm:flex sm:flex-wrap sm:items-end [&>div>label]:mb-2">
         <div className="w-full sm:w-48">
-          <Label htmlFor="claim-status">สถานะ</Label>
-          <NativeSelect
+          <Dropdown
             id="claim-status"
+            label="สถานะ"
             value={query.get("status") || ""}
-            onChange={(event) =>
-              navigateList({
-                status: event.target.value,
-                statusGroup: undefined,
-              })
+            onValueChange={(value) =>
+              navigateList({ status: value, statusGroup: undefined })
             }
-          >
-            <option value="">ทุกสถานะ</option>
-            {Object.entries(STATUS_LABEL).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </NativeSelect>
+            options={[
+              { value: "", label: "ทุกสถานะ" },
+              ...Object.entries(STATUS_LABEL).map(([value, label]) => ({
+                value,
+                label,
+              })),
+            ]}
+          />
         </div>
         <div className="w-full sm:w-44">
-          <Label htmlFor="claim-month">เดือน</Label>
-          <Input
+          <DatePicker
+            commitOnBlur
             id="claim-month"
-            type="month"
+            kind="month"
+            label="เดือน"
             value={query.get("month") || ""}
-            onChange={(event) => navigateList({ month: event.target.value })}
+            onValueChange={(value) => navigateList({ month: value })}
           />
         </div>
         <div className="w-full sm:w-48">
-          <Label htmlFor="claim-sort">เรียงลำดับ</Label>
-          <NativeSelect
+          <Dropdown
             id="claim-sort"
+            label="เรียงลำดับ"
             value={query.get("sort") || ""}
-            onChange={(event) => navigateList({ sort: event.target.value })}
-          >
-            <option value="">ล่าสุด (ค่าเริ่มต้น)</option>
-            <option value="amount-desc">ยอดเบิกมาก → น้อย</option>
-            <option value="amount-asc">ยอดเบิกน้อย → มาก</option>
-          </NativeSelect>
+            onValueChange={(value) => navigateList({ sort: value })}
+            options={[
+              { value: "", label: "ล่าสุด (ค่าเริ่มต้น)" },
+              { value: "amount-desc", label: "ยอดเบิกมาก → น้อย" },
+              { value: "amount-asc", label: "ยอดเบิกน้อย → มาก" },
+            ]}
+          />
         </div>
         {(query.get("statusGroup") ||
           query.get("status") ||
@@ -953,13 +953,12 @@ export function ExpenseClaimDocumentClient({
           )}
           <div className="space-y-4">
             <div hidden={wizard && step !== 0} className="space-y-2">
-              <Label htmlFor="expenseMonth">เดือน</Label>
-              <Input
+              <DatePicker
                 id="expenseMonth"
-                type="month"
+                kind="month"
+                label="เดือน"
                 value={form.expenseMonth}
-                onChange={(e) => {
-                  const nextMonth = e.target.value;
+                onValueChange={(nextMonth) => {
                   setForm((prev) => ({ ...prev, expenseMonth: nextMonth }));
                   if (mode === "create") {
                     void loadEligibleOffSiteWorks(nextMonth);

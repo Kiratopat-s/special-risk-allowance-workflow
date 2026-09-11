@@ -15,8 +15,9 @@ import { useScopedPermission } from "@/lib/hooks/use-scoped-permission";
 import { parseClaimListQuery, updateListQuery } from "@/lib/ui/list-query";
 import {
   Checkbox,
-  Select as NativeSelect,
+  Select as Dropdown,
 } from "@/components/workflow-ui/form-controls";
+import { DatePicker } from "@/components/workflow-ui/date-picker";
 import { Input } from "@/components/workflow-ui/input";
 import { STATUS_LABELS } from "@/components/workflow-ui/status-badge";
 import { toast } from "sonner";
@@ -598,27 +599,30 @@ export function MrcClient({
           ค้นหา
         </Button>
         <div className="w-44">
-          <NativeSelect
-            aria-label="สถานะรายการรวบรวม"
+          <Dropdown
+            label="สถานะรายการรวบรวม"
+            hideLabel
             value={query.get("status") || ""}
-            onChange={(event) => navigateList({ status: event.target.value })}
-          >
-            <option value="">ทุกสถานะ</option>
-            {["DRAFT", "PENDING", "APPROVED", "REJECTED", "CANCELLED"].map(
-              (status) => (
-                <option key={status} value={status}>
-                  {STATUS_LABELS[status as keyof typeof STATUS_LABELS]}
-                </option>
+            onValueChange={(value) => navigateList({ status: value })}
+            options={[
+              { value: "", label: "ทุกสถานะ" },
+              ...["DRAFT", "PENDING", "APPROVED", "REJECTED", "CANCELLED"].map(
+                (value) => ({
+                  value,
+                  label: STATUS_LABELS[value as keyof typeof STATUS_LABELS],
+                }),
               ),
-            )}
-          </NativeSelect>
+            ]}
+          />
         </div>
         <div className="w-44">
-          <Input
-            aria-label="เดือนที่รวบรวม"
-            type="month"
+          <DatePicker
+            commitOnBlur
+            label="เดือนที่รวบรวม"
+            hideLabel
+            kind="month"
             value={query.get("month") || ""}
-            onChange={(event) => navigateList({ month: event.target.value })}
+            onValueChange={(value) => navigateList({ month: value })}
           />
         </div>
       </div>
@@ -832,14 +836,13 @@ export function MrcClient({
         </DialogHeader>
         <DialogBody className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="create-month">เดือน</Label>
-            <Input
+            <DatePicker
               title="เลือกเดือนที่ต้องการรวบรวมรายการเบิก"
               id="create-month"
-              type="month"
+              kind="month"
+              label="เดือน"
               value={collectMonth}
-              onChange={(e) => handleMonthChange(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              onValueChange={handleMonthChange}
             />
           </div>
           {renderClaimTable()}
