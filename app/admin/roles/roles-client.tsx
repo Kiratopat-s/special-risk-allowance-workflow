@@ -1,9 +1,12 @@
 "use client";
+import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
+import { useUrlFilter } from "@/lib/hooks/use-url-filter";
+import { Checkbox } from "@/components/workflow-ui/form-controls";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { LoadingButton } from "@/components/ui/loading-button";
+import { Button } from "@/components/workflow-ui/button";
+import { LoadingButton } from "@/components/workflow-ui/loading-button";
 import {
   Card,
   CardContent,
@@ -11,7 +14,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Input } from "@/components/workflow-ui/input";
 import { Badge } from "@/components/ui/badge";
 import { DetailPanelSkeleton } from "@/components/ui/skeleton";
 import {
@@ -22,7 +25,7 @@ import {
   DialogBody,
   DialogFooter,
   DialogClose,
-} from "@/components/ui/dialog";
+} from "@/components/workflow-ui/dialog";
 import {
   Plus,
   Search,
@@ -77,7 +80,7 @@ export function RolesClient({
   allPermissions,
 }: RolesClientProps) {
   const [roles, setRoles] = useState(initialRoles);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useUrlFilter("search");
   const [selectedRole, setSelectedRole] = useState<RoleEntity | null>(null);
   const [rolePermissions, setRolePermissions] = useState<string[]>([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -287,8 +290,7 @@ export function RolesClient({
                               key={perm.id}
                               className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm hover:bg-muted/50 cursor-pointer transition-colors"
                             >
-                              <input
-                                type="checkbox"
+                              <Checkbox
                                 checked={rolePermissions.includes(perm.id)}
                                 onChange={() => handleTogglePermission(perm.id)}
                                 disabled={pendingAction === "save-permissions"}

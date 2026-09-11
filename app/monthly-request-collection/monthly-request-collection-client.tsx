@@ -1,5 +1,24 @@
 "use client";
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
+import {
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableHeader,
+  TableCell,
+} from "@/components/workflow-ui/table";
+import { useCallback, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { collectionActionStage } from "@/lib/ui/collection-actions";
+import { useScopedPermission } from "@/lib/hooks/use-scoped-permission";
+import { parseClaimListQuery, updateListQuery } from "@/lib/ui/list-query";
+import {
+  Checkbox,
+  Select as NativeSelect,
+} from "@/components/workflow-ui/form-controls";
+import { Input } from "@/components/workflow-ui/input";
+import { STATUS_LABELS } from "@/components/workflow-ui/status-badge";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -15,8 +34,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { LoadingButton } from "@/components/ui/loading-button";
+import { Button } from "@/components/workflow-ui/button";
+import { LoadingButton } from "@/components/workflow-ui/loading-button";
 import {
   Dialog,
   DialogBody,
@@ -25,9 +44,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/workflow-ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Textarea } from "@/components/workflow-ui/textarea";
 import {
   cancelMonthlyRequestCollection,
   createMonthlyRequestCollection,
@@ -44,8 +63,8 @@ import type {
 } from "@/lib/domains/monthly-request-collection";
 import type { Pagination } from "@/lib/shared/types";
 import { monthDisplay, decimalText, toMonthInput } from "@/lib/shared/format";
-import { PaginationControls } from "@/components/ui/pagination-controls";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PaginationControls } from "@/components/workflow-ui/pagination-controls";
+import { ConfirmDialog } from "@/components/workflow-ui/confirm-dialog";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import {
   ApprovalTimeline,
@@ -92,6 +111,22 @@ export function MrcClient({
   canRk,
   canDrt,
 }: MrcClientProps) {
+  const { userId } = useScopedPermission("MONTHLY_REQUEST");
+  const router = useRouter();
+  const query = useSearchParams();
+  const filters = useMemo(
+    () => parseClaimListQuery(new URLSearchParams(query)),
+    [query],
+  );
+  const [search, setSearch] = useState(query.get("search") || "");
+  const navigateList = (
+    changes: Record<string, string | number | undefined>,
+    reset = true,
+  ) =>
+    router.push(
+      `/dashboard?${updateListQuery(query.toString(), changes, reset)}`,
+      { scroll: false },
+    );
   const [items, setItems] = useState(initialItems);
   const [pagination, setPagination] = useState(initialPagination);
   const [page, setPage] = useState(initialPagination?.page ?? 1);
@@ -121,6 +156,10 @@ export function MrcClient({
   const refresh = useCallback(
     async (nextPage = page) => {
       const result = await listMonthlyRequestCollections({
+        search: filters.search,
+        status: filters.status,
+        collectForMonthFrom: filters.expenseMonthFrom,
+        collectForMonthTo: filters.expenseMonthTo,
         page: nextPage,
         pageSize: PAGE_SIZE,
       });
@@ -131,8 +170,9 @@ export function MrcClient({
       setItems(result.data.data);
       setPagination(result.data.pagination);
       setPage(result.data.pagination.page);
+      router.refresh();
     },
-    [page],
+    [page, filters, router],
   );
 
   const loadEligibleClaims = useCallback(
@@ -227,7 +267,7 @@ export function MrcClient({
       }
       toast.success("สร้างรายการรวบรวมสำเร็จ");
       setMode(null);
-      await refresh(1);
+      await refresh(page);
     });
   };
 
@@ -314,24 +354,18 @@ export function MrcClient({
   /** Which review stage can the current user act on for a given MRC? */
   const getActionableStage = useCallback(
     (mrc: MonthlyRequestCollectionWithRelations): MrcApprovalStage | null => {
-      if (mrc.status !== "PENDING") return null;
-      const pendingStep = mrc.approvalSteps.find((s) => s.status === "PENDING");
-      if (!pendingStep) return null;
-      if (pendingStep.stage === "HPA_CHECK" && canHpa) return "HPA_CHECK";
-      if (pendingStep.stage === "RK_CHECK" && canRk) return "RK_CHECK";
-      if (pendingStep.stage === "OK_APPROVE" && canDrt) return "OK_APPROVE";
-      return null;
+      return collectionActionStage(mrc, { hpa: canHpa, rk: canRk, ok: canDrt });
     },
     [canHpa, canRk, canDrt],
   );
 
   const canCancelMrc = useCallback(
     (mrc: MonthlyRequestCollectionWithRelations): boolean => {
-      if (!canManage) return false;
+      if (!canManage && mrc.collectorId !== userId) return false;
       if (mrc.status === "APPROVED" || mrc.status === "CANCELLED") return false;
       return !mrc.approvalSteps.some((s) => s.status === "APPROVED");
     },
-    [canManage],
+    [canManage, userId],
   );
 
   // ---------------------------------------------------------------------------
@@ -387,56 +421,61 @@ export function MrcClient({
 
       {!isLoadingClaims && eligibleClaims.length > 0 && (
         <>
-          <div className="rounded-lg border overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="py-2 px-3 text-left w-8">
-                    <input
+          <div className="rounded-lg border overflow-x-auto">
+            <Table className="w-full text-sm">
+              <TableHead>
+                <TableRow className="border-b bg-muted/50">
+                  <TableHeader className="py-2 px-3 text-left w-8">
+                    <Checkbox
                       title="เลือกทั้งหมด"
                       aria-label="เลือกหรือยกเลิกเลือกทั้งหมด"
-                      type="checkbox"
                       checked={
-                        eligibleClaims.filter((c) => c.isVerified).length > 0 &&
-                        eligibleClaims
-                          .filter((c) => c.isVerified)
-                          .every((c) => selectedClaimIds.includes(c.id))
+                        eligibleClaims.length > 0 &&
+                        eligibleClaims.every((c) =>
+                          selectedClaimIds.includes(c.id),
+                        )
                       }
                       onChange={(e) =>
                         setSelectedClaimIds(
                           e.target.checked
-                            ? eligibleClaims
-                                .filter((c) => c.isVerified)
-                                .map((c) => c.id)
+                            ? eligibleClaims.map((c) => c.id)
                             : [],
                         )
                       }
                     />
-                  </th>
-                  <th className="py-2 px-3 text-left">ชื่อ-สกุล</th>
-                  <th className="py-2 px-3 text-left">ตำแหน่ง</th>
-                  <th className="py-2 px-3 text-left">สถานะ</th>
-                  <th className="py-2 px-3 text-right">จำนวนวัน</th>
-                  <th className="py-2 px-3 text-right">จำนวนเงิน</th>
-                  <th className="py-2 px-3 text-center">ดูเอกสาร</th>
-                </tr>
-              </thead>
-              <tbody>
+                  </TableHeader>
+                  <TableHeader className="py-2 px-3 text-left">
+                    ชื่อ-สกุล
+                  </TableHeader>
+                  <TableHeader className="py-2 px-3 text-left">
+                    ตำแหน่ง
+                  </TableHeader>
+                  <TableHeader className="py-2 px-3 text-left">
+                    สถานะ
+                  </TableHeader>
+                  <TableHeader className="py-2 px-3 text-right">
+                    จำนวนวัน
+                  </TableHeader>
+                  <TableHeader className="py-2 px-3 text-right">
+                    จำนวนเงิน
+                  </TableHeader>
+                  <TableHeader className="py-2 px-3 text-center">
+                    ดูเอกสาร
+                  </TableHeader>
+                </TableRow>
+              </TableHead>
+              <TableBody>
                 {eligibleClaims.map((claim) => {
                   const checked = selectedClaimIds.includes(claim.id);
-                  const selectable = claim.isVerified;
                   return (
-                    <tr
+                    <TableRow
                       key={claim.id}
                       className={`border-b last:border-0 transition-colors ${
-                        !selectable
-                          ? "opacity-60 cursor-not-allowed"
-                          : checked
+                        checked
                           ? "bg-primary/5 cursor-pointer"
                           : "hover:bg-muted/30 cursor-pointer"
                       }`}
                       onClick={() => {
-                        if (!selectable) return;
                         setSelectedClaimIds((prev) =>
                           prev.includes(claim.id)
                             ? prev.filter((id) => id !== claim.id)
@@ -444,15 +483,13 @@ export function MrcClient({
                         );
                       }}
                     >
-                      <td
+                      <TableCell
                         className="py-2 px-3"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           title={`เลือกเอกสารเบิก ${claim.id}`}
                           aria-label={`เลือกเอกสารเบิก ${claim.id}`}
-                          disabled={!selectable}
                           checked={checked}
                           onChange={(e) =>
                             setSelectedClaimIds((prev) =>
@@ -462,28 +499,28 @@ export function MrcClient({
                             )
                           }
                         />
-                      </td>
-                      <td className="py-2 px-3">
+                      </TableCell>
+                      <TableCell className="py-2 px-3">
                         {claim.claimant.firstName} {claim.claimant.lastName}
-                      </td>
-                      <td className="py-2 px-3 text-muted-foreground text-xs">
+                      </TableCell>
+                      <TableCell className="py-2 px-3 text-muted-foreground text-xs">
                         {claim.claimantPositionAtSubmission}
-                      </td>
-                      <td className="py-2 px-3">
+                      </TableCell>
+                      <TableCell className="py-2 px-3">
                         <Badge
                           variant={statusVariant(claim.status)}
                           className="text-[10px]"
                         >
                           {statusLabel(claim.status)}
                         </Badge>
-                      </td>
-                      <td className="py-2 px-3 text-right tabular-nums">
+                      </TableCell>
+                      <TableCell className="py-2 px-3 text-right tabular-nums">
                         {decimalText(claim.countDates)}
-                      </td>
-                      <td className="py-2 px-3 text-right tabular-nums">
+                      </TableCell>
+                      <TableCell className="py-2 px-3 text-right tabular-nums">
                         {decimalText(claim.amount)}
-                      </td>
-                      <td
+                      </TableCell>
+                      <TableCell
                         className="py-2 px-3 text-center"
                         onClick={(e) => e.stopPropagation()}
                       >
@@ -498,12 +535,12 @@ export function MrcClient({
                             เปิดดู
                           </a>
                         </Button>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
 
           {selectedClaimIds.length > 0 && (
@@ -529,11 +566,10 @@ export function MrcClient({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="page-heading">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            รวบรวมเบิกค่าตอบแทนเสี่ยงภัยพิเศษ
-          </h1>
+          <div className="eyebrow">MONTHLY COLLECTIONS</div>
+          <h1>รวบรวมเบิกค่าตอบแทนเสี่ยงภัยพิเศษ</h1>
           <p className="text-sm text-muted-foreground mt-1">
             จัดการรายการรวบรวมเบิกค่าตอบแทนประจำเดือน
           </p>
@@ -546,6 +582,46 @@ export function MrcClient({
         )}
       </div>
 
+      <div className="document-panel document-toolbar">
+        <div className="flex-1 min-w-48">
+          <Input
+            aria-label="ค้นหารายการรวบรวม"
+            placeholder="ค้นหารายการรวบรวม"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") navigateList({ search });
+            }}
+          />
+        </div>
+        <Button variant="outline" onClick={() => navigateList({ search })}>
+          ค้นหา
+        </Button>
+        <div className="w-44">
+          <NativeSelect
+            aria-label="สถานะรายการรวบรวม"
+            value={query.get("status") || ""}
+            onChange={(event) => navigateList({ status: event.target.value })}
+          >
+            <option value="">ทุกสถานะ</option>
+            {["DRAFT", "PENDING", "APPROVED", "REJECTED", "CANCELLED"].map(
+              (status) => (
+                <option key={status} value={status}>
+                  {STATUS_LABELS[status as keyof typeof STATUS_LABELS]}
+                </option>
+              ),
+            )}
+          </NativeSelect>
+        </div>
+        <div className="w-44">
+          <Input
+            aria-label="เดือนที่รวบรวม"
+            type="month"
+            value={query.get("month") || ""}
+            onChange={(event) => navigateList({ month: event.target.value })}
+          />
+        </div>
+      </div>
       {/* Table */}
       {items.length === 0 ? (
         <div className="py-16 text-center border rounded-xl text-muted-foreground">
@@ -555,26 +631,36 @@ export function MrcClient({
       ) : (
         <div
           aria-busy={isPending || undefined}
-          className="rounded-xl border overflow-hidden"
+          className="document-panel overflow-x-auto"
         >
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="py-3 px-4 text-left font-medium">เดือน</th>
-                <th className="py-3 px-4 text-left font-medium">ผู้รวบรวม</th>
-                <th className="py-3 px-4 text-right font-medium">รายการ</th>
-                <th className="py-3 px-4 text-right font-medium">จำนวนเงิน</th>
-                <th className="py-3 px-4 text-left font-medium">สถานะ</th>
-                <th className="py-3 px-4 text-right font-medium">
+          <Table className="w-full text-sm">
+            <TableHead>
+              <TableRow className="border-b bg-muted/50">
+                <TableHeader className="py-3 px-4 text-left font-medium">
+                  เดือน
+                </TableHeader>
+                <TableHeader className="py-3 px-4 text-left font-medium">
+                  ผู้รวบรวม
+                </TableHeader>
+                <TableHeader className="py-3 px-4 text-right font-medium">
+                  รายการ
+                </TableHeader>
+                <TableHeader className="py-3 px-4 text-right font-medium">
+                  จำนวนเงิน
+                </TableHeader>
+                <TableHeader className="py-3 px-4 text-left font-medium">
+                  สถานะ
+                </TableHeader>
+                <TableHeader className="py-3 px-4 text-right font-medium">
                   การดำเนินการ
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+                </TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>
               {items.map((item) => {
                 const actionableStage = getActionableStage(item);
                 return (
-                  <tr
+                  <TableRow
                     key={item.id}
                     tabIndex={0}
                     role="button"
@@ -588,22 +674,22 @@ export function MrcClient({
                     }}
                     className="cursor-pointer border-b transition-colors last:border-0 hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none"
                   >
-                    <td className="py-3 px-4 font-medium">
+                    <TableCell className="py-3 px-4 font-medium">
                       {monthDisplay(item.collectForMonth)}
-                    </td>
-                    <td className="py-3 px-4 text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-muted-foreground">
                       {item.collector.firstName} {item.collector.lastName}
-                    </td>
-                    <td className="py-3 px-4 text-right tabular-nums">
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-right tabular-nums">
                       {item.expenseClaims.length}
-                    </td>
-                    <td className="py-3 px-4 text-right tabular-nums">
+                    </TableCell>
+                    <TableCell className="py-3 px-4 text-right tabular-nums">
                       {decimalText(item.amount)}
-                    </td>
-                    <td className="py-3 px-4">
+                    </TableCell>
+                    <TableCell className="py-3 px-4">
                       <MrcStatusBadge status={item.status} />
-                    </td>
-                    <td className="py-3 px-4">
+                    </TableCell>
+                    <TableCell className="py-3 px-4">
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
@@ -705,12 +791,12 @@ export function MrcClient({
                           </Button>
                         )}
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 
@@ -719,8 +805,8 @@ export function MrcClient({
         <PaginationControls
           pagination={pagination}
           isPending={isPending}
-          onPrevious={() => void refresh(page - 1)}
-          onNext={() => void refresh(page + 1)}
+          onPrevious={() => navigateList({ page: page - 1 }, false)}
+          onNext={() => navigateList({ page: page + 1 }, false)}
           label={
             <p className="text-sm text-muted-foreground">
               แสดง {items.length} / {pagination.total} รายการ · หน้า {page} /{" "}
@@ -731,7 +817,12 @@ export function MrcClient({
       )}
 
       {/* ─── Create dialog ────────────────────────────────────────── */}
-      <Dialog open={mode === "create"} onClose={() => setMode(null)}>
+      <Dialog
+        busy={isPending}
+        className="max-w-5xl"
+        open={mode === "create"}
+        onClose={() => setMode(null)}
+      >
         <DialogClose onClose={() => setMode(null)} />
         <DialogHeader>
           <DialogTitle>สร้างรายการรวบรวมใหม่</DialogTitle>
@@ -742,7 +833,7 @@ export function MrcClient({
         <DialogBody className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="create-month">เดือน</Label>
-            <input
+            <Input
               title="เลือกเดือนที่ต้องการรวบรวมรายการเบิก"
               id="create-month"
               type="month"
@@ -773,7 +864,12 @@ export function MrcClient({
       </Dialog>
 
       {/* ─── Edit dialog ──────────────────────────────────────────── */}
-      <Dialog open={mode === "edit"} onClose={() => setMode(null)}>
+      <Dialog
+        busy={isPending}
+        className="max-w-5xl"
+        open={mode === "edit"}
+        onClose={() => setMode(null)}
+      >
         <DialogClose onClose={() => setMode(null)} />
         <DialogHeader>
           <DialogTitle>แก้ไขรายการรวบรวม</DialogTitle>
@@ -802,7 +898,13 @@ export function MrcClient({
       </Dialog>
 
       {/* ─── View dialog ──────────────────────────────────────────── */}
-      <Dialog open={mode === "view"} onClose={() => setMode(null)}>
+      <Dialog
+        busy={isPending}
+        presentation="drawer"
+        className="sm:w-[840px]"
+        open={mode === "view"}
+        onClose={() => setMode(null)}
+      >
         <DialogClose onClose={() => setMode(null)} />
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -834,35 +936,46 @@ export function MrcClient({
             {/* Claims list */}
             <div>
               <p className="text-sm font-medium mb-2">รายการเบิก</p>
-              <div className="rounded-lg border overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="py-2 px-3 text-left">ชื่อ-สกุล</th>
-                      <th className="py-2 px-3 text-left">ตำแหน่ง</th>
-                      <th className="py-2 px-3 text-right">วัน</th>
-                      <th className="py-2 px-3 text-right">เงิน</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="rounded-lg border overflow-x-auto">
+                <Table className="w-full text-sm">
+                  <TableHead>
+                    <TableRow className="border-b bg-muted/50">
+                      <TableHeader className="py-2 px-3 text-left">
+                        ชื่อ-สกุล
+                      </TableHeader>
+                      <TableHeader className="py-2 px-3 text-left">
+                        ตำแหน่ง
+                      </TableHeader>
+                      <TableHeader className="py-2 px-3 text-right">
+                        วัน
+                      </TableHeader>
+                      <TableHeader className="py-2 px-3 text-right">
+                        เงิน
+                      </TableHeader>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
                     {selected.expenseClaims.map((claim) => (
-                      <tr key={claim.id} className="border-b last:border-0">
-                        <td className="py-2 px-3">
+                      <TableRow
+                        key={claim.id}
+                        className="border-b last:border-0"
+                      >
+                        <TableCell className="py-2 px-3">
                           {claim.claimant.firstName} {claim.claimant.lastName}
-                        </td>
-                        <td className="py-2 px-3 text-muted-foreground text-xs">
+                        </TableCell>
+                        <TableCell className="py-2 px-3 text-muted-foreground text-xs">
                           {claim.claimantPositionAtSubmission}
-                        </td>
-                        <td className="py-2 px-3 text-right tabular-nums">
+                        </TableCell>
+                        <TableCell className="py-2 px-3 text-right tabular-nums">
                           {decimalText(claim.countDates)}
-                        </td>
-                        <td className="py-2 px-3 text-right tabular-nums">
+                        </TableCell>
+                        <TableCell className="py-2 px-3 text-right tabular-nums">
                           {decimalText(claim.amount)}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </div>
 
@@ -913,6 +1026,7 @@ export function MrcClient({
 
       {/* ─── Review dialog ────────────────────────────────────────── */}
       <Dialog
+        busy={isPending}
         open={["review_hpa", "review_rk", "review_ok"].includes(mode ?? "")}
         onClose={() => setMode(null)}
       >

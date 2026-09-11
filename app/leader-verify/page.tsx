@@ -40,14 +40,22 @@ export default async function LeaderVerifyPage({
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-sky-50 to-white dark:from-sky-950 dark:to-background p-4">
-      <div className="w-full max-w-lg space-y-4">
+    <section className="flex min-h-[70vh] items-start justify-center px-4 py-12 sm:py-16">
+      <div className="w-full max-w-2xl space-y-5">
+        <div className="rounded-2xl bg-[#202535] px-6 py-7 text-white sm:px-8">
+          <p className="text-[11px] font-semibold tracking-[0.18em] text-white/60">
+            LEADER VERIFICATION
+          </p>
+          <h1 className="mt-3 text-2xl font-bold">
+            ยืนยันการออกปฏิบัติงานนอกสถานที่
+          </h1>
+        </div>
         {isLoggedIn && (
           <div className="rounded-xl border bg-card/80 px-4 py-3 text-sm text-muted-foreground flex items-center justify-between gap-3 shadow-sm">
             <span>คุณล็อกอินอยู่แล้ว — ดูคิวยืนยันทั้งหมดของคุณได้ที่:</span>
             <Link
               href="/dashboard?tab=leader-queue"
-              className="shrink-0 font-medium text-sky-600 dark:text-sky-400 hover:underline"
+              className="shrink-0 font-medium text-primary hover:underline"
             >
               คิวยืนยัน →
             </Link>
@@ -72,6 +80,6 @@ export default async function LeaderVerifyPage({
           />
         </Suspense>
       </div>
-    </main>
+    </section>
   );
 }

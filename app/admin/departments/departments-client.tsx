@@ -1,13 +1,16 @@
 "use client";
+import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
+import { useUrlFilter } from "@/lib/hooks/use-url-filter";
+import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell } from "@/components/workflow-ui/table";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { LoadingButton } from "@/components/ui/loading-button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/workflow-ui/button";
+import { LoadingButton } from "@/components/workflow-ui/loading-button";
+import { Input } from "@/components/workflow-ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Select } from "@/components/ui/select";
-import type { SelectOption } from "@/components/ui/select";
+import { Select } from "@/components/workflow-ui/select";
+import type { SelectOption } from "@/components/workflow-ui/select";
 import {
   Dialog,
   DialogHeader,
@@ -16,9 +19,9 @@ import {
   DialogBody,
   DialogFooter,
   DialogClose,
-} from "@/components/ui/dialog";
+} from "@/components/workflow-ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Textarea } from "@/components/workflow-ui/textarea";
 import {
   Search,
   Plus,
@@ -65,8 +68,8 @@ export function DepartmentsClient({
   initialDepartments,
 }: DepartmentsClientProps) {
   const [departments, setDepartments] = useState(initialDepartments);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [search, setSearch] = useUrlFilter("search");
+  const [statusFilter, setStatusFilter] = useUrlFilter("status", "all");
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [selectedDepartment, setSelectedDepartment] =
     useState<DepartmentWithHierarchy | null>(null);
@@ -292,30 +295,30 @@ export function DepartmentsClient({
         aria-busy={isPending || undefined}
         className="rounded-lg border border-border overflow-hidden"
       >
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b bg-muted/50">
-              <th className="text-left font-medium p-3">Department</th>
-              <th className="text-left font-medium p-3 hidden md:table-cell">
+        <Table className="w-full text-sm">
+          <TableHead>
+            <TableRow className="border-b bg-muted/50">
+              <TableHeader className="text-left font-medium p-3">Department</TableHeader>
+              <TableHeader className="text-left font-medium p-3 hidden md:table-cell">
                 Parent
-              </th>
-              <th className="text-left font-medium p-3 hidden lg:table-cell">
+              </TableHeader>
+              <TableHeader className="text-left font-medium p-3 hidden lg:table-cell">
                 Children
-              </th>
-              <th className="text-center font-medium p-3 hidden sm:table-cell">
+              </TableHeader>
+              <TableHeader className="text-center font-medium p-3 hidden sm:table-cell">
                 Users
-              </th>
-              <th className="text-center font-medium p-3">Status</th>
-              <th className="text-right font-medium p-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
+              </TableHeader>
+              <TableHeader className="text-center font-medium p-3">Status</TableHeader>
+              <TableHeader className="text-right font-medium p-3">Actions</TableHeader>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {filtered.map((dept) => (
-              <tr
+              <TableRow
                 key={dept.id}
                 className="border-b last:border-0 hover:bg-muted/30 transition-colors"
               >
-                <td className="p-3">
+                <TableCell className="p-3">
                   <div className="flex items-center gap-3">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
                       <Building2 className="h-4 w-4 text-muted-foreground" />
@@ -329,8 +332,8 @@ export function DepartmentsClient({
                       )}
                     </div>
                   </div>
-                </td>
-                <td className="p-3 text-muted-foreground hidden md:table-cell">
+                </TableCell>
+                <TableCell className="p-3 text-muted-foreground hidden md:table-cell">
                   {dept.parent ? (
                     <div className="flex items-center gap-1">
                       <Network className="h-3 w-3" />
@@ -339,8 +342,8 @@ export function DepartmentsClient({
                   ) : (
                     <span className="text-xs">Root</span>
                   )}
-                </td>
-                <td className="p-3 hidden lg:table-cell">
+                </TableCell>
+                <TableCell className="p-3 hidden lg:table-cell">
                   {dept.children.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
                       {dept.children.slice(0, 2).map((child) => (
@@ -361,14 +364,14 @@ export function DepartmentsClient({
                   ) : (
                     <span className="text-xs text-muted-foreground">None</span>
                   )}
-                </td>
-                <td className="p-3 text-center hidden sm:table-cell">
+                </TableCell>
+                <TableCell className="p-3 text-center hidden sm:table-cell">
                   <div className="flex items-center justify-center gap-1">
                     <Users className="h-3 w-3 text-muted-foreground" />
                     <span>{dept._count?.users || 0}</span>
                   </div>
-                </td>
-                <td className="p-3 text-center">
+                </TableCell>
+                <TableCell className="p-3 text-center">
                   <button
                     onClick={() => handleToggleStatus(dept)}
                     disabled={isPending}
@@ -389,8 +392,8 @@ export function DepartmentsClient({
                       </>
                     )}
                   </button>
-                </td>
-                <td className="p-3">
+                </TableCell>
+                <TableCell className="p-3">
                   <div className="flex items-center justify-end gap-1">
                     <Button
                       variant="ghost"
@@ -412,21 +415,21 @@ export function DepartmentsClient({
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
             {filtered.length === 0 && (
-              <tr>
-                <td
+              <TableRow>
+                <TableCell
                   colSpan={6}
                   className="text-center py-12 text-muted-foreground"
                 >
                   No departments found
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       {/* Create/Edit Dialog */}

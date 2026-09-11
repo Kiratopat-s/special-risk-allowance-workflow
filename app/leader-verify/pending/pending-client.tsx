@@ -1,4 +1,5 @@
 "use client";
+import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
 /**
  * PendingVerificationsClient
@@ -7,7 +8,7 @@
  * Each card requires the leader to provide a signature before confirming.
  */
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CheckCircle2,
   ClipboardList,
@@ -18,8 +19,8 @@ import {
   Star,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { LoadingButton } from "@/components/ui/loading-button";
+import { Button } from "@/components/workflow-ui/button";
+import { LoadingButton } from "@/components/workflow-ui/loading-button";
 import { Badge } from "@/components/ui/badge";
 import { verifyAsLeader } from "@/app/actions/leader-verify";
 import type { LeaderVerificationWithRelations } from "@/lib/domains/leader-verification";
@@ -409,7 +410,7 @@ export function PendingVerificationsClient({
           <ClipboardList className="h-5 w-5 text-sky-600 dark:text-sky-400" />
         </div>
         <div>
-          <h1 className="text-xl font-semibold">คิวยืนยันการออกปฏิบัติงาน</h1>
+          <div className="eyebrow">LEADER VERIFICATION</div><h1 className="text-3xl font-bold tracking-tight">คิวยืนยันการออกปฏิบัติงาน</h1>
           <p className="text-sm text-muted-foreground">
             รายการที่รอการยืนยันจากคุณในฐานะหัวหน้า
           </p>

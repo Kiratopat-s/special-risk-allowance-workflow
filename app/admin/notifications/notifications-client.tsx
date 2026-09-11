@@ -1,4 +1,5 @@
 "use client";
+import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
 /**
  * NotificationsAdminClient
@@ -8,13 +9,13 @@
  * @module app/admin/notifications
  */
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Bell, Send, Users, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { LoadingButton } from "@/components/ui/loading-button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/workflow-ui/button";
+import { LoadingButton } from "@/components/workflow-ui/loading-button";
+import { Input } from "@/components/workflow-ui/input";
+import { Textarea } from "@/components/workflow-ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";

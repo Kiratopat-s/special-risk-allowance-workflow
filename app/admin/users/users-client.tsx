@@ -1,13 +1,16 @@
 "use client";
+import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
+import { useUrlFilter } from "@/lib/hooks/use-url-filter";
+import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell } from "@/components/workflow-ui/table";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { LoadingButton } from "@/components/ui/loading-button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/workflow-ui/button";
+import { LoadingButton } from "@/components/workflow-ui/loading-button";
+import { Input } from "@/components/workflow-ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Select } from "@/components/ui/select";
-import type { SelectOption } from "@/components/ui/select";
+import { Select } from "@/components/workflow-ui/select";
+import type { SelectOption } from "@/components/workflow-ui/select";
 import {
   Dialog,
   DialogHeader,
@@ -16,7 +19,7 @@ import {
   DialogBody,
   DialogFooter,
   DialogClose,
-} from "@/components/ui/dialog";
+} from "@/components/workflow-ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Search,
@@ -75,8 +78,8 @@ export function UsersClient({
   allDepartments,
 }: UsersClientProps) {
   const [users, setUsers] = useState(initialUsers);
-  const [search, setSearch] = useState("");
-  const [departmentFilter, setDepartmentFilter] = useState<string>("");
+  const [search, setSearch] = useUrlFilter("search");
+  const [departmentFilter, setDepartmentFilter] = useUrlFilter("department");
   const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
   const [selectedRoleId, setSelectedRoleId] = useState<string>("");
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>("");
@@ -282,24 +285,24 @@ export function UsersClient({
         aria-busy={isPending || undefined}
         className="rounded-lg border border-border overflow-hidden"
       >
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b bg-muted/50">
-              <th className="text-left font-medium p-3">User</th>
-              <th className="text-left font-medium p-3 hidden md:table-cell">
+        <Table className="w-full text-sm">
+          <TableHead>
+            <TableRow className="border-b bg-muted/50">
+              <TableHeader className="text-left font-medium p-3">User</TableHeader>
+              <TableHeader className="text-left font-medium p-3 hidden md:table-cell">
                 Department
-              </th>
-              <th className="text-left font-medium p-3">Roles</th>
-              <th className="text-right font-medium p-3 w-20">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
+              </TableHeader>
+              <TableHeader className="text-left font-medium p-3">Roles</TableHeader>
+              <TableHeader className="text-right font-medium p-3 w-20">Actions</TableHeader>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {filtered.map((user) => (
-              <tr
+              <TableRow
                 key={user.id}
                 className="border-b last:border-0 hover:bg-muted/30 transition-colors"
               >
-                <td className="p-3">
+                <TableCell className="p-3">
                   <div className="flex items-center gap-3">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
                       <User className="h-4 w-4 text-muted-foreground" />
@@ -313,11 +316,11 @@ export function UsersClient({
                       </div>
                     </div>
                   </div>
-                </td>
-                <td className="p-3 text-muted-foreground hidden md:table-cell">
+                </TableCell>
+                <TableCell className="p-3 text-muted-foreground hidden md:table-cell">
                   {user.departmentName ?? "—"}
-                </td>
-                <td className="p-3">
+                </TableCell>
+                <TableCell className="p-3">
                   <ScrollArea className="max-h-24">
                     <div className="flex flex-wrap gap-1 pr-2">
                       {user.roles.map((role) => {
@@ -375,8 +378,8 @@ export function UsersClient({
                       )}
                     </div>
                   </ScrollArea>
-                </td>
-                <td className="p-3 text-right">
+                </TableCell>
+                <TableCell className="p-3 text-right">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -384,21 +387,21 @@ export function UsersClient({
                   >
                     <UserPlus className="h-4 w-4" />
                   </Button>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
             {filtered.length === 0 && (
-              <tr>
-                <td
+              <TableRow>
+                <TableCell
                   colSpan={4}
                   className="text-center py-12 text-muted-foreground"
                 >
                   No users found
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       {/* Assign Role Dialog */}

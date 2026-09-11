@@ -114,6 +114,8 @@ export interface UpdateExpenseClaimDocumentInput {
  */
 export interface ExpenseClaimDocumentFilterCriteria {
     search?: string;
+    statusGroup?: "attention" | "progress" | "approved";
+    sort?: "amount-asc" | "amount-desc";
     userId?: string;
     createdById?: string;
     status?: ClaimDocumentStatus;

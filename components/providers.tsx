@@ -1,8 +1,11 @@
 "use client";
 
 import { SessionProvider } from "next-auth/react";
-import { ThemeProvider } from "next-themes";
+import { ThemeProvider } from "@mui/material/styles";
+import { AppRouterCacheProvider } from "@mui/material-nextjs/v15-appRouter";
+import { workflowTheme } from "@/components/workflow-ui/theme";
 import { Toaster } from "@/components/ui/sonner";
+import { PermissionsProvider } from "@/lib/hooks/use-permissions";
 import { useSessionGuard } from "@/lib/hooks/use-session-guard";
 
 function SessionGuard({ children }: { children: React.ReactNode }) {
@@ -16,18 +19,22 @@ interface ProvidersProps {
 
 export function Providers({ children }: ProvidersProps) {
   return (
-    <ThemeProvider
-      attribute="class"
-      defaultTheme="light"
-      enableSystem={false}
-      disableTransitionOnChange
-    >
-      <SessionProvider>
-        <SessionGuard>
-          {children}
-          <Toaster position="top-right" richColors />
-        </SessionGuard>
-      </SessionProvider>
-    </ThemeProvider>
+    <AppRouterCacheProvider options={{ enableCssLayer: true }}>
+      <ThemeProvider
+        theme={workflowTheme}
+        defaultMode="light"
+        modeStorageKey="theme"
+        disableTransitionOnChange
+      >
+        <SessionProvider>
+          <PermissionsProvider>
+            <SessionGuard>
+              {children}
+              <Toaster position="top-right" richColors />
+            </SessionGuard>
+          </PermissionsProvider>
+        </SessionProvider>
+      </ThemeProvider>
+    </AppRouterCacheProvider>
   );
 }

@@ -8,7 +8,8 @@
  * @module lib/hooks/use-permissions
  */
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, createContext, useContext, createElement } from "react";
+import { usePathname } from "next/navigation";
 import type { PermissionResource, PermissionAction } from "@/lib/shared/types";
 import type { UserEffectivePermissions } from "@/lib/domains/permission";
 
@@ -44,7 +45,8 @@ interface UsePermissionCheckResult {
 /**
  * Hook to get and check user permissions
  */
-export function usePermissions(): UsePermissionsResult {
+function usePermissionState(): UsePermissionsResult {
+    const pathname = usePathname();
     const [permissions, setPermissions] = useState<UserEffectivePermissions | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
@@ -69,8 +71,11 @@ export function usePermissions(): UsePermissionsResult {
     }, []);
 
     useEffect(() => {
-        fetchPermissions();
-    }, [fetchPermissions]);
+        void fetchPermissions();
+        const onFocus = () => void fetchPermissions();
+        window.addEventListener("focus", onFocus);
+        return () => window.removeEventListener("focus", onFocus);
+    }, [fetchPermissions, pathname]);
 
     const can = useCallback(
         (resource: PermissionResource, action: PermissionAction): boolean => {
@@ -117,6 +122,19 @@ export function usePermissions(): UsePermissionsResult {
         hasRole,
         refresh: fetchPermissions,
     };
+}
+
+const PermissionsContext = createContext<UsePermissionsResult | null>(null);
+
+export function PermissionsProvider({ children }: { children: React.ReactNode }) {
+    const state = usePermissionState();
+    return createElement(PermissionsContext.Provider, { value: state }, children);
+}
+
+export function usePermissions(): UsePermissionsResult {
+    const value = useContext(PermissionsContext);
+    if (!value) throw new Error("usePermissions requires PermissionsProvider");
+    return value;
 }
 
 /**

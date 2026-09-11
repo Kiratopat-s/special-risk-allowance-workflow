@@ -1,4 +1,5 @@
 "use client";
+import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
 /**
  * LeaderVerifyClient
@@ -8,7 +9,7 @@
  * Includes an inline signature canvas step before confirming.
  */
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CheckCircle2,
   PenLine,
@@ -17,8 +18,8 @@ import {
   ShieldCheck,
   Star,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { LoadingButton } from "@/components/ui/loading-button";
+import { Button } from "@/components/workflow-ui/button";
+import { LoadingButton } from "@/components/workflow-ui/loading-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   getVerificationByToken,
@@ -299,7 +300,7 @@ export function LeaderVerifyClient({
     return (
       <div className="rounded-2xl border bg-card p-8 shadow-md text-center space-y-3">
         <ShieldAlert className="mx-auto h-12 w-12 text-destructive" />
-        <h1 className="text-lg font-semibold">ลิงก์ไม่ถูกต้องหรือหมดอายุ</h1>
+        <h2 className="text-lg font-semibold">ลิงก์ไม่ถูกต้องหรือหมดอายุ</h2>
         <p className="text-sm text-muted-foreground">
           ลิงก์นี้อาจหมดอายุ ใช้งานไปแล้ว หรือไม่มีอยู่ในระบบ
         </p>
@@ -314,9 +315,9 @@ export function LeaderVerifyClient({
     return (
       <div className="rounded-2xl border bg-card p-8 shadow-md text-center space-y-3">
         <ShieldCheck className="mx-auto h-12 w-12 text-green-500" />
-        <h1 className="text-lg font-semibold text-green-700 dark:text-green-400">
+        <h2 className="text-lg font-semibold text-green-700 dark:text-green-400">
           ยืนยันการออกปฏิบัติงานเรียบร้อยแล้ว
-        </h1>
+        </h2>
         <p className="text-sm text-muted-foreground">
           เลขที่เอกสาร: <strong>{info.offSiteWorkId}</strong>
         </p>
@@ -331,9 +332,9 @@ export function LeaderVerifyClient({
     return (
       <div className="rounded-2xl border bg-card p-8 shadow-md text-center space-y-3">
         <CheckCircle2 className="mx-auto h-12 w-12 text-green-500" />
-        <h1 className="text-xl font-semibold text-green-700 dark:text-green-400">
+        <h2 className="text-xl font-semibold text-green-700 dark:text-green-400">
           ยืนยันสำเร็จ
-        </h1>
+        </h2>
         <p className="text-sm text-muted-foreground">
           ระบบได้บันทึกการยืนยันของคุณแล้ว ขอบคุณครับ/ค่ะ
         </p>
@@ -442,9 +443,9 @@ export function LeaderVerifyClient({
       {/* Header */}
       <div className="text-center space-y-1">
         <ShieldCheck className="mx-auto h-10 w-10 text-sky-500" />
-        <h1 className="text-xl font-semibold">
+        <h2 className="text-xl font-semibold">
           ยืนยันการออกปฏิบัติงานนอกสถานที่
-        </h1>
+        </h2>
         <p className="text-sm text-muted-foreground">
           กรุณาตรวจสอบข้อมูลและลงลายเซ็นยืนยัน
         </p>

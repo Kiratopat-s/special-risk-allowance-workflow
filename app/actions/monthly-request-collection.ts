@@ -13,6 +13,7 @@
  * @module app/actions/monthly-request-collection
  */
 
+import { canSeeCollection } from "@/lib/domains/monthly-request-collection/read-policy";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { can, canExact, hasRole } from "@/lib/auth/permissions";
@@ -132,30 +133,10 @@ export async function listMonthlyRequestCollections(
         canExact(userId, "MONTHLY_REQUEST", "REVIEW_OK"),
     ]);
 
-    const isReviewer = exactHpa || exactRk || exactOk;
-
-    const visibleData = result.data.data.filter((mrc) => {
-        // DRAFT: own only
-        if (mrc.status === "DRAFT") {
-            return mrc.collectorId === userId;
-        }
-        // PENDING: stage-based visibility for reviewers
-        if (mrc.status === "PENDING") {
-            if (isSuperAdmin) return true;
-            if (mrc.collectorId === userId) return true;
-            // Non-reviewer LIST holders see all PENDING (read-only viewers)
-            if (!isReviewer) return true;
-            // Reviewer: only see MRCs that have reached their stage
-            const stepStatus = (stage: string) =>
-                mrc.approvalSteps.find((s) => s.stage === stage)?.status;
-            if (exactHpa) return true; // HPA is first step, always visible
-            if (exactRk && stepStatus("HPA_CHECK") === "APPROVED") return true;
-            if (exactOk && stepStatus("HPA_CHECK") === "APPROVED" && stepStatus("RK_CHECK") === "APPROVED") return true;
-            return false;
-        }
-        // APPROVED, REJECTED, CANCELLED: visible to all LIST holders
-        return true;
-    });
+    const visibleData = result.data.data.filter(mrc => canSeeCollection(mrc, {
+        userId, ownOnly: false, manage: false, superAdmin: isSuperAdmin,
+        hpa: exactHpa, rk: exactRk, ok: exactOk,
+    }));
 
     return {
         ...result,

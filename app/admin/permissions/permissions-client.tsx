@@ -1,7 +1,8 @@
 "use client";
+import { useUrlFilter } from "@/lib/hooks/use-url-filter";
 
 import { useState } from "react";
-import { Input } from "@/components/ui/input";
+import { Input } from "@/components/workflow-ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, Key, ChevronDown, ChevronRight } from "lucide-react";
 import type { PermissionEntity } from "@/lib/domains/permission";
@@ -61,7 +62,7 @@ function groupByResource(
 // =============================================================================
 
 export function PermissionsClient({ permissions }: PermissionsClientProps) {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useUrlFilter("search");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const filtered = permissions.filter(

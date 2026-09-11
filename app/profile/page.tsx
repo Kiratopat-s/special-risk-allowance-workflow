@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/workflow-ui/button";
 import {
   Card,
   CardContent,
@@ -63,21 +63,21 @@ export default async function ProfilePage() {
 
   return (
     <div className="container max-w-7xl mx-auto px-4 py-12">
-      <div className="max-w-2xl mx-auto space-y-8">
+      <div className="max-w-5xl mx-auto space-y-8">
         {/* Header */}
-        <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight">Profile</h1>
+        <div className="page-heading"><div><div className="eyebrow">MY ACCOUNT</div>
+          <h1 className="text-3xl font-bold tracking-tight">ข้อมูลส่วนตัว</h1>
           <p className="text-muted-foreground">
-            View and manage your account information
+            ตรวจสอบและจัดการข้อมูลบัญชีของคุณ
           </p>
-        </div>
+        </div></div>
 
         {/* Profile Card */}
         <Card className="overflow-hidden">
           {/* Card Header with Avatar */}
           <div className="relative">
             {/* Background Pattern */}
-            <div className="h-32 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent" />
+            <div className="h-24 bg-[#202535]" />
 
             {/* Avatar - Positioned to overlap */}
             <div className="absolute -bottom-12 left-8">
@@ -91,7 +91,7 @@ export default async function ProfilePage() {
               <Button asChild variant="secondary" size="sm">
                 <Link href="/profile/edit">
                   <Edit className="mr-2 h-4 w-4" />
-                  Edit Profile
+                  แก้ไขข้อมูล
                 </Link>
               </Button>
             </div>
@@ -114,8 +114,8 @@ export default async function ProfilePage() {
             <Separator />
 
             {/* Personal Information */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider sm:col-span-2">
                 Personal Information
               </h3>
 
@@ -138,7 +138,7 @@ export default async function ProfilePage() {
 
             {/* Work Information */}
             <div className="space-y-4">
-              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider sm:col-span-2">
                 Work Information
               </h3>
 
@@ -175,7 +175,7 @@ export default async function ProfilePage() {
 
             {/* System Information */}
             <div className="space-y-4">
-              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider sm:col-span-2">
                 System Information
               </h3>
 
@@ -194,7 +194,7 @@ export default async function ProfilePage() {
               <Button asChild className="flex-1">
                 <Link href="/profile/edit">
                   <Edit className="mr-2 h-4 w-4" />
-                  Edit Profile
+                  แก้ไขข้อมูล
                 </Link>
               </Button>
               <Button variant="outline" asChild className="flex-1">

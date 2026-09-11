@@ -2,12 +2,12 @@
 
 import * as React from "react";
 import { Moon, Sun } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useColorScheme } from "@mui/material/styles";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/workflow-ui/button";
 
 export function ThemeToggle() {
-  const { setTheme, theme } = useTheme();
+  const { setMode: setTheme, mode: theme } = useColorScheme();
   const [mounted, setMounted] = React.useState(false);
 
   // Avoid hydration mismatch

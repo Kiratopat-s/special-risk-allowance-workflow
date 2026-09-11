@@ -1,18 +1,31 @@
 "use client";
+import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Stepper, Step, StepLabel } from "@mui/material";
 import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  useTransition,
-} from "react";
-import { useRouter } from "next/navigation";
+  claimCreatePayload,
+  claimUpdatePayload,
+  type ClaimFormState,
+} from "@/lib/ui/claim-payload";
+import { getClaimDatePool, getCalendarGridDates } from "@/lib/ui/claim-dates";
+import { parseClaimListQuery, updateListQuery } from "@/lib/ui/list-query";
+import { useScopedPermission } from "@/lib/hooks/use-scoped-permission";
+import { Select as NativeSelect } from "@/components/workflow-ui/form-controls";
+import { StatusBadge } from "@/components/workflow-ui/status-badge";
+import {
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
+  TableHeader,
+} from "@/components/workflow-ui/table";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
   AlertTriangle,
-  CalendarDays,
   Check,
   Eye,
   FileText,
@@ -23,11 +36,10 @@ import {
   Send,
   Trash2,
   User,
-  Wallet,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { LoadingButton } from "@/components/ui/loading-button";
+import { Button } from "@/components/workflow-ui/button";
+import { LoadingButton } from "@/components/workflow-ui/loading-button";
 import {
   Dialog,
   DialogBody,
@@ -36,10 +48,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+} from "@/components/workflow-ui/dialog";
+import { Input } from "@/components/workflow-ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Textarea } from "@/components/workflow-ui/textarea";
 import {
   createExpenseClaimDocument,
   deleteExpenseClaimDocument,
@@ -52,7 +64,6 @@ import {
 import type {
   EligibleOffSiteWorkOption,
   ExpenseClaimDocumentWithRelations,
-  UpdateExpenseClaimDocumentInput,
 } from "@/lib/domains/expense-claim-document";
 import type { ClaimDocumentStatus, Pagination } from "@/lib/shared/types";
 import {
@@ -62,10 +73,10 @@ import {
   toMonthInput,
 } from "@/lib/shared/format";
 import { claimStatusVariant } from "@/lib/shared/claim-status";
-import { PaginationControls } from "@/components/ui/pagination-controls";
+import { PaginationControls } from "@/components/workflow-ui/pagination-controls";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ConfirmDialog } from "@/components/workflow-ui/confirm-dialog";
 import { LeaderVerificationSection } from "./leader-verification-section";
 
 interface ExpenseClaimDocumentClientProps {
@@ -78,14 +89,7 @@ interface ExpenseClaimDocumentClientProps {
 
 type Mode = "create" | "edit" | "view" | "delete" | null;
 
-interface FormState {
-  expenseMonth: string;
-  claimantPositionAtSubmission: string;
-  remark: string;
-  status: ClaimDocumentStatus;
-  countDates: string;
-  amount: string;
-}
+type FormState = ClaimFormState;
 
 const PAGE_SIZE = 20;
 const RATE_PER_DAY = 150;
@@ -113,79 +117,6 @@ function formatDay(isoDate: string): string {
   });
 }
 
-function getMonthDateRange(monthValue: string): { start: Date; end: Date } {
-  const [year, month] = monthValue.split("-").map(Number);
-  const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
-  const end = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
-  return { start, end };
-}
-
-function toISODate(date: Date): string {
-  return date.toISOString().split("T")[0];
-}
-
-function getClaimDatePool(
-  selectedOffSiteIds: string[],
-  options: EligibleOffSiteWorkOption[],
-  monthValue: string,
-): { allDates: string[]; weekdayDefaultDates: string[] } {
-  const picked = new Set(selectedOffSiteIds);
-  const selectedRanges = options.filter((item) => picked.has(item.id));
-  const { start: monthStart, end: monthEnd } = getMonthDateRange(monthValue);
-
-  const allDates = new Set<string>();
-  const weekdayDefaultDates = new Set<string>();
-
-  for (const item of selectedRanges) {
-    const start = new Date(item.startDate);
-    const end = new Date(item.endDate);
-
-    const effectiveStart = start > monthStart ? start : monthStart;
-    const effectiveEnd = end < monthEnd ? end : monthEnd;
-
-    const cursor = new Date(effectiveStart);
-    cursor.setUTCHours(0, 0, 0, 0);
-
-    while (cursor <= effectiveEnd) {
-      const day = cursor.getUTCDay();
-      const isoDate = toISODate(cursor);
-      allDates.add(isoDate);
-      if (day >= 1 && day <= 5) {
-        weekdayDefaultDates.add(isoDate);
-      }
-      cursor.setUTCDate(cursor.getUTCDate() + 1);
-    }
-  }
-
-  return {
-    allDates: Array.from(allDates).sort(),
-    weekdayDefaultDates: Array.from(weekdayDefaultDates).sort(),
-  };
-}
-
-function getCalendarGridDates(monthValue: string): Array<string | null> {
-  const [year, month] = monthValue.split("-").map(Number);
-  const firstDate = new Date(Date.UTC(year, month - 1, 1));
-  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const leadingEmpty = firstDate.getUTCDay();
-
-  const cells: Array<string | null> = [];
-  for (let i = 0; i < leadingEmpty; i += 1) {
-    cells.push(null);
-  }
-
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    cells.push(toISODate(new Date(Date.UTC(year, month - 1, day))));
-  }
-
-  const trailingEmpty = (7 - (cells.length % 7)) % 7;
-  for (let i = 0; i < trailingEmpty; i += 1) {
-    cells.push(null);
-  }
-
-  return cells;
-}
-
 // ────────────────────────────────────────────────────────────────────────────
 
 export function ExpenseClaimDocumentClient({
@@ -196,9 +127,24 @@ export function ExpenseClaimDocumentClient({
   currentUserClaimantPositionAtSubmission,
 }: ExpenseClaimDocumentClientProps) {
   const router = useRouter();
+  const query = useSearchParams();
+  const filters = useMemo(
+    () => parseClaimListQuery(new URLSearchParams(query)),
+    [query],
+  );
+  const { allows, userId } = useScopedPermission("EXPENSE_CLAIM");
+  const [step, setStep] = useState(0);
+  const navigateList = (
+    changes: Record<string, string | number | undefined>,
+    resetPage = true,
+  ) =>
+    router.push(
+      `/dashboard?${updateListQuery(query.toString(), changes, resetPage)}`,
+      { scroll: false },
+    );
   const [items, setItems] = useState(initialItems);
   const [pagination, setPagination] = useState(initialPagination);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(query.get("search") || "");
   const [page, setPage] = useState(initialPagination?.page ?? 1);
   const [mode, setMode] = useState<Mode>(null);
   const [selected, setSelected] =
@@ -238,18 +184,6 @@ export function ExpenseClaimDocumentClient({
     let cancelled = false;
 
     const openInitialClaim = async () => {
-      const existingItem = initialItems.find(
-        (item) => item.id === initialViewId,
-      );
-      if (existingItem) {
-        if (!cancelled) {
-          setSelected(existingItem);
-          setMode("view");
-          router.replace("/dashboard?tab=expense-claims", { scroll: false });
-        }
-        return;
-      }
-
       const result = await getExpenseClaimDocument(initialViewId);
       if (!cancelled) {
         if (result.success) {
@@ -260,7 +194,6 @@ export function ExpenseClaimDocumentClient({
             description: result.error,
           });
         }
-        router.replace("/dashboard?tab=expense-claims", { scroll: false });
       }
     };
 
@@ -270,6 +203,28 @@ export function ExpenseClaimDocumentClient({
       cancelled = true;
     };
   }, [initialItems, initialViewId, router]);
+
+  useEffect(() => {
+    const restoreDetail = async () => {
+      const id = new URLSearchParams(window.location.search).get("claimId");
+      if (!id) {
+        setMode((current) => (current === "view" ? null : current));
+        return;
+      }
+      const result = await getExpenseClaimDocument(id);
+      if (result.success) {
+        setSelected(result.data);
+        setMode("view");
+      } else {
+        setMode(null);
+        toast.error("ไม่สามารถเปิดเอกสารเบิกได้", {
+          description: result.error,
+        });
+      }
+    };
+    window.addEventListener("popstate", restoreDetail);
+    return () => window.removeEventListener("popstate", restoreDetail);
+  }, []);
 
   const dateCount = selectedClaimDates.length;
   const totalAmount = dateCount * RATE_PER_DAY;
@@ -337,6 +292,7 @@ export function ExpenseClaimDocumentClient({
   const refresh = useCallback(
     async (nextPage = page, nextSearch = search) => {
       const result = await listExpenseClaimDocuments({
+        ...filters,
         page: nextPage,
         pageSize: PAGE_SIZE,
         search: nextSearch || undefined,
@@ -350,12 +306,17 @@ export function ExpenseClaimDocumentClient({
       setItems(result.data.data);
       setPagination(result.data.pagination);
       setPage(result.data.pagination.page);
+      router.refresh();
     },
-    [page, search],
+    [page, search, filters, router],
   );
 
   const loadEligibleOffSiteWorks = useCallback(
-    async (monthValue: string, preSelectedIds?: string[]) => {
+    async (
+      monthValue: string,
+      preSelectedIds?: string[],
+      savedDates?: string[] | null,
+    ) => {
       setIsLoadingEligibleOffSites(true);
       const result = await listEligibleOffSiteWorksForClaim(monthValue);
       if (!result.success) {
@@ -383,7 +344,11 @@ export function ExpenseClaimDocumentClient({
         setSelectedOffSiteWorkIds(preSelectedIds);
         setAvailableClaimDates(allDates);
         setSelectedClaimDates(
-          weekdayDefaultDates.length > 0 ? weekdayDefaultDates : allDates,
+          savedDates
+            ? allDates.filter((date) => savedDates.includes(date))
+            : weekdayDefaultDates.length > 0
+              ? weekdayDefaultDates
+              : allDates,
         );
       } else {
         setSelectedOffSiteWorkIds([]);
@@ -396,7 +361,8 @@ export function ExpenseClaimDocumentClient({
     [],
   );
 
-  const openCreate = () => {
+  const openCreate = useCallback(() => {
+    setStep(0);
     const defaultMonth = toMonthInput(new Date());
     setSelected(null);
     setForm({
@@ -414,9 +380,21 @@ export function ExpenseClaimDocumentClient({
     setSelectedClaimDates([]);
     setMode("create");
     void loadEligibleOffSiteWorks(defaultMonth);
-  };
+  }, [currentUserClaimantPositionAtSubmission, loadEligibleOffSiteWorks]);
+
+  useEffect(() => {
+    if (query.get("create") !== "1" || !allows("CREATE", userId)) return;
+    const frame = requestAnimationFrame(() => {
+      openCreate();
+      const next = new URLSearchParams(query);
+      next.delete("create");
+      window.history.replaceState(null, "", `/dashboard?${next}`);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [query, allows, userId, openCreate]);
 
   const openEdit = (item: ExpenseClaimDocumentWithRelations) => {
+    setStep(0);
     setSelected(item);
     setForm({
       expenseMonth: toMonthInput(item.expenseMonth),
@@ -431,7 +409,11 @@ export function ExpenseClaimDocumentClient({
       const linkedIds = item.expenseClaimOffSiteWorks.map(
         (l) => l.offSiteWorkId,
       );
-      void loadEligibleOffSiteWorks(toMonthInput(item.expenseMonth), linkedIds);
+      void loadEligibleOffSiteWorks(
+        toMonthInput(item.expenseMonth),
+        linkedIds,
+        item.selectedDates,
+      );
     } else {
       setEligibleOffSiteWorks([]);
       setSelectedOffSiteWorkIds([]);
@@ -495,20 +477,16 @@ export function ExpenseClaimDocumentClient({
     }
 
     startTransition(async () => {
-      const result = await createExpenseClaimDocument({
-        expenseMonth: toMonthDate(form.expenseMonth),
-        claimantPositionAtSubmission: form.claimantPositionAtSubmission.trim(),
-        offSiteWorkIds:
-          selectedOffSiteWorkIds.length > 0
-            ? selectedOffSiteWorkIds
-            : undefined,
-        selectedDates:
-          selectedClaimDates.length > 0 ? selectedClaimDates : undefined,
-        countDates: dateCount > 0 ? String(dateCount) : undefined,
-        amount: totalAmount > 0 ? String(totalAmount) : undefined,
-        remark: form.remark.trim() || undefined,
-        status,
-      });
+      const result = await createExpenseClaimDocument(
+        claimCreatePayload(
+          form,
+          selectedOffSiteWorkIds,
+          selectedClaimDates,
+          dateCount,
+          totalAmount,
+          status,
+        ),
+      );
 
       if (!result.success) {
         toast.error("สร้างเอกสารไม่สำเร็จ", { description: result.error });
@@ -516,58 +494,22 @@ export function ExpenseClaimDocumentClient({
       }
 
       toast.success(
-        status === "PENDING"
-          ? "ส่งเอกสารเรียบร้อย"
-          : "บันทึกร่างเอกสารเรียบร้อย",
+        status !== "DRAFT" ? "ส่งเอกสารเรียบร้อย" : "บันทึกร่างเอกสารเรียบร้อย",
       );
-      await refresh(1, search);
+      await refresh(page, search);
       setMode(null);
     });
   };
 
-  const toUpdatePayload = (): UpdateExpenseClaimDocumentInput => {
-    if (!selected) return {};
-
-    const base: UpdateExpenseClaimDocumentInput = {
-      expenseMonth:
-        toMonthInput(selected.expenseMonth) !== form.expenseMonth
-          ? toMonthDate(form.expenseMonth)
-          : undefined,
-      claimantPositionAtSubmission:
-        selected.claimantPositionAtSubmission !==
-        form.claimantPositionAtSubmission
-          ? form.claimantPositionAtSubmission.trim()
-          : undefined,
-      remark:
-        (selected.remark || "") !== form.remark
-          ? form.remark.trim() || null
-          : undefined,
-    };
-
-    if (selected.status === "DRAFT") {
-      // For DRAFT edits, always include OSW selection and derived dates/amounts
-      return {
-        ...base,
-        offSiteWorkIds: selectedOffSiteWorkIds,
-        selectedDates:
-          selectedClaimDates.length > 0 ? selectedClaimDates : undefined,
-        countDates: dateCount > 0 ? String(dateCount) : undefined,
-        amount: totalAmount > 0 ? String(totalAmount) : undefined,
-      };
-    }
-
-    return {
-      ...base,
-      countDates:
-        decimalText(selected.countDates) !== form.countDates
-          ? form.countDates.trim() || null
-          : undefined,
-      amount:
-        decimalText(selected.amount) !== form.amount
-          ? form.amount.trim() || null
-          : undefined,
-    };
-  };
+  const toUpdatePayload = () =>
+    claimUpdatePayload(
+      selected,
+      form,
+      selectedOffSiteWorkIds,
+      selectedClaimDates,
+      dateCount,
+      totalAmount,
+    );
 
   const submitUpdate = () => {
     if (!selected) return;
@@ -684,43 +626,46 @@ export function ExpenseClaimDocumentClient({
     });
   };
 
-  const submitSearch = () => {
-    startTransition(async () => {
-      await refresh(1, search);
-    });
+  const submitSearch = () => navigateList({ search });
+  const changePage = (nextPage: number) =>
+    navigateList({ page: nextPage }, false);
+  const wizard =
+    mode === "create" || (mode === "edit" && selected?.status === "DRAFT");
+  const closeDetail = () => {
+    setMode(null);
+    const next = new URLSearchParams(query);
+    next.delete("claimId");
+    next.delete("view");
+    window.history.replaceState(null, "", `/dashboard?${next}`);
   };
-
-  const changePage = (nextPage: number) => {
-    startTransition(async () => {
-      await refresh(nextPage, search);
-    });
+  const openDetail = (item: ExpenseClaimDocumentWithRelations) => {
+    setSelected(item);
+    setMode("view");
+    const next = new URLSearchParams(query);
+    next.set("claimId", item.id);
+    window.history.pushState(null, "", `/dashboard?${next}`);
   };
 
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-2xl border bg-linear-to-r from-emerald-50 via-white to-teal-50 p-6 shadow-sm">
-        <div className="absolute -right-14 -top-14 h-36 w-36 rounded-full bg-emerald-100/70 blur-2xl" />
-        <div className="absolute -left-10 -bottom-14 h-32 w-32 rounded-full bg-teal-100/60 blur-2xl" />
-        <div className="relative flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Expense Claim Documents
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              จัดการเอกสารเบิกจ่ายแบบสะอาดตา เน้นงานสำคัญและรองรับทุกขนาดหน้าจอ
-            </p>
-          </div>
-          <Button onClick={openCreate} className="w-full md:w-auto">
-            <Plus className="mr-2 h-4 w-4" />
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">DOCUMENTS</div>
+          <h1>เอกสารเบิกค่าใช้จ่าย</h1>
+          <p>จัดเตรียมเอกสาร ติดตามสถานะ และตรวจสอบรายละเอียดการเบิก</p>
+        </div>
+        {allows("CREATE", userId) && (
+          <Button onClick={openCreate}>
+            <Plus size={16} />
             สร้างเอกสาร
           </Button>
-        </div>
-      </section>
+        )}
+      </div>
 
       <section className="rounded-xl border bg-card p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="pointer-events-none absolute z-10 left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="ค้นหาเลขที่เอกสาร, หมายเหตุ, หรือชื่อผู้ยื่น"
               className="pl-9"
@@ -737,116 +682,185 @@ export function ExpenseClaimDocumentClient({
         </div>
       </section>
 
-      <section
-        aria-busy={isPending || undefined}
-        className="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
-      >
-        {items.map((item) => (
-          <article
-            key={item.id}
-            role="button"
-            tabIndex={0}
-            aria-label={`ดูรายละเอียดเอกสาร ${item.id}`}
-            onClick={() => {
-              setSelected(item);
-              setMode("view");
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                setSelected(item);
-                setMode("view");
-              }
-            }}
-            className="cursor-pointer rounded-2xl border border-border/60 bg-card p-4 shadow-sm outline-none transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/30 hover:shadow-md focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+      <div className="grid grid-cols-2 gap-4 sm:flex sm:flex-wrap sm:items-end [&>div>label]:mb-2">
+        <div className="w-full sm:w-48">
+          <Label htmlFor="claim-status">สถานะ</Label>
+          <NativeSelect
+            id="claim-status"
+            value={query.get("status") || ""}
+            onChange={(event) =>
+              navigateList({
+                status: event.target.value,
+                statusGroup: undefined,
+              })
+            }
           >
-            <div className="mb-3 flex items-start justify-between gap-2">
-              <div>
-                <p className="font-semibold">{item.id}</p>
-                <p className="text-xs text-muted-foreground">
-                  {item.claimant.firstName} {item.claimant.lastName}
-                </p>
-              </div>
-              <Badge variant={claimStatusVariant(item.status)}>
-                {STATUS_LABEL[item.status] ?? item.status}
-              </Badge>
-            </div>
-
-            <div className="space-y-2 text-sm text-muted-foreground">
-              <p className="flex items-center gap-2">
-                <CalendarDays className="h-4 w-4" />
-                <span>{monthDisplay(item.expenseMonth)}</span>
-              </p>
-              <p className="flex items-center gap-2">
-                <Wallet className="h-4 w-4" />
-                <span>{decimalText(item.amount)} บาท</span>
-              </p>
-              <p className="line-clamp-2">{item.remark || "-"}</p>
-            </div>
-
-            <div className="mt-4 flex items-center justify-between border-t pt-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setSelected(item);
-                  setMode("view");
-                }}
-              >
-                <Eye className="mr-1 h-4 w-4" />
-                ดู
-              </Button>
-              <div className="flex gap-1">
-                {item.status === "DRAFT" && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-emerald-600 hover:text-emerald-700"
-                    disabled={isPending}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      submitRetry(item);
-                    }}
-                    title="ส่งเอกสาร"
-                  >
-                    <Send className="mr-1 h-4 w-4" />
-                    ส่ง
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    openEdit(item);
-                  }}
-                  aria-label={`แก้ไขเอกสาร ${item.id}`}
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-destructive hover:text-destructive"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setSelected(item);
-                    setMode("delete");
-                  }}
-                  aria-label={`ยกเลิกเอกสาร ${item.id}`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </article>
-        ))}
+            <option value="">ทุกสถานะ</option>
+            {Object.entries(STATUS_LABEL).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+        <div className="w-full sm:w-44">
+          <Label htmlFor="claim-month">เดือน</Label>
+          <Input
+            id="claim-month"
+            type="month"
+            value={query.get("month") || ""}
+            onChange={(event) => navigateList({ month: event.target.value })}
+          />
+        </div>
+        <div className="w-full sm:w-48">
+          <Label htmlFor="claim-sort">เรียงลำดับ</Label>
+          <NativeSelect
+            id="claim-sort"
+            value={query.get("sort") || ""}
+            onChange={(event) => navigateList({ sort: event.target.value })}
+          >
+            <option value="">ล่าสุด (ค่าเริ่มต้น)</option>
+            <option value="amount-desc">ยอดเบิกมาก → น้อย</option>
+            <option value="amount-asc">ยอดเบิกน้อย → มาก</option>
+          </NativeSelect>
+        </div>
+        {(query.get("statusGroup") ||
+          query.get("status") ||
+          query.get("month") ||
+          query.get("sort")) && (
+          <Button
+            variant="ghost"
+            onClick={() =>
+              navigateList({
+                status: undefined,
+                statusGroup: undefined,
+                month: undefined,
+                sort: undefined,
+              })
+            }
+          >
+            ล้างตัวกรอง
+          </Button>
+        )}
+      </div>
+      <section className="document-panel" aria-busy={isPending || undefined}>
+        <div className="px-5 py-4 border-b flex justify-between text-sm">
+          <strong>รายการเอกสาร</strong>
+          <span className="text-muted-foreground">
+            {pagination?.total ?? items.length} รายการ
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <Table aria-label="เอกสารเบิกค่าใช้จ่าย">
+            <TableHead>
+              <TableRow>
+                <TableHeader>เอกสาร / ผู้เบิก</TableHeader>
+                <TableHeader>เดือน</TableHeader>
+                <TableHeader>สถานะ</TableHeader>
+                <TableHeader className="text-right">ยอดเบิก (บาท)</TableHeader>
+                <TableHeader className="text-right">ดำเนินการ</TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {items.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-3 min-w-56">
+                      <div className="document-icon">
+                        <FileText size={18} />
+                      </div>
+                      <div>
+                        <p className="font-semibold max-w-72 line-clamp-2">
+                          {item.expenseClaimOffSiteWorks
+                            .map(
+                              (link) =>
+                                link.offSiteWork.objective ||
+                                link.offSiteWork.innerRefDocumentId,
+                            )
+                            .filter(Boolean)
+                            .join(" · ") || item.id}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {item.claimant.firstName} {item.claimant.lastName} ·{" "}
+                          {item.id.slice(0, 8)}
+                        </p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-muted-foreground">
+                    {monthDisplay(item.expenseMonth)}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={item.status} />
+                  </TableCell>
+                  <TableCell className="text-right font-semibold tabular-nums whitespace-nowrap">
+                    {decimalText(item.amount)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1 justify-end">
+                      {allows("READ", item.userId) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`ดูรายละเอียด ${item.id}`}
+                          onClick={() => openDetail(item)}
+                        >
+                          <Eye size={16} />
+                        </Button>
+                      )}
+                      {item.status === "DRAFT" &&
+                        item.userId === userId &&
+                        allows("UPDATE", item.userId) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`ส่งเอกสาร ${item.id}`}
+                            disabled={isPending}
+                            onClick={() => submitRetry(item)}
+                          >
+                            <Send size={16} />
+                          </Button>
+                        )}
+                      {item.status !== "CANCELLED" &&
+                        allows("UPDATE", item.userId) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`แก้ไขเอกสาร ${item.id}`}
+                            onClick={() => openEdit(item)}
+                          >
+                            <Pencil size={16} />
+                          </Button>
+                        )}
+                      {!["APPROVED", "CANCELLED"].includes(item.status) &&
+                        allows("DELETE", item.userId) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive"
+                            aria-label={`ยกเลิกเอกสาร ${item.id}`}
+                            onClick={() => {
+                              setSelected(item);
+                              setMode("delete");
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </Button>
+                        )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        {items.length === 0 && (
+          <EmptyState
+            icon={FileText}
+            message="ไม่พบเอกสารเบิกจ่ายตามเงื่อนไข"
+          />
+        )}
       </section>
-
-      {items.length === 0 && (
-        <EmptyState icon={FileText} message="ไม่พบเอกสารเบิกจ่าย" />
-      )}
 
       {pagination && (
         <PaginationControls
@@ -858,6 +872,7 @@ export function ExpenseClaimDocumentClient({
       )}
 
       <Dialog
+        busy={isPending}
         open={mode === "create" || mode === "edit"}
         onClose={() => setMode(null)}
         className="max-w-4xl"
@@ -874,8 +889,70 @@ export function ExpenseClaimDocumentClient({
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
+          {wizard && (
+            <Stepper activeStep={step} alternativeLabel className="mb-7">
+              {["เดือน / งาน / วันที่", "ข้อมูลผู้เบิก", "ตรวจสอบและส่ง"].map(
+                (label) => (
+                  <Step key={label}>
+                    <StepLabel>{label}</StepLabel>
+                  </Step>
+                ),
+              )}
+            </Stepper>
+          )}
+          {wizard && step === 2 && (
+            <div className="space-y-5 rounded-xl border p-5 mb-4">
+              <h3 className="font-bold">ตรวจสอบก่อนบันทึก</h3>
+              <dl className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <dt className="text-muted-foreground">เดือนที่เบิก</dt>
+                  <dd className="font-semibold mt-1">
+                    {monthDisplay(toMonthDate(form.expenseMonth))}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">ผู้เบิก</dt>
+                  <dd className="font-semibold mt-1">
+                    {selected
+                      ? `${selected.claimant.firstName} ${selected.claimant.lastName}`
+                      : currentUserDisplayName}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">ตำแหน่งขณะยื่น</dt>
+                  <dd className="mt-1">{form.claimantPositionAtSubmission}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">ยอดเบิก</dt>
+                  <dd className="text-xl font-bold text-primary mt-1">
+                    {totalAmount.toLocaleString("th-TH")} บาท
+                  </dd>
+                </div>
+              </dl>
+              <div className="border-t pt-4 text-sm">
+                <p>
+                  {selectedOffSiteWorkIds.length} คำสั่ง · {dateCount} วัน × 150
+                  บาท
+                </p>
+                <p className="text-muted-foreground mt-2 break-words">
+                  {selectedClaimDates.map(formatDay).join(" · ") ||
+                    "ยังไม่ได้เลือกวัน"}
+                </p>
+              </div>
+              {form.remark && (
+                <p className="text-sm whitespace-pre-wrap">
+                  หมายเหตุ: {form.remark}
+                </p>
+              )}
+              {hasLeaderlessSelectedOsw && (
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  ยังมีคำสั่งที่ไม่ได้กำหนดหัวหน้า สามารถบันทึกร่างไว้ก่อนได้
+                </p>
+              )}
+            </div>
+          )}
           <div className="space-y-4">
-            <div className="space-y-2">
+            <div hidden={wizard && step !== 0} className="space-y-2">
               <Label htmlFor="expenseMonth">เดือน</Label>
               <Input
                 id="expenseMonth"
@@ -897,12 +974,20 @@ export function ExpenseClaimDocumentClient({
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="owner">Owner</Label>
-              <Input id="owner" value={currentUserDisplayName} disabled />
+            <div hidden={wizard && step !== 1} className="space-y-2">
+              <Label htmlFor="owner">ผู้เบิก</Label>
+              <Input
+                id="owner"
+                value={
+                  selected
+                    ? `${selected.claimant.firstName} ${selected.claimant.lastName}`
+                    : currentUserDisplayName
+                }
+                disabled
+              />
             </div>
 
-            <div className="space-y-2">
+            <div hidden={wizard && step !== 1} className="space-y-2">
               <Label htmlFor="claimantPositionAtSubmission">
                 ตำแหน่งผู้ยื่นขณะยื่นเอกสาร
               </Label>
@@ -915,7 +1000,7 @@ export function ExpenseClaimDocumentClient({
 
             {mode === "create" ||
             (mode === "edit" && selected?.status === "DRAFT") ? (
-              <>
+              <div hidden={step !== 0} className="space-y-4">
                 {hasLeaderlessSelectedOsw && (
                   <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -927,10 +1012,12 @@ export function ExpenseClaimDocumentClient({
                 )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="offsite-search">OffSiteWork Relateds</Label>
+                  <Label htmlFor="offsite-search">
+                    คำสั่งปฏิบัติงานที่เกี่ยวข้อง
+                  </Label>
                   <Input
                     id="offsite-search"
-                    placeholder="ค้นหา Off-site Work"
+                    placeholder="ค้นหาคำสั่งปฏิบัติงาน"
                     value={offSiteSearch}
                     onChange={(e) => setOffSiteSearch(e.target.value)}
                   />
@@ -956,7 +1043,7 @@ export function ExpenseClaimDocumentClient({
                       </div>
                     ) : filteredEligibleOptions.length === 0 ? (
                       <p className="py-6 text-center text-sm text-muted-foreground">
-                        ไม่พบ Off-site Work ที่เข้าเงื่อนไข
+                        ไม่พบคำสั่งปฏิบัติงานที่เข้าเงื่อนไข
                       </p>
                     ) : (
                       <div className="space-y-1">
@@ -1020,12 +1107,12 @@ export function ExpenseClaimDocumentClient({
 
                 <div className="space-y-2">
                   <Label>
-                    Claim Dates (default Mon-Fri, can select all days)
+                    วันที่เบิก (เริ่มต้นวันจันทร์–ศุกร์ และเลือกวันอื่นได้)
                   </Label>
                   <div className="rounded-md border p-2">
                     {availableClaimDates.length === 0 ? (
                       <p className="py-4 text-center text-sm text-muted-foreground">
-                        เลือก Off-site Work ก่อน เพื่อคำนวณวันเบิก
+                        เลือกคำสั่งปฏิบัติงานก่อน เพื่อคำนวณวันเบิก
                       </p>
                     ) : (
                       <div className="space-y-2">
@@ -1068,6 +1155,8 @@ export function ExpenseClaimDocumentClient({
                                     : "border-transparent text-muted-foreground/30"
                                 }`}
                                 title={formatDay(cell)}
+                                aria-label={formatDay(cell)}
+                                aria-pressed={checked}
                               >
                                 {new Date(cell).getUTCDate()}
                               </button>
@@ -1084,15 +1173,15 @@ export function ExpenseClaimDocumentClient({
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="countDates">Date Count</Label>
+                    <Label htmlFor="countDates">จำนวนวันที่เลือก</Label>
                     <Input id="countDates" value={String(dateCount)} disabled />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="amount">Total Amount (THB)</Label>
+                    <Label htmlFor="amount">ยอดเบิก (บาท)</Label>
                     <Input id="amount" value={String(totalAmount)} disabled />
                   </div>
                 </div>
-              </>
+              </div>
             ) : (
               <>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -1134,8 +1223,8 @@ export function ExpenseClaimDocumentClient({
               </>
             )}
 
-            <div className="space-y-2">
-              <Label htmlFor="remark">Remark (optional)</Label>
+            <div hidden={wizard && step !== 1} className="space-y-2">
+              <Label htmlFor="remark">หมายเหตุ (ถ้ามี)</Label>
               <Textarea
                 id="remark"
                 rows={3}
@@ -1148,57 +1237,78 @@ export function ExpenseClaimDocumentClient({
           </div>
         </DialogBody>
         <DialogFooter>
+          {wizard && step > 0 && (
+            <Button
+              variant="ghost"
+              disabled={isPending}
+              onClick={() => setStep(step - 1)}
+            >
+              ย้อนกลับ
+            </Button>
+          )}
           <Button
             variant="outline"
-            className="w-full sm:w-auto"
+            className={wizard && step > 0 ? "hidden" : "shrink-0"}
             onClick={() => setMode(null)}
             disabled={isPending}
           >
-            Cancel
+            ปิด
           </Button>
 
           {mode === "create" ? (
             <>
               <LoadingButton
                 variant="secondary"
-                className="w-full sm:w-auto"
+                className="shrink-0"
                 onClick={() => submitCreate("DRAFT")}
                 disabled={!formValid || isPending}
                 isLoading={isPending}
-                loadingText="Saving Draft"
+                loadingText="กำลังบันทึกร่าง"
               >
-                Save Draft
+                บันทึกร่าง
               </LoadingButton>
               <LoadingButton
-                className="w-full sm:w-auto"
+                className={step === 2 ? "shrink-0" : "hidden"}
                 onClick={() => submitCreate("PENDING_LEADER_VERIFY")}
-                disabled={!formValid || isPending || hasLeaderlessSelectedOsw}
+                disabled={
+                  !formValid ||
+                  isPending ||
+                  hasLeaderlessSelectedOsw ||
+                  step !== 2 ||
+                  (selected !== null && selected.userId !== userId)
+                }
                 isLoading={isPending}
-                loadingText="Submitting"
+                loadingText="กำลังส่ง"
               >
-                Submit
+                ส่งเอกสาร
               </LoadingButton>
             </>
           ) : mode === "edit" && selected?.status === "DRAFT" ? (
             <>
               <LoadingButton
                 variant="secondary"
-                className="w-full sm:w-auto"
+                className="shrink-0"
                 onClick={submitUpdate}
                 disabled={!formValid || isPending}
                 isLoading={isPending}
-                loadingText="Saving Draft"
+                loadingText="กำลังบันทึกร่าง"
               >
-                Save Draft
+                บันทึกร่าง
               </LoadingButton>
               <LoadingButton
-                className="w-full sm:w-auto"
+                className={step === 2 ? "shrink-0" : "hidden"}
                 onClick={submitAndUpdate}
-                disabled={!formValid || isPending || hasLeaderlessSelectedOsw}
+                disabled={
+                  !formValid ||
+                  isPending ||
+                  hasLeaderlessSelectedOsw ||
+                  step !== 2 ||
+                  (selected !== null && selected.userId !== userId)
+                }
                 isLoading={isPending}
-                loadingText="Submitting"
+                loadingText="กำลังส่ง"
               >
-                Submit
+                ส่งเอกสาร
               </LoadingButton>
             </>
           ) : (
@@ -1206,16 +1316,25 @@ export function ExpenseClaimDocumentClient({
               onClick={submitUpdate}
               disabled={!formValid || isPending}
               isLoading={isPending}
-              loadingText="Updating"
+              loadingText="กำลังบันทึก"
             >
-              Update
+              บันทึกการแก้ไข
             </LoadingButton>
+          )}
+          {wizard && step < 2 && (
+            <Button
+              onClick={() => setStep(step + 1)}
+              disabled={!formValid || isPending}
+            >
+              ถัดไป
+            </Button>
           )}
         </DialogFooter>
       </Dialog>
 
       {/* No-leader dialog — rendered after create/edit dialog so it stacks on top */}
       <Dialog
+        busy={isPending}
         open={noLeaderDialogOpen}
         onClose={() => setNoLeaderDialogOpen(false)}
         className="max-w-md"
@@ -1271,11 +1390,13 @@ export function ExpenseClaimDocumentClient({
       </Dialog>
 
       <Dialog
+        busy={isPending}
         open={mode === "view"}
-        onClose={() => setMode(null)}
+        presentation="drawer"
+        onClose={closeDetail}
         className="max-w-3xl"
       >
-        <DialogClose onClose={() => setMode(null)} />
+        <DialogClose onClose={closeDetail} />
         <DialogHeader>
           <DialogTitle>รายละเอียดเอกสาร</DialogTitle>
           <DialogDescription>{selected?.id}</DialogDescription>
@@ -1390,7 +1511,7 @@ export function ExpenseClaimDocumentClient({
           <Button
             variant="outline"
             className="w-full sm:w-auto"
-            onClick={() => setMode(null)}
+            onClick={closeDetail}
           >
             ปิด
           </Button>

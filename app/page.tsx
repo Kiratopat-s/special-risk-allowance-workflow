@@ -1,12 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/workflow-ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
   ArrowRight,
-  Building2,
   CheckCircle2,
   ClipboardList,
   Code2,
@@ -17,7 +15,7 @@ import {
   ShieldCheck,
   Star,
 } from "lucide-react";
-import { CursorSpotlight } from "@/components/cursor-spotlight";
+import { WorkspaceGuide } from "@/components/workflow-ui/workspace-guide";
 
 // ---------------------------------------------------------------------------
 // Static data
@@ -85,7 +83,8 @@ const TECH = [
   "React 19",
   "TypeScript",
   "Tailwind CSS v4",
-  "shadcn/ui",
+  "MUI",
+  "React Bits",
   "Auth.js v5",
   "Keycloak",
   "Prisma ORM",
@@ -105,67 +104,20 @@ export default async function Home() {
 
   return (
     <>
-      <CursorSpotlight />
+
 
       <div className="flex flex-col">
-        {/* ── Hero ──────────────────────────────────────────────────── */}
-        <section className="relative flex min-h-[88vh] items-center overflow-hidden">
-          {/* layered background */}
-          <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_90%_60%_at_50%_-10%,oklch(0.21_0.006_285.885/0.06),transparent)] dark:bg-[radial-gradient(ellipse_90%_60%_at_50%_-10%,oklch(0.985_0.002_247.858/0.05),transparent)]" />
-          <div className="absolute inset-0 -z-10 bg-[linear-gradient(to_right,oklch(0_0_0/0.04)_1px,transparent_1px),linear-gradient(to_bottom,oklch(0_0_0/0.04)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,oklch(1_0_0/0.03)_1px,transparent_1px),linear-gradient(to_bottom,oklch(1_0_0/0.03)_1px,transparent_1px)] bg-size-[40px_40px]" />
-
-          <div className="container mx-auto max-w-5xl px-4 py-24 text-center">
-            <div className="flex flex-col items-center space-y-8">
-              <Badge
-                variant="outline"
-                className="gap-2 rounded-full px-4 py-1.5 text-sm font-medium"
-              >
-                <Building2 className="h-3.5 w-3.5" />
-                การไฟฟ้าส่วนภูมิภาค · Provincial Electricity Authority
-              </Badge>
-
-              <div className="space-y-5 max-w-4xl">
-                <h1 className="text-5xl font-bold tracking-tight sm:text-6xl lg:text-[5.5rem] lg:leading-none">
-                  <span className="block">ค่าตอบแทน</span>
-                  <span className="block text-muted-foreground">
-                    เสี่ยงภัยพิเศษ
-                  </span>
-                </h1>
-                <p className="mx-auto max-w-xl text-base text-muted-foreground sm:text-lg">
-                  <span className="font-medium text-foreground">
-                    Special Risk Allowance Workflow
-                  </span>{" "}
-                  — ระบบจัดการเบิกค่าตอบแทนเสี่ยงภัยพิเศษครบวงจร
-                  ตั้งแต่การยื่นคำขอ ตรวจสอบ อนุมัติ จนถึงออกเอกสารทางการ
-                </p>
-              </div>
-
-              <div className="flex flex-col items-center gap-3 pt-2 sm:flex-row">
-                <Button asChild size="lg" className="group min-w-40">
-                  <Link href="/auth/signin?callbackUrl=%2Fdashboard">
-                    เข้าสู่ระบบ
-                    <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
-                  </Link>
-                </Button>
-                <Button variant="outline" size="lg" asChild>
-                  <Link
-                    href="https://github.com/Kiratopat-s/special-risk-allowance-workflow"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Code2 className="mr-2 h-4 w-4" />
-                    View Source
-                  </Link>
-                </Button>
-              </div>
-            </div>
+        <section className="border-b bg-card">
+          <div className="container mx-auto max-w-7xl grid gap-12 lg:grid-cols-2 lg:items-center px-5 py-16 sm:py-16">
+            <div><div className="eyebrow">PROVINCIAL ELECTRICITY AUTHORITY</div><p className="text-sm text-muted-foreground mb-7">การไฟฟ้าส่วนภูมิภาค</p><h1 className="text-4xl sm:text-5xl xl:text-6xl font-bold tracking-tight leading-[1.3]">ค่าตอบแทน<br /><span className="text-primary">เสี่ยงภัยพิเศษ</span></h1><p className="text-base leading-8 text-muted-foreground mt-6 max-w-lg">Special Risk Allowance Workflow — ระบบจัดการเบิกค่าตอบแทนเสี่ยงภัยพิเศษครบวงจร ตั้งแต่การยื่นคำขอ ตรวจสอบ อนุมัติ จนถึงออกเอกสารทางการ</p><div className="flex flex-wrap gap-3 mt-8"><Button asChild size="lg"><Link href="/auth/signin?callbackUrl=%2Fdashboard">เข้าสู่พื้นที่ทำงาน<ArrowRight size={17} /></Link></Button><Button variant="outline" asChild size="lg"><Link href="/how-to-use">คู่มือการใช้งาน</Link></Button></div><Link href="https://github.com/Kiratopat-s/special-risk-allowance-workflow" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-xs text-muted-foreground mt-6"><Code2 size={14} />View Source<ExternalLink size={12} /></Link></div>
+            <WorkspaceGuide />
           </div>
         </section>
 
         {/* ── Modules ───────────────────────────────────────────────── */}
         <section className="border-t border-border/40 bg-muted/20">
-          <div className="container mx-auto max-w-6xl px-4 py-24">
-            <div className="mb-16 text-center space-y-3">
+          <div className="container mx-auto max-w-6xl px-4 py-16">
+            <div className="mb-10 text-center space-y-3">
               <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                 Core Modules
               </p>
@@ -204,8 +156,8 @@ export default async function Home() {
 
         {/* ── Workflow steps ────────────────────────────────────────── */}
         <section className="border-t border-border/40">
-          <div className="container mx-auto max-w-5xl px-4 py-24">
-            <div className="mb-16 text-center space-y-3">
+          <div className="container mx-auto max-w-5xl px-4 py-16">
+            <div className="mb-10 text-center space-y-3">
               <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                 Workflow
               </p>
@@ -262,7 +214,7 @@ export default async function Home() {
 
         {/* ── Developer ─────────────────────────────────────────────── */}
         <section className="border-t border-border/40">
-          <div className="container mx-auto max-w-sm px-4 py-24 text-center">
+          <div className="container mx-auto max-w-sm px-4 py-16 text-center">
             <div className="mb-10 space-y-2">
               <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                 Developer

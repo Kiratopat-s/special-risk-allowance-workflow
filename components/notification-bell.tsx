@@ -14,17 +14,10 @@
 import { useState } from "react";
 import { Bell, BellRing, Check, CheckCheck, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { LoadingButton } from "@/components/ui/loading-button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/workflow-ui/button";
+import { LoadingButton } from "@/components/workflow-ui/loading-button";
+import { ConfirmDialog } from "@/components/workflow-ui/confirm-dialog";
+import { Popover, MenuItem, Divider } from "@mui/material";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { NotificationListSkeleton } from "@/components/ui/skeleton";
 import { useNotifications } from "@/lib/hooks/use-notifications";
@@ -61,14 +54,17 @@ export function NotificationBell() {
 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const badgeCount = Math.min(unreadCount, 99);
   const readCount = notifications.filter((n) => n.isRead).length;
 
   return (
     <>
-      <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-        <DropdownMenuTrigger asChild>
+
           <Button
+            aria-expanded={dropdownOpen}
+            aria-controls={dropdownOpen ? "notifications-panel" : undefined}
+            onClick={event => { setAnchor(event.currentTarget); setDropdownOpen(true); }}
             variant="ghost"
             size="icon"
             className="relative h-9 w-9"
@@ -83,14 +79,9 @@ export function NotificationBell() {
               </span>
             )}
           </Button>
-        </DropdownMenuTrigger>
 
-        <DropdownMenuContent
-          className="w-80"
-          align="end"
-          sideOffset={8}
-          forceMount
-        >
+
+        <Popover id="notifications-panel" open={dropdownOpen} anchorEl={anchor} onClose={() => setDropdownOpen(false)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }} slotProps={{ paper: { className: "w-96 max-w-[calc(100vw-2rem)] rounded-xl border mt-2" } }}>
           {/* Push permission prompt — shown only when permission is "default" */}
           {permission === "default" && (
             <>
@@ -127,19 +118,19 @@ export function NotificationBell() {
                   เปิด
                 </LoadingButton>
               </div>
-              <DropdownMenuSeparator />
+              <Divider />
             </>
           )}
           {/* Header */}
           <div className="flex items-center justify-between px-3 py-2">
-            <DropdownMenuLabel className="p-0 text-sm font-semibold">
+            <div className="p-0 text-sm font-semibold">
               การแจ้งเตือน
               {unreadCount > 0 && (
                 <span className="ml-1.5 text-xs text-muted-foreground font-normal">
                   ({unreadCount} ยังไม่อ่าน)
                 </span>
               )}
-            </DropdownMenuLabel>
+            </div>
             <div className="flex items-center gap-1">
               {readCount > 0 && (
                 <Button
@@ -169,10 +160,10 @@ export function NotificationBell() {
             </div>
           </div>
 
-          <DropdownMenuSeparator />
+          <Divider />
 
           {/* Notification list */}
-          <ScrollArea className="max-h-80">
+          <ScrollArea className="max-h-[65vh] overflow-y-auto">
             {isLoading ? (
               <NotificationListSkeleton />
             ) : notifications.length === 0 ? (
@@ -183,7 +174,7 @@ export function NotificationBell() {
             ) : (
               <div className="py-1">
                 {notifications.map((n) => (
-                  <DropdownMenuItem
+                  <MenuItem
                     key={n.id}
                     className={cn(
                       "group relative flex flex-col items-start gap-0.5 px-3 py-2.5 cursor-pointer pr-8",
@@ -230,13 +221,13 @@ export function NotificationBell() {
                         <Check className="h-3 w-3 text-muted-foreground/50" />
                       )}
                     </div>
-                  </DropdownMenuItem>
+                  </MenuItem>
                 ))}
               </div>
             )}
           </ScrollArea>
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </Popover>
+
       <ConfirmDialog
         open={showClearConfirm}
         onClose={() => setShowClearConfirm(false)}

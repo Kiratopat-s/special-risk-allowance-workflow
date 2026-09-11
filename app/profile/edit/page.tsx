@@ -9,8 +9,8 @@ import { z } from "zod";
 import { toast } from "sonner";
 import Link from "next/link";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/workflow-ui/button";
+import { Input } from "@/components/workflow-ui/input";
 import {
   Card,
   CardContent,

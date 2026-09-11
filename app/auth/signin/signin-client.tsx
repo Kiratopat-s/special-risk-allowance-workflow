@@ -5,8 +5,8 @@ import { signIn } from "next-auth/react";
 import { useState } from "react";
 import { ArrowLeft, LogIn } from "lucide-react";
 
-import { LoadingButton } from "@/components/ui/loading-button";
-import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/workflow-ui/loading-button";
+import { Button } from "@/components/workflow-ui/button";
 
 interface SignInClientProps {
   callbackUrl: string;

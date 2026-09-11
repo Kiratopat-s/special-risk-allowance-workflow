@@ -1,20 +1,9 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import InitColorSchemeScript from "@mui/material/InitColorSchemeScript";
 import { Providers } from "@/components/providers";
-import { Navbar } from "@/components/navbar";
-import { Footer } from "@/components/footer";
+import { AppShell } from "@/components/workflow-ui/app-shell";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Special Risk Allowance Workflow",
@@ -28,15 +17,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen flex flex-col`}
-      >
+    <html lang="th" suppressHydrationWarning>
+      <body className="antialiased min-h-screen flex flex-col">
+        <InitColorSchemeScript
+          attribute="class"
+          defaultMode="light"
+          modeStorageKey="theme"
+        />
         <Providers>
-          <Navbar />
           <ServiceWorkerRegistration />
-          <main className="flex-1">{children}</main>
-          <Footer />
+          <AppShell>{children}</AppShell>
         </Providers>
       </body>
     </html>

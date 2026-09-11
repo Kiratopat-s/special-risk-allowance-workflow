@@ -6,6 +6,7 @@
  * @module lib/domains/expense-claim-document/repository
  */
 
+import { claimWhere, claimOrderBy } from "./read-query";
 import { prisma } from "@/lib/db";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { sanitizeStrings } from "@/lib/shared/sanitize";
@@ -303,58 +304,8 @@ export const expenseClaimDocumentRepository = {
     async findMany(
         criteria: ExpenseClaimDocumentFilterCriteria
     ): Promise<PaginatedResult<ExpenseClaimDocumentWithRelations>> {
-        const {
-            search,
-            userId,
-            createdById,
-            status,
-            expenseMonthFrom,
-            expenseMonthTo,
-            includeCancelled = false,
-            page = 1,
-            pageSize = 20,
-        } = criteria;
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const where: any = {};
-
-        if (!includeCancelled) {
-            where.cancelledAt = null;
-        }
-
-        if (userId) {
-            where.userId = userId;
-        }
-
-        if (createdById) {
-            where.createdById = createdById;
-        }
-
-        if (status) {
-            where.status = status;
-        }
-
-        if (expenseMonthFrom || expenseMonthTo) {
-            where.expenseMonth = {};
-            if (expenseMonthFrom) where.expenseMonth.gte = new Date(expenseMonthFrom);
-            if (expenseMonthTo) where.expenseMonth.lte = new Date(expenseMonthTo);
-        }
-
-        if (search) {
-            where.OR = [
-                { id: { contains: search, mode: "insensitive" } },
-                { remark: { contains: search, mode: "insensitive" } },
-                {
-                    claimant: {
-                        OR: [
-                            { firstName: { contains: search, mode: "insensitive" } },
-                            { lastName: { contains: search, mode: "insensitive" } },
-                            { employeeId: { contains: search, mode: "insensitive" } },
-                        ],
-                    },
-                },
-            ];
-        }
+        const { page = 1, pageSize = 20 } = criteria;
+        const where = claimWhere(criteria);
 
         const [data, total] = await Promise.all([
             prisma.expenseClaim.findMany({
@@ -370,7 +321,7 @@ export const expenseClaimDocumentRepository = {
                     },
                     leaderVerifications: { select: leaderVerificationSelect },
                 },
-                orderBy: [{ expenseMonth: "desc" }, { createdAt: "desc" }],
+                orderBy: claimOrderBy(criteria.sort),
                 skip: (page - 1) * pageSize,
                 take: pageSize,
             }),

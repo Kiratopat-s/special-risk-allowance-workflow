@@ -1,3 +1,4 @@
+import { WorkspaceGuide } from "@/components/workflow-ui/workspace-guide";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
@@ -21,7 +22,7 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/workflow-ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
@@ -416,7 +417,7 @@ export default function HowToUsePage() {
               </div>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <Button asChild>
-                  <Link href={signInHref("/dashboard")}>เปิด Dashboard</Link>
+                  <Link href={signInHref("/dashboard")}>เปิดภาพรวม</Link>
                 </Button>
                 <Button variant="outline" asChild>
                   <Link href={signInHref("/dashboard?tab=expense-claims")}>
@@ -453,6 +454,7 @@ export default function HowToUsePage() {
         </div>
       </section>
 
+      <section className="container mx-auto max-w-7xl px-5 py-10 grid gap-8 lg:grid-cols-2 lg:items-center"><div><p className="eyebrow">GETTING STARTED</p><h2 className="text-2xl font-bold mb-4">เริ่มจากภาพรวม ไปสู่งานที่ต้องทำ</h2><p className="text-sm leading-7 text-muted-foreground">เมื่อเข้าสู่ระบบ หน้าแรกจะแสดงภาพรวมของเดือนที่เลือก พร้อมระบุว่าเป็นเอกสารของคุณหรือทุกเอกสารที่มีสิทธิ์เห็น เลือกเมนูจากแถบด้านซ้าย บนมือถือให้กดปุ่มเปิดเมนูด้านบน</p><p className="text-sm leading-7 text-muted-foreground mt-3">หน้ารายการรองรับการค้นหา ตัวกรอง และการเปิดรายละเอียดในแผงด้านข้าง การสร้างเอกสารและแก้ไขฉบับร่างมี 3 ขั้น โดยยังเลือกวันปฏิบัติงานแต่ละวันได้</p></div><WorkspaceGuide /></section>
       <section className="container mx-auto max-w-7xl px-4 py-8">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {OVERVIEW_STATS.map((stat) => (
@@ -698,12 +700,12 @@ export default function HowToUsePage() {
             <div>
               <h2 className="font-semibold">พร้อมเริ่มใช้งานแล้วหรือยัง</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                ไปที่ Dashboard แล้วเลือกแท็บตามบทบาทของคุณ
+                ไปที่ภาพรวม แล้วเลือกเมนูด้านข้างตามสิทธิ์ของคุณ
               </p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Button asChild>
-                <Link href={signInHref("/dashboard")}>ไปที่ Dashboard</Link>
+                <Link href={signInHref("/dashboard")}>ไปที่ภาพรวม</Link>
               </Button>
               <Button variant="outline" asChild>
                 <Link href={signInHref("/dashboard?tab=leader-queue")}>

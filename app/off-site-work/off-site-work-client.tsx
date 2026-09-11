@@ -1,9 +1,20 @@
 "use client";
+import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { updateListQuery } from "@/lib/ui/list-query";
+import { useScopedPermission } from "@/lib/hooks/use-scoped-permission";
+import {
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableHeader,
+  TableCell,
+} from "@/components/workflow-ui/table";
 import { toast } from "sonner";
 import {
-  CalendarDays,
   Eye,
   FileText,
   Loader2,
@@ -12,7 +23,6 @@ import {
   Plus,
   Search,
   Trash2,
-  User,
   Users,
   UserCheck,
   X,
@@ -25,13 +35,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/workflow-ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { LoadingButton } from "@/components/ui/loading-button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/workflow-ui/button";
+import { LoadingButton } from "@/components/workflow-ui/loading-button";
+import { Input } from "@/components/workflow-ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Textarea } from "@/components/workflow-ui/textarea";
 import {
   createOffSiteWork,
   deleteOffSiteWork,
@@ -45,9 +55,9 @@ import type {
 } from "@/lib/domains/off-site-work";
 import type { Pagination } from "@/lib/shared/types";
 import { shortDateDisplay, toDateInputValue } from "@/lib/shared/format";
-import { PaginationControls } from "@/components/ui/pagination-controls";
+import { PaginationControls } from "@/components/workflow-ui/pagination-controls";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ConfirmDialog } from "@/components/workflow-ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface OffSiteWorkClientProps {
@@ -154,9 +164,20 @@ export function OffSiteWorkClient({
   initialItems,
   initialPagination,
 }: OffSiteWorkClientProps) {
+  const router = useRouter();
+  const query = useSearchParams();
+  const { allows, userId } = useScopedPermission("OFF_SITE_WORK");
+  const navigateList = (
+    changes: Record<string, string | number | undefined>,
+    reset = true,
+  ) =>
+    router.push(
+      `/dashboard?${updateListQuery(query.toString(), changes, reset)}`,
+      { scroll: false },
+    );
   const [items, setItems] = useState(initialItems);
   const [pagination, setPagination] = useState(initialPagination);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(query.get("search") || "");
   const [page, setPage] = useState(initialPagination?.page ?? 1);
   const [mode, setMode] = useState<Mode>(null);
   const [selected, setSelected] = useState<OffSiteWorkWithRelations | null>(
@@ -200,7 +221,7 @@ export function OffSiteWorkClient({
     async (nextPage = page, nextSearch = search) => {
       const result = await listOffSiteWorks({
         page: nextPage,
-        pageSize: DEFAULT_PAGE_SIZE,
+        pageSize: initialPagination?.pageSize ?? DEFAULT_PAGE_SIZE,
         search: nextSearch || undefined,
       });
 
@@ -212,8 +233,9 @@ export function OffSiteWorkClient({
       setItems(result.data.data);
       setPagination(result.data.pagination);
       setPage(result.data.pagination.page);
+      router.refresh();
     },
-    [page, search],
+    [page, search, initialPagination?.pageSize, router],
   );
 
   const openCreate = () => {
@@ -379,7 +401,7 @@ export function OffSiteWorkClient({
       }
 
       toast.success("สร้างรายการสำเร็จ");
-      await refresh(1, search);
+      await refresh(page, search);
       setMode(null);
     });
   };
@@ -440,44 +462,45 @@ export function OffSiteWorkClient({
     });
   };
 
-  const onSearch = () => {
-    startTransition(async () => {
-      await refresh(1, search);
-    });
-  };
+  useEffect(() => {
+    if (query.get("create") === "1" && allows("CREATE", userId)) {
+      const frame = requestAnimationFrame(() => {
+        openCreate();
+        const next = new URLSearchParams(query);
+        next.delete("create");
+        window.history.replaceState(null, "", `/dashboard?${next}`);
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+  });
 
-  const changePage = (nextPage: number) => {
-    startTransition(async () => {
-      await refresh(nextPage, search);
-    });
-  };
+  const onSearch = () => navigateList({ search });
+  const changePage = (nextPage: number) =>
+    navigateList({ page: nextPage }, false);
 
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-2xl border bg-linear-to-br from-sky-50 via-white to-cyan-50 p-6 shadow-sm">
-        <div className="absolute -right-12 -top-16 h-40 w-40 rounded-full bg-cyan-100/70 blur-2xl" />
-        <div className="absolute -left-10 -bottom-16 h-32 w-32 rounded-full bg-blue-100/70 blur-2xl" />
-        <div className="relative flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Off-site Work Actions
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              จัดการคำสั่งปฏิบัติงานนอกสถานที่แบบเรียบง่าย อ่านง่าย
-              และใช้งานบนมือถือได้ดี
-            </p>
-          </div>
-          <Button onClick={openCreate} className="w-full md:w-auto">
-            <Plus className="mr-2 h-4 w-4" />
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">FIELD WORK</div>
+          <h1>คำสั่งออกนอกสถานที่</h1>
+          <p>
+            จัดการเอกสารอ้างอิง ผู้ปฏิบัติงาน
+            และหัวหน้างานที่รับรองการปฏิบัติงาน
+          </p>
+        </div>
+        {allows("CREATE", userId) && (
+          <Button onClick={openCreate}>
+            <Plus size={16} />
             เพิ่มคำสั่ง
           </Button>
-        </div>
-      </section>
+        )}
+      </div>
 
       <section className="rounded-2xl border bg-card p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Search className="pointer-events-none absolute z-10 left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               value={search}
               placeholder="ค้นหาเลขที่เอกสาร, สถานที่ หรือวัตถุประสงค์"
@@ -494,121 +517,124 @@ export function OffSiteWorkClient({
         </div>
       </section>
 
-      <section
-        aria-busy={isPending || undefined}
-        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
-      >
-        {items.map((item) => (
-          <article
-            key={item.id}
-            role="button"
-            tabIndex={0}
-            aria-label={`ดูรายละเอียดคำสั่ง ${item.id}`}
-            onClick={() => {
-              setSelected(item);
-              setMode("view");
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                setSelected(item);
-                setMode("view");
-              }
-            }}
-            className="group cursor-pointer rounded-2xl border border-border/60 bg-card p-4 shadow-sm outline-none transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/30 hover:shadow-md focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
-          >
-            <div className="mb-3 flex items-start justify-between gap-2">
-              <div>
-                <p className="font-semibold text-foreground">{item.id}</p>
-                {item.innerRefDocumentId ? (
-                  <p className="text-xs text-muted-foreground">
-                    Ref: {item.innerRefDocumentId}
-                  </p>
-                ) : null}
-              </div>
-              <Badge variant="outline" className="text-[11px]">
-                <CalendarDays className="mr-1 h-3 w-3" />
-                {shortDateDisplay(item.startDate)}
-              </Badge>
-            </div>
-
-            <div className="space-y-2 text-sm text-muted-foreground">
-              <p className="flex items-center gap-2">
-                <MapPin className="h-4 w-4" />
-                <span className="truncate">{item.location || "-"}</span>
-              </p>
-              <p className="line-clamp-2">{item.objective || "-"}</p>
-              <p className="flex items-center gap-2">
-                <User className="h-4 w-4" />
-                <span>
-                  {item.postedByUser.firstName} {item.postedByUser.lastName}
-                </span>
-              </p>
-              {item.leaderFirstName || item.leaderUser ? (
-                <p className="flex items-center gap-2 text-xs">
-                  <UserCheck className="h-3.5 w-3.5 text-blue-500 dark:text-blue-400" />
-                  <span className="text-blue-500 dark:text-blue-400">
-                    {item.leaderFirstName} {item.leaderLastName}
-                  </span>
-                </p>
-              ) : null}
-              {item.employeeList && item.employeeList.length > 0 ? (
-                <p className="flex items-center gap-2 text-xs">
-                  <Users className="h-3.5 w-3.5 text-slate-500" />
-                  <span className="text-slate-600">
-                    {item.employeeList.length} คน
-                  </span>
-                </p>
-              ) : null}
-            </div>
-
-            <div className="mt-4 flex items-center justify-between border-t pt-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setSelected(item);
-                  setMode("view");
-                }}
-              >
-                <Eye className="mr-1 h-4 w-4" />
-                ดู
-              </Button>
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    openEdit(item);
-                  }}
-                  aria-label={`แก้ไขคำสั่ง ${item.id}`}
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="text-destructive hover:text-destructive"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setSelected(item);
-                    setMode("delete");
-                  }}
-                  aria-label={`ลบคำสั่ง ${item.id}`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </article>
-        ))}
+      <section className="document-panel" aria-busy={isPending || undefined}>
+        <div className="px-5 py-4 border-b flex justify-between text-sm">
+          <strong>คำสั่งปฏิบัติงาน</strong>
+          <span className="text-muted-foreground">
+            {pagination?.total ?? items.length} รายการ
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <Table aria-label="คำสั่งออกนอกสถานที่">
+            <TableHead>
+              <TableRow>
+                <TableHeader>คำสั่ง / วัตถุประสงค์</TableHeader>
+                <TableHeader>วันที่ปฏิบัติงาน</TableHeader>
+                <TableHeader>หัวหน้างาน</TableHeader>
+                <TableHeader>ผู้ปฏิบัติงาน</TableHeader>
+                <TableHeader>ดำเนินการ</TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {items.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell>
+                    <div className="flex gap-3 min-w-56">
+                      <div className="document-icon">
+                        <MapPin size={18} />
+                      </div>
+                      <div>
+                        <p className="font-semibold line-clamp-2 max-w-80">
+                          {item.objective || item.innerRefDocumentId || item.id}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {item.id}
+                          {item.innerRefDocumentId
+                            ? ` · ${item.innerRefDocumentId}`
+                            : ""}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {item.location || "—"}
+                        </p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-xs">
+                    {shortDateDisplay(item.startDate)}
+                    <br />
+                    <span className="text-muted-foreground">
+                      ถึง {shortDateDisplay(item.endDate)}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {item.leaderFirstName || item.leaderUser ? (
+                      <span>
+                        {item.leaderFirstName} {item.leaderLastName}
+                      </span>
+                    ) : (
+                      <span className="text-amber-700 dark:text-amber-300">
+                        ยังไม่ได้กำหนด
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <span className="text-sm">
+                      {item.employeeList?.length ?? 0} คน
+                    </span>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      ผู้สร้าง {item.postedByUser.firstName}
+                    </p>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      {allows("READ", item.postedByUserId) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`ดูรายละเอียดคำสั่ง ${item.id}`}
+                          onClick={() => {
+                            setSelected(item);
+                            setMode("view");
+                          }}
+                        >
+                          <Eye size={16} />
+                        </Button>
+                      )}
+                      {allows("UPDATE", item.postedByUserId) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`แก้ไขคำสั่ง ${item.id}`}
+                          onClick={() => openEdit(item)}
+                        >
+                          <Pencil size={16} />
+                        </Button>
+                      )}
+                      {allows("DELETE", item.postedByUserId) && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive"
+                          aria-label={`ลบคำสั่ง ${item.id}`}
+                          onClick={() => {
+                            setSelected(item);
+                            setMode("delete");
+                          }}
+                        >
+                          <Trash2 size={16} />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+        {items.length === 0 && (
+          <EmptyState icon={FileText} message="ไม่พบข้อมูลที่ตรงกับเงื่อนไข" />
+        )}
       </section>
-
-      {items.length === 0 && (
-        <EmptyState icon={FileText} message="ไม่พบข้อมูลที่ตรงกับเงื่อนไข" />
-      )}
 
       {pagination && (
         <PaginationControls
@@ -621,6 +647,8 @@ export function OffSiteWorkClient({
 
       {/* Create / Edit Dialog */}
       <Dialog
+        busy={isPending}
+        className="max-w-3xl"
         open={mode === "create" || mode === "edit"}
         onClose={() => setMode(null)}
       >
@@ -871,8 +899,8 @@ export function OffSiteWorkClient({
                     {t === "none"
                       ? "ไม่มี"
                       : t === "internal"
-                      ? "บุคลากรในระบบ"
-                      : "บุคคลภายนอก"}
+                        ? "บุคลากรในระบบ"
+                        : "บุคคลภายนอก"}
                   </button>
                 ))}
               </div>
@@ -1063,7 +1091,12 @@ export function OffSiteWorkClient({
       </Dialog>
 
       {/* View Dialog */}
-      <Dialog open={mode === "view"} onClose={() => setMode(null)}>
+      <Dialog
+        busy={isPending}
+        presentation="drawer"
+        open={mode === "view"}
+        onClose={() => setMode(null)}
+      >
         <DialogClose onClose={() => setMode(null)} />
         <DialogHeader>
           <DialogTitle>รายละเอียดคำสั่ง</DialogTitle>

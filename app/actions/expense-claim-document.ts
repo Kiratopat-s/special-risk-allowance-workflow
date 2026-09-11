@@ -8,6 +8,7 @@
  * @module app/actions/expense-claim-document
  */
 
+import { resolveClaimReadScope } from "@/lib/domains/expense-claim-document/read-scope";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { can } from "@/lib/auth/permissions";
@@ -78,42 +79,11 @@ export async function listExpenseClaimDocuments(
         return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
     }
 
-    const userId = session.user.dbUserId;
-
-    // Check whether the caller can list their own documents at minimum.
-    // Passing targetOwnerId = userId makes OWN scope resolve correctly.
-    const canListOwn = await can(userId, "EXPENSE_CLAIM", "LIST", {
-        targetOwnerId: userId,
-    });
-
-    if (!canListOwn) {
-        // Fallback: READ:OWN is sufficient to view own claims (no LIST permission assigned).
-        const canReadOwn = await can(userId, "EXPENSE_CLAIM", "READ", {
-            targetOwnerId: userId,
-        });
-        if (!canReadOwn) {
-            return {
-                success: false,
-                error: "Permission denied",
-                code: "PERMISSION_DENIED",
-            };
-        }
-        return expenseClaimDocumentService.list({ ...(filters ?? {}), userId });
-    }
-
-    // Distinguish LIST:ALL from LIST:OWN by using a NIL-UUID sentinel.
-    // OWN scope will deny (sentinel ≠ userId); ALL scope will allow.
-    const canListAll = await can(userId, "EXPENSE_CLAIM", "LIST", {
-        targetOwnerId: "00000000-0000-0000-0000-000000000000",
-    });
-
-    if (canListAll) {
-        // ALL scope — collector / hpa / rk / drt see every document.
-        return expenseClaimDocumentService.list(filters ?? {});
-    }
-
-    // OWN scope — employee sees only their own documents.
-    return expenseClaimDocumentService.list({ ...(filters ?? {}), userId });
+    const scope = await resolveClaimReadScope(session.user.dbUserId);
+    if (!scope.success) return scope;
+    return expenseClaimDocumentService.list(scope.data.scope === "ALL"
+        ? filters ?? {}
+        : { ...(filters ?? {}), userId: scope.data.userId });
 }
 
 /**

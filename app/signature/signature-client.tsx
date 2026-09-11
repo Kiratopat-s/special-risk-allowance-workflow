@@ -1,6 +1,7 @@
 "use client";
+import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   CheckCircle2,
@@ -14,8 +15,8 @@ import {
   X,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { LoadingButton } from "@/components/ui/loading-button";
+import { Button } from "@/components/workflow-ui/button";
+import { LoadingButton } from "@/components/workflow-ui/loading-button";
 import {
   Card,
   CardContent,
@@ -33,7 +34,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/workflow-ui/dialog";
 
 import {
   createMySignature,
@@ -208,7 +209,7 @@ export function SignatureClient({
       const res = await getMySignatureState();
       if (res.success) setState(res.data);
     });
-  }, []);
+  }, [startTransition]);
 
   const openNewDraw = useCallback(() => {
     setEditingId(null);
@@ -249,7 +250,7 @@ export function SignatureClient({
       };
       reader.readAsDataURL(blob);
     }, "image/png");
-  }, [editingId, refreshState]);
+  }, [editingId, refreshState, startTransition]);
 
   const handleActivate = useCallback(
     (sig: SignatureListItem) => {
@@ -263,7 +264,7 @@ export function SignatureClient({
         }
       });
     },
-    [refreshState],
+    [refreshState, startTransition],
   );
 
   const confirmDelete = useCallback(
@@ -283,7 +284,7 @@ export function SignatureClient({
         toast.error(result.error);
       }
     });
-  }, [deleteTarget, refreshState]);
+  }, [deleteTarget, refreshState, startTransition]);
 
   const handleDownload = useCallback(async (sig: SignatureListItem) => {
     try {
@@ -315,10 +316,11 @@ export function SignatureClient({
   return (
     <div className="container max-w-4xl mx-auto px-4 py-10">
       {/* ---- Page Header ---- */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between mb-8">
+      <div className="page-heading">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            My Signature
+          <div className="eyebrow">MY SIGNATURE</div>
+          <h1>
+            ลายมือชื่อของฉัน
           </h1>
           {userName && (
             <p className="text-sm text-muted-foreground">{userName}</p>
@@ -330,19 +332,19 @@ export function SignatureClient({
           className="w-full sm:w-auto"
         >
           <PenLine className="mr-2 h-4 w-4" />
-          Draw New Signature
+          วาดลายมือชื่อใหม่
         </Button>
       </div>
 
-      {/* ---- Active Signature ---- */}
+      {/* ---- ลายมือชื่อที่ใช้งาน ---- */}
       <Card className="mb-6">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <CheckCircle2 className="h-4 w-4 text-green-600" />
-            Active Signature
+            ลายมือชื่อที่ใช้งาน
           </CardTitle>
           <CardDescription>
-            This signature will appear on approved documents.
+            ลายมือชื่อนี้จะใช้ในเอกสารที่ได้รับการอนุมัติ
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -416,7 +418,7 @@ export function SignatureClient({
           <div className="space-y-3 mb-6">
             <div className="flex items-center gap-2">
               <Clock className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold">Signature History</h2>
+              <h2 className="text-sm font-semibold">ประวัติลายมือชื่อ</h2>
               <Badge variant="secondary">{inactive.length}</Badge>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -480,10 +482,10 @@ export function SignatureClient({
       )}
 
       {/* ---- Draw Dialog ---- */}
-      <Dialog open={drawOpen} onClose={() => setDrawOpen(false)}>
+      <Dialog busy={isPending} open={drawOpen} onClose={() => setDrawOpen(false)}>
         <DialogHeader>
           <DialogTitle>
-            {editingId ? "Redraw Signature" : "Draw New Signature"}
+            {editingId ? "Redraw Signature" : "วาดลายมือชื่อใหม่"}
           </DialogTitle>
           <DialogDescription>
             Sign in the area below. Use a mouse, trackpad, or touch screen.
@@ -539,7 +541,7 @@ export function SignatureClient({
       </Dialog>
 
       {/* ---- Delete Confirmation Dialog ---- */}
-      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)}>
+      <Dialog busy={isPending} open={!!deleteTarget} onClose={() => setDeleteTarget(null)}>
         <DialogHeader>
           <DialogTitle>Delete Signature?</DialogTitle>
           <DialogDescription>

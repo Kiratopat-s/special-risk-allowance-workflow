@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/workflow-ui/button";
 import {
   Card,
   CardContent,
@@ -15,8 +15,8 @@ export default function PrivacyPolicyPage() {
   const lastUpdated = "January 20, 2026";
 
   return (
-    <div className="container max-w-4xl mx-auto px-4 py-12">
-      <div className="space-y-8">
+    <div className="container max-w-4xl mx-auto px-5 py-14 legal-content">
+      <div className="space-y-8 leading-relaxed">
         {/* Back button */}
         <Button variant="ghost" asChild className="-ml-4">
           <Link href="/">

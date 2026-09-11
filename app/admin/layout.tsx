@@ -34,12 +34,12 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
     <div className="container max-w-7xl mx-auto px-4 py-8">
       <div className="space-y-6">
         {/* Header */}
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight">Administration</h1>
+        <div className="page-heading"><div><div className="eyebrow">ADMINISTRATION</div>
+          <h1>จัดการระบบ</h1>
           <p className="text-sm text-muted-foreground">
-            Manage roles, permissions, and user access
+            จัดการผู้ใช้งาน บทบาท หน่วยงาน และสิทธิ์การเข้าถึง
           </p>
-        </div>
+        </div></div>
 
         {/* Tab Navigation */}
         <AdminNav />

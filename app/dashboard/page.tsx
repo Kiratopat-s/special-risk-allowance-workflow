@@ -32,12 +32,14 @@ import {
   TableSkeleton,
   ToolbarSkeleton,
 } from "@/components/ui/skeleton";
-import { DashboardTabNav } from "./dashboard-tab-nav";
+import { Overview } from "./overview";
+import { parseClaimListQuery } from "@/lib/ui/list-query";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 type AuthSession = Session | null;
 
 const DASHBOARD_TABS = [
+  "overview",
   "off-site-work",
   "expense-claims",
   "monthly-requests",
@@ -67,6 +69,12 @@ interface PermissionCheck {
 }
 
 const TAB_META: Record<DashboardTabId, DashboardTabMeta> = {
+  overview: {
+    id: "overview",
+    label: "ภาพรวม",
+    description: "ภาพรวมการเบิกค่าใช้จ่าย",
+    icon: FileText,
+  },
   "off-site-work": {
     id: "off-site-work",
     label: "Off-site Work",
@@ -162,17 +170,22 @@ function serializeDecimal(obj: unknown): unknown {
       return obj.map(serializeDecimal);
     }
     return Object.fromEntries(
-      Object.entries(obj).map(([key, value]) => [
-        key,
-        serializeDecimal(value),
-      ]),
+      Object.entries(obj).map(([key, value]) => [key, serializeDecimal(value)]),
     );
   }
   return obj;
 }
 
-async function renderOffSiteWorkTab() {
-  const result = await listOffSiteWorks({ page: 1, pageSize: 50 });
+async function renderOffSiteWorkTab(params: SearchParams) {
+  const filters = parseClaimListQuery(
+    new URLSearchParams(currentDashboardPath(params).split("?")[1]),
+  );
+  const result = await listOffSiteWorks({
+    page: filters.page,
+    pageSize: 50,
+    search: filters.search,
+  });
+  if (!result.success) return <ReadFailure error={result.error} />;
   const data = result.success
     ? { items: result.data.data, pagination: result.data.pagination }
     : { items: [], pagination: null };
@@ -188,8 +201,13 @@ async function renderOffSiteWorkTab() {
 async function renderExpenseClaimsTab(
   session: AuthSession,
   claimId: string | null,
+  params: SearchParams,
 ) {
-  const result = await listExpenseClaimDocuments({ page: 1, pageSize: 20 });
+  const filters = parseClaimListQuery(
+    new URLSearchParams(currentDashboardPath(params).split("?")[1]),
+  );
+  const result = await listExpenseClaimDocuments({ ...filters, pageSize: 20 });
+  if (!result.success) return <ReadFailure error={result.error} />;
   const currentUserDisplayName =
     session?.user?.firstName || session?.user?.lastName
       ? `${session.user.firstName ?? ""} ${session.user.lastName ?? ""}`.trim()
@@ -215,8 +233,22 @@ async function renderExpenseClaimsTab(
   );
 }
 
-async function renderMonthlyRequestsTab(monthlyAccess: MonthlyAccess) {
-  const result = await listMonthlyRequestCollections({ page: 1, pageSize: 20 });
+async function renderMonthlyRequestsTab(
+  monthlyAccess: MonthlyAccess,
+  params: SearchParams,
+) {
+  const filters = parseClaimListQuery(
+    new URLSearchParams(currentDashboardPath(params).split("?")[1]),
+  );
+  const result = await listMonthlyRequestCollections({
+    page: filters.page,
+    pageSize: 20,
+    search: filters.search,
+    status: filters.status,
+    collectForMonthFrom: filters.expenseMonthFrom,
+    collectForMonthTo: filters.expenseMonthTo,
+  });
+  if (!result.success) return <ReadFailure error={result.error} />;
   const data = result.success
     ? {
         items: result.data.data.map((item) =>
@@ -244,6 +276,7 @@ async function renderLeaderQueueTab() {
     getMyActiveSignatureDataUrl(),
   ]);
 
+  if (!result.success) return <ReadFailure error={result.error} />;
   return (
     <PendingVerificationsClient
       initialItems={result.success ? result.data : []}
@@ -255,6 +288,7 @@ async function renderLeaderQueueTab() {
 async function renderSignatureTab(session: AuthSession) {
   const result = await getMySignatureState();
 
+  if (!result.success) return <ReadFailure error={result.error} />;
   return (
     <SignatureClient
       initialState={result.success ? result.data : null}
@@ -268,24 +302,49 @@ async function DashboardTabContent({
   session,
   claimId,
   monthlyAccess,
+  params,
 }: {
   activeTab: DashboardTabId;
   session: AuthSession;
   claimId: string | null;
   monthlyAccess: MonthlyAccess;
+  params: SearchParams;
 }) {
-  if (activeTab === "off-site-work") return renderOffSiteWorkTab();
+  if (activeTab === "overview")
+    return (
+      <Overview
+        month={getParam(params, "month") ?? undefined}
+        name={session?.user?.firstName || session?.user?.name || ""}
+      />
+    );
+  if (activeTab === "off-site-work") return renderOffSiteWorkTab(params);
   if (activeTab === "expense-claims") {
-    return renderExpenseClaimsTab(session, claimId);
+    return renderExpenseClaimsTab(session, claimId, params);
   }
   if (activeTab === "monthly-requests") {
-    return renderMonthlyRequestsTab(monthlyAccess);
+    return renderMonthlyRequestsTab(monthlyAccess, params);
   }
   if (activeTab === "leader-queue") return renderLeaderQueueTab();
   return renderSignatureTab(session);
 }
 
 function DashboardTabSkeleton({ tab }: { tab: DashboardTabId }) {
+  if (tab === "overview") {
+    return (
+      <div className="space-y-6" role="status" aria-label="กำลังโหลดภาพรวม">
+        <ToolbarSkeleton />
+        <div className="grid gap-4 sm:grid-cols-3" aria-hidden="true">
+          {[0, 1, 2].map((index) => (
+            <div
+              key={index}
+              className="h-40 animate-pulse rounded-2xl border bg-card"
+            />
+          ))}
+        </div>
+        <TableSkeleton columns={4} rows={4} />
+      </div>
+    );
+  }
   if (tab === "monthly-requests") {
     return <TableSkeleton columns={6} rows={6} />;
   }
@@ -338,9 +397,14 @@ export default async function DashboardPage({
   const permissions = effectivePermissions.success
     ? effectivePermissions.data.permissions
     : [];
-  const roles = effectivePermissions.success ? effectivePermissions.data.roles : [];
+  const roles = effectivePermissions.success
+    ? effectivePermissions.data.roles
+    : [];
 
-  const hasPermission = (resource: PermissionResource, action: PermissionAction) =>
+  const hasPermission = (
+    resource: PermissionResource,
+    action: PermissionAction,
+  ) =>
     permissions.some(
       (permission) =>
         permission.resource === resource &&
@@ -394,6 +458,7 @@ export default async function DashboardPage({
     monthlyAccess.canDrt;
 
   const tabAccess: Record<DashboardTabId, boolean> = {
+    overview: true,
     "off-site-work": hasOffSiteWorkAccess,
     "expense-claims": hasExpenseClaimAccess,
     "monthly-requests": hasMonthlyRequestAccess,
@@ -405,36 +470,22 @@ export default async function DashboardPage({
   );
   const firstVisibleTab = visibleTabs[0]?.id ?? "leader-queue";
 
-  if (!isDashboardTabId(requestedTab) || !tabAccess[requestedTab]) {
+  if (
+    requestedTab &&
+    (!isDashboardTabId(requestedTab) || !tabAccess[requestedTab])
+  ) {
     redirect(dashboardHref(firstVisibleTab));
   }
 
-  const activeTab = requestedTab;
+  const activeTab: DashboardTabId = isDashboardTabId(requestedTab)
+    ? requestedTab
+    : "overview";
   return (
-    <div className="container mx-auto max-w-7xl px-4 py-8">
-      <div className="space-y-6">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            เข้าถึงงานหลักทั้งหมดจากหน้าเดียว
-          </p>
-        </div>
-
-        <DashboardTabNav
-          activeTab={activeTab}
-          tabs={visibleTabs.map((tab) => ({
-            id: tab.id,
-            label: tab.label,
-            description: tab.description,
-            href: dashboardHref(tab.id, {
-              claimId: tab.id === "expense-claims" ? claimId : null,
-            }),
-          }))}
-        />
-
+    <div className="workspace-content">
+      <div>
         <section aria-live="polite">
           <Suspense
-            key={`${activeTab}:${claimId ?? ""}`}
+            key={`${activeTab}:${JSON.stringify(parseClaimListQuery(new URLSearchParams(currentDashboardPath(params).split("?")[1])))}`}
             fallback={<DashboardTabSkeleton tab={activeTab} />}
           >
             <DashboardTabContent
@@ -442,10 +493,23 @@ export default async function DashboardPage({
               session={session}
               claimId={claimId}
               monthlyAccess={monthlyAccess}
+              params={params}
             />
           </Suspense>
         </section>
       </div>
+    </div>
+  );
+}
+
+function ReadFailure({ error }: { error: string }) {
+  return (
+    <div role="alert" className="document-panel p-8">
+      <h1 className="text-lg font-bold">ไม่สามารถแสดงข้อมูลได้</h1>
+      <p className="text-sm text-muted-foreground mt-3">{error}</p>
+      <p className="text-sm mt-3">
+        ตรวจสอบสิทธิ์หรือรีเฟรชหน้าเพื่อลองอีกครั้ง
+      </p>
     </div>
   );
 }
