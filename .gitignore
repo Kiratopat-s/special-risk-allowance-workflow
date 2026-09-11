@@ -50,3 +50,9 @@ sql-lab/
 certificates
 
 .mimocode/
+
+tmp/
+output/
+PROJECT-TEMPLATE.md
+
+graphify-out-bk/
