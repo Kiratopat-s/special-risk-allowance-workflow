@@ -10,7 +10,7 @@
  * Employee list item structure
  */
 export interface EmployeeListItem {
-  userId: string;
+  userId: string | null;
   employeeId: string | null;
   firstName: string;
   lastName: string;

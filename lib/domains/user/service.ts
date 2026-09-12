@@ -8,6 +8,7 @@
  */
 
 import { userRepository } from "./repository";
+import { offSiteWorkEmployeeService } from "@/lib/domains/off-site-work/employee-service";
 import { actionLogService } from "@/lib/domains/action-log/service";
 import { departmentRepository } from "@/lib/domains/department/repository";
 import { userRoleRepository, roleRepository } from "@/lib/domains/permission/repository";
@@ -113,6 +114,8 @@ export const userService = {
                 departmentId,
             });
 
+            const linked = await offSiteWorkEmployeeService.linkForUser(updatedUser.id);
+            if (!linked.success) console.warn("Deferred off-site work employee linking", updatedUser.id);
             return success(updatedUser, "User profile synced successfully");
         }
 
@@ -164,6 +167,8 @@ export const userService = {
             console.warn(`Failed to assign default employee role to user ${newUser.id}`);
         }
 
+        const linked = await offSiteWorkEmployeeService.linkForUser(newUser.id);
+        if (!linked.success) console.warn("Deferred off-site work employee linking", newUser.id);
         return success(newUser, "User created successfully");
     },
 

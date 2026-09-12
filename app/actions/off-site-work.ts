@@ -12,14 +12,26 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { can } from "@/lib/auth/permissions";
 import { offSiteWorkService } from "@/lib/domains/off-site-work";
+import { offSiteWorkEmployeeService } from "@/lib/domains/off-site-work/employee-service";
 import type { Result, PaginatedResult } from "@/lib/shared/types";
 import type {
+  EmployeeListItem,
   OffSiteWorkEntity,
   OffSiteWorkWithRelations,
   CreateOffSiteWorkInput,
   UpdateOffSiteWorkInput,
   OffSiteWorkFilterCriteria,
 } from "@/lib/domains/off-site-work";
+
+/** Reads account matches only. PDF bytes and draft text never leave the browser. */
+export async function matchOffSiteWorkEmployees(employeeIds: string[]): Promise<Result<EmployeeListItem[]>> {
+  const session = await auth();
+  if (!session?.user?.dbUserId) return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
+  if (!await can(session.user.dbUserId, "OFF_SITE_WORK", "CREATE")) {
+    return { success: false, error: "Permission denied", code: "PERMISSION_DENIED" };
+  }
+  return offSiteWorkEmployeeService.match(employeeIds);
+}
 
 /**
  * List off-site work records with filters and pagination

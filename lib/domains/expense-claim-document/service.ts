@@ -7,6 +7,7 @@
  */
 
 import { expenseClaimDocumentRepository } from "./repository";
+import { offSiteWorkEmployeeService } from "@/lib/domains/off-site-work/employee-service";
 import { actionLogService } from "@/lib/domains/action-log/service";
 import { leaderVerificationService } from "@/lib/domains/leader-verification";
 import { leaderVerificationRepository } from "@/lib/domains/leader-verification/repository";
@@ -50,6 +51,8 @@ export const expenseClaimDocumentService = {
         userId: string,
         month: Date
     ): Promise<Result<EligibleOffSiteWorkOption[]>> {
+        const linked = await offSiteWorkEmployeeService.linkForUser(userId);
+        if (!linked.success) return linked;
         const options = await expenseClaimDocumentRepository.findEligibleOffSiteWorksForUser(
             userId,
             month
@@ -401,4 +404,3 @@ export const expenseClaimDocumentService = {
         return success(result);
     },
 };
-

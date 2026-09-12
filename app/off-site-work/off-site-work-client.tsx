@@ -2,6 +2,9 @@
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PdfImport } from "./pdf-import";
+import { employeeKey, employeeListSchema, mergeEmployees, validWorkDate } from "@/lib/domains/off-site-work/employee-list";
+import type { PdfField } from "@/lib/pdf/off-site-work-parser";
 import { useRouter, useSearchParams } from "next/navigation";
 import { updateListQuery } from "@/lib/ui/list-query";
 import { useScopedPermission } from "@/lib/hooks/use-scoped-permission";
@@ -194,7 +197,15 @@ export function OffSiteWorkClient({
     employeeList: [],
     ...blankLeader(),
   });
+  const [dirtyFields, setDirtyFields] = useState<PdfField[]>([]);
+  const [formSession, setFormSession] = useState(0);
+  const [pdfReviewPending, setPdfReviewPending] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  const updateField = (field: PdfField, value: string) => {
+    setDirtyFields((previous) => previous.includes(field) ? previous : [...previous, field]);
+    setForm((previous) => ({ ...previous, [field]: value }));
+  };
 
   // Leader user search state
   const [leaderSearch, setLeaderSearch] = useState("");
@@ -210,7 +221,9 @@ export function OffSiteWorkClient({
 
   const validForm = useMemo(() => {
     if (!form.id.trim()) return false;
-    if (!form.startDate || !form.endDate) return false;
+    if (!validWorkDate(form.startDate) || !validWorkDate(form.endDate)) return false;
+    if (!employeeListSchema.safeParse(form.employeeList).success) return false;
+    if ([form.id, form.innerRefDocumentId, form.location, form.objective].some((value) => /[\u0000\uFFFD]/.test(value))) return false;
     if (new Date(form.endDate) < new Date(form.startDate)) return false;
     if (form.leaderType === "internal" && !form.leaderUserId) return false;
     if (form.leaderType === "external" && !form.leaderFirstName.trim())
@@ -240,6 +253,9 @@ export function OffSiteWorkClient({
   );
 
   const openCreate = () => {
+    setDirtyFields([]);
+    setPdfReviewPending(false);
+    setFormSession((previous) => previous + 1);
     const today = toDateInputValue(new Date());
     setSelected(null);
     setSelectedLeaderUser(null);
@@ -312,7 +328,7 @@ export function OffSiteWorkClient({
 
   const addEmployee = (u: LeaderUser) => {
     setForm((prev) => {
-      if (prev.employeeList.some((e) => e.userId === u.id)) return prev;
+      if (prev.employeeList.some((e) => e.userId === u.id || (u.employeeId && e.employeeId === u.employeeId))) return prev;
       const newItem: EmployeeListItem = {
         userId: u.id,
         employeeId: u.employeeId,
@@ -328,10 +344,10 @@ export function OffSiteWorkClient({
     setEmpSearch("");
   };
 
-  const removeEmployee = (userId: string) => {
+  const removeEmployee = (index: number) => {
     setForm((prev) => ({
       ...prev,
-      employeeList: prev.employeeList.filter((e) => e.userId !== userId),
+      employeeList: prev.employeeList.filter((_, row) => row !== index),
     }));
   };
 
@@ -663,6 +679,11 @@ export function OffSiteWorkClient({
         </DialogHeader>
         <DialogBody>
           <div className="space-y-4">
+            {mode === "create" && <PdfImport key={formSession} protectedFields={dirtyFields} currentFields={form} disabled={isPending} onPendingChange={setPdfReviewPending}
+              onApply={(fields, employees) => {
+                setForm((previous) => ({ ...previous, ...fields, employeeList: mergeEmployees(previous.employeeList, employees) }));
+                setDirtyFields((previous) => [...new Set([...previous, ...Object.keys(fields) as PdfField[]])]);
+              }} />}
             <div className="space-y-2">
               <Label htmlFor="id">เลขที่เอกสาร</Label>
               <Input
@@ -670,7 +691,7 @@ export function OffSiteWorkClient({
                 value={form.id}
                 disabled={mode === "edit"}
                 onChange={(e) =>
-                  setForm((prev) => ({ ...prev, id: e.target.value }))
+                  updateField("id", e.target.value)
                 }
               />
             </div>
@@ -681,10 +702,7 @@ export function OffSiteWorkClient({
                 id="innerRef"
                 value={form.innerRefDocumentId}
                 onChange={(e) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    innerRefDocumentId: e.target.value,
-                  }))
+                  updateField("innerRefDocumentId", e.target.value)
                 }
               />
             </div>
@@ -697,7 +715,7 @@ export function OffSiteWorkClient({
                   label="วันเริ่มต้น"
                   value={form.startDate}
                   onValueChange={(value) =>
-                    setForm((prev) => ({ ...prev, startDate: value }))
+                    updateField("startDate", value)
                   }
                 />
               </div>
@@ -708,7 +726,7 @@ export function OffSiteWorkClient({
                   label="วันสิ้นสุด"
                   value={form.endDate}
                   onValueChange={(value) =>
-                    setForm((prev) => ({ ...prev, endDate: value }))
+                    updateField("endDate", value)
                   }
                 />
               </div>
@@ -720,7 +738,7 @@ export function OffSiteWorkClient({
                 id="location"
                 value={form.location}
                 onChange={(e) =>
-                  setForm((prev) => ({ ...prev, location: e.target.value }))
+                  updateField("location", e.target.value)
                 }
               />
             </div>
@@ -732,7 +750,7 @@ export function OffSiteWorkClient({
                 rows={4}
                 value={form.objective}
                 onChange={(e) =>
-                  setForm((prev) => ({ ...prev, objective: e.target.value }))
+                  updateField("objective", e.target.value)
                 }
               />
             </div>
@@ -790,7 +808,7 @@ export function OffSiteWorkClient({
                 <ul className="max-h-40 overflow-y-auto rounded-lg border divide-y text-sm">
                   {empResults.map((u) => {
                     const already = form.employeeList.some(
-                      (e) => e.userId === u.id,
+                      (e) => e.userId === u.id || Boolean(u.employeeId && e.employeeId === u.employeeId),
                     );
                     return (
                       <li key={u.id}>
@@ -828,15 +846,23 @@ export function OffSiteWorkClient({
               {/* Added employees */}
               {form.employeeList.length > 0 ? (
                 <ul className="space-y-1.5">
-                  {form.employeeList.map((emp) => (
+                  {form.employeeList.map((emp, index) => (
                     <li
-                      key={emp.userId}
+                      key={index}
                       className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2 text-sm"
                     >
-                      <div>
-                        <span className="font-medium">
+                      <div className="min-w-0 flex-1">
+                        {!emp.userId ? <div className="space-y-2 pr-2">
+                          <p className="text-xs font-medium text-amber-800 dark:text-amber-300">ยังไม่เชื่อมบัญชี · จะเชื่อมตามรหัสพนักงานอัตโนมัติ</p>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {([ ["employeeId", "รหัสพนักงาน"], ["firstName", "ชื่อ"], ["lastName", "นามสกุล"], ["position", "ตำแหน่ง"], ["departmentName", "สังกัด"] ] as const).map(([field, label]) => <label key={field} className="space-y-1 text-xs">
+                              <span>{label}</span><Input aria-label={`${label} ผู้เดินทาง ${index + 1}`} value={emp[field] || ""}
+                                onChange={(event) => setForm((previous) => ({ ...previous, employeeList: previous.employeeList.map((entry, row) => row === index ? { ...entry, [field]: event.target.value } : entry) }))} />
+                            </label>)}
+                          </div>
+                        </div> : <span className="font-medium">
                           {emp.firstName} {emp.lastName}
-                        </span>
+                        </span>}
                         {emp.employeeId ? (
                           <span className="ml-2 text-xs text-muted-foreground">
                             {emp.employeeId}
@@ -853,7 +879,7 @@ export function OffSiteWorkClient({
                         variant="ghost"
                         size="icon"
                         className="text-destructive hover:text-destructive"
-                        onClick={() => removeEmployee(emp.userId)}
+                        onClick={() => removeEmployee(index)}
                         aria-label={`ลบ ${emp.firstName} ${emp.lastName} ออกจากรายการ`}
                       >
                         <X className="h-3.5 w-3.5" />
@@ -1074,6 +1100,8 @@ export function OffSiteWorkClient({
           </div>
         </DialogBody>
         <DialogFooter>
+          {pdfReviewPending && <p className="mr-auto text-xs text-muted-foreground">นำข้อมูลจาก PDF ลงฟอร์มหรือยกเลิกการนำเข้าก่อนบันทึก</p>}
+          {!validForm && <p role="status" className="mr-auto text-xs text-amber-800 dark:text-amber-300">กรุณาตรวจเลขเอกสาร วันที่ รายชื่อซ้ำ และแก้ไขอักษร � ให้ครบก่อนบันทึก</p>}
           <Button
             variant="outline"
             onClick={() => setMode(null)}
@@ -1082,7 +1110,7 @@ export function OffSiteWorkClient({
             ยกเลิก
           </Button>
           <LoadingButton
-            disabled={!validForm || isPending}
+            disabled={!validForm || isPending || pdfReviewPending}
             isLoading={isPending}
             loadingText={mode === "create" ? "กำลังบันทึก" : "กำลังอัปเดต"}
             onClick={mode === "create" ? submitCreate : submitEdit}
@@ -1188,12 +1216,13 @@ export function OffSiteWorkClient({
                   <ul className="space-y-1.5">
                     {selected.employeeList.map((emp) => (
                       <li
-                        key={emp.userId}
+                        key={employeeKey(emp)}
                         className="rounded-lg border bg-muted/40 px-3 py-2 text-sm"
                       >
                         <span className="font-medium">
                           {emp.firstName} {emp.lastName}
                         </span>
+                        {!emp.userId && <span className="ml-2 text-xs text-muted-foreground">ยังไม่เชื่อมบัญชี</span>}
                         {emp.employeeId ? (
                           <span className="ml-2 text-xs text-muted-foreground">
                             {emp.employeeId}

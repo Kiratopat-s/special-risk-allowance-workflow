@@ -38,6 +38,7 @@ const server = serve({
     const path = new URL(request.url).pathname;
     if (path === "/") return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
     if (["/styles.css", "/ui-alignment-preview.js"].includes(path)) return new Response(file(join(output, basename(path))));
+    if (/^\/pdfjs\/pdf\.worker-[\d.]+\.min\.mjs$/.test(path)) return new Response(file(join(root, "public", path)), { headers: { "Content-Type": "text/javascript" } });
     if (["/fonts/manrope-latin.woff2", "/fonts/noto-sans-thai.woff2"].includes(path)) return new Response(file(join(root, "public", path)));
     return new Response("Not found", { status: 404 });
   },

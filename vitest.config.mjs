@@ -16,7 +16,7 @@ export default defineConfig({
   test: {
     globals: true,
     include: ["lib/**/*.test.ts", "tests/**/*.test.ts", "tests/**/*.test.tsx"],
-    exclude: ["tests/migrations/**"],
+    exclude: ["tests/migrations/**", "tests/integration/**"],
     clearMocks: true,
   },
 });

@@ -1,3 +1,4 @@
+vi.mock("@/lib/domains/off-site-work/employee-service", () => ({ offSiteWorkEmployeeService: { linkForUser: vi.fn(async () => ({ success: true, data: 0 })), prepare: vi.fn(async (data) => ({ success: true, data })) } }));
 vi.mock("./repository");
 vi.mock("@/lib/domains/action-log/service");
 
@@ -41,6 +42,21 @@ describe("offSiteWorkService", () => {
   });
 
   describe("create", () => {
+    it.each(["2026-02-31", "not-a-date", "", null])("rejects invalid date %s", async (startDate) => {
+      const result = await offSiteWorkService.create({ id: "date-test", startDate: startDate as any, endDate: "2026-12-31" }, "actor1");
+      expect(result).toMatchObject({ success: false, code: "INVALID_DATE" });
+      expect(repo.create).not.toHaveBeenCalled();
+    });
+    it("returns duplicate error when another request inserts the ID first", async () => {
+      repo.findById.mockResolvedValue(null);
+      repo.create.mockRejectedValueOnce({ code: "P2002" });
+      expect(await offSiteWorkService.create({ id: "duplicate", startDate: "2026-01-01", endDate: "2026-01-02" }, "actor1"))
+        .toMatchObject({ success: false, code: "DUPLICATE_ID" });
+    });
+    it("rejects unreviewed PDF glyphs", async () => {
+      expect(await offSiteWorkService.create({ id: "text-test", startDate: "2026-01-01", endDate: "2026-01-02", objective: "เป�นวิทยากร" }, "actor1"))
+        .toMatchObject({ success: false, code: "INVALID_TEXT" });
+    });
     it("creates record successfully", async () => {
       const input = {
         id: "osw1",

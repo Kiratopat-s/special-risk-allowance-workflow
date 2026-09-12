@@ -56,3 +56,6 @@ tmp/
 output/
 PROJECT-TEMPLATE.md
 
+
+# Generated PDF.js worker (prepared for dev and production builds)
+/public/pdfjs/

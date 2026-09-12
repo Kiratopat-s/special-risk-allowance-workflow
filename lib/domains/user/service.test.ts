@@ -1,3 +1,4 @@
+vi.mock("@/lib/domains/off-site-work/employee-service", () => ({ offSiteWorkEmployeeService: { linkForUser: vi.fn(async () => ({ success: true, data: 0 })), prepare: vi.fn(async (data) => ({ success: true, data })) } }));
 vi.mock("./repository");
 vi.mock("@/lib/domains/action-log/service");
 vi.mock("@/lib/domains/department/repository");

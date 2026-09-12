@@ -11,6 +11,7 @@ import { UsersClient } from "@/app/admin/users/users-client";
 import { DepartmentsClient } from "@/app/admin/departments/departments-client";
 import { PermissionsClient } from "@/app/admin/permissions/permissions-client";
 import { MrcClient } from "@/app/monthly-request-collection/monthly-request-collection-client";
+import { OffSiteWorkClient } from "@/app/off-site-work/off-site-work-client";
 import { alignmentDepartments, alignmentPermissions, alignmentRoles, alignmentUsers } from "../fixtures/ui-alignment";
 
 function Preview() {
@@ -23,7 +24,7 @@ function Preview() {
       <div className="ml-auto flex gap-2"><ThemeToggle /><NotificationBell /></div>
     </header>
     <nav className="flex flex-wrap gap-2 p-4" aria-label="Fixture scenes">
-      {["Roles", "Users", "Departments", "Permissions", "Collections"].map((name) => <Button key={name} variant={scene === name ? "default" : "outline"} onClick={() => setScene(name)}>{name}</Button>)}
+      {["Roles", "Users", "Departments", "Permissions", "Collections", "Off-site work"].map((name) => <Button key={name} variant={scene === name ? "default" : "outline"} onClick={() => setScene(name)}>{name}</Button>)}
       <Button onClick={() => setDialog(true)}>Long dialog</Button>
     </nav>
     <main className="mx-auto max-w-[1600px] p-4" key={scene}>
@@ -32,6 +33,7 @@ function Preview() {
       {scene === "Departments" && <DepartmentsClient initialDepartments={alignmentDepartments} />}
       {scene === "Permissions" && <PermissionsClient permissions={alignmentPermissions} />}
       {scene === "Collections" && <MrcClient initialItems={[]} initialPagination={null} canManage canHpa={false} canRk={false} canDrt={false} />}
+      {scene === "Off-site work" && <OffSiteWorkClient initialItems={[]} initialPagination={null} />}
     </main>
     <Dialog open={dialog} onClose={() => setDialog(false)}>
       <DialogClose onClose={() => setDialog(false)} />

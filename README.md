@@ -5,12 +5,23 @@ Special Risk Allowance Workflow is a Next.js application for managing PEA specia
 ## What It Does
 
 - Records off-site work used as evidence for special-risk allowance claims.
+- Prefills new off-site work records from travel-order PDFs, with local extraction and review before saving.
 - Creates and tracks individual expense claim documents for selected work dates.
 - Requests leader verification from internal leaders or external leaders through one-time links.
 - Collects eligible expense claims into monthly request collections.
 - Runs monthly collections through a three-stage approval flow: `HPA_CHECK`, `RK_CHECK`, then `OK_APPROVE`.
 - Stores active user signatures and prints them into approval documents.
 - Provides role-based access control, audit logging, in-app notifications, web push, and SMTP email for verification links.
+
+## PDF Import
+
+In **เพิ่มคำสั่ง**, choose **เลือก PDF**, review the extracted fields, then select **นำข้อมูลลงฟอร์ม**. Manually edited fields are protected by default. Review incomplete Thai glyphs marked `�`, check the traveler list, choose a supervisor, and save normally. The browser reads the PDF locally; only employee codes are sent for account matching. PDF bytes and preview files are not uploaded or stored.
+
+The first version supports text PDFs from the existing travel-order system, one document at a time, up to 10 MB and 20 pages. Scans and password-protected PDFs require manual entry. Travelers without an account are retained using their employee code and editable document details. Exact matches to ACTIVE accounts are linked on save, after Keycloak sync, and before loading eligible claim options. Existing links and historical details are preserved.
+
+`bun dev`, `bun devh`, and `bun run build` prepare a version-matched PDF.js worker under the ignored `public/pdfjs/` directory. Direct Next.js invocation requires `bun run prepare:pdf` first. No database migration or external OCR service is required.
+
+Run `bun run test` for parser, reader, review interaction, authorization, and domain tests. Run `bun run test:off-site-work-db` for the account lifecycle and concurrent JSON updates; it creates and removes its own PostgreSQL Docker container and never uses the application database. The **Off-site work** scene in `bun tests/visual/serve-ui-alignment.mjs` provides a local browser preview with saving and account searches mocked.
 
 ## Tech Stack
 
