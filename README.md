@@ -19,7 +19,8 @@ Special Risk Allowance Workflow is a Next.js application for managing PEA specia
 - Tailwind CSS v4 and shadcn-style UI primitives
 - Auth.js v5 with Keycloak
 - Prisma 7 with PostgreSQL and `@prisma/adapter-pg`
-- Bun 1.3.14 for dependency management and scripts
+- Bun 1.4.0 for dependency management and scripts
+- Node.js 24 LTS for Vitest and jsdom
 - Nodemailer for email and Web Push API for browser notifications
 
 ## Project Structure
@@ -79,7 +80,8 @@ The seed script creates these system roles:
 
 ## Requirements
 
-- Bun `1.3.14` or compatible
+- Bun `1.4.0`, matching `packageManager` in `package.json`
+- Node.js 24 LTS (`24.15.0` or newer) on `PATH` for the test toolchain
 - PostgreSQL
 - A Keycloak realm and client for Auth.js
 - Optional SMTP credentials for external leader verification email
@@ -166,6 +168,7 @@ Make sure `local.sraw.space` resolves to your local machine and update `NEXTAUTH
 | `bun dev` | Start the Next.js development server. |
 | `bun devh` | Start development with experimental HTTPS on `local.sraw.space`. |
 | `bun run lint` | Run ESLint with Next.js and TypeScript rules. |
+| `bun run test` | Run Vitest using Node.js. |
 | `bun run build` | Create a production build. |
 | `bun run start` | Serve the production build. |
 | `bunx prisma generate` | Regenerate the Prisma client. |
@@ -217,12 +220,15 @@ Operational behavior:
 
 ## Quality Checks
 
-No automated test framework is configured yet. Before opening a PR or deploying, run:
+Vitest covers domain services, authorization, UI interactions, and official print output. Before opening a PR or deploying, run:
 
 ```bash
+bun run test
 bun run lint
 bun run build
 ```
+
+Keep Node.js on `PATH` and use `bun run test`, without `--bun`. Bun remains the package manager, while Vitest and its forked jsdom workers run on Node. If Node is missing, Bun can silently substitute its own runtime; the Vitest configuration rejects that setup with an actionable error. Both CI test jobs install Node 24 LTS and the Bun version from `package.json`, and print their versions in the job log.
 
 For risky changes, manually verify the affected workflow, especially:
 
