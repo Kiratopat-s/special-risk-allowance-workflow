@@ -20,7 +20,7 @@ export default function PrivacyPolicyPage() {
         {/* Back button */}
         <Button variant="ghost" asChild className="-ml-4">
           <Link href="/">
-            <ArrowLeft className="mr-2 h-4 w-4" />
+            <ArrowLeft className="h-4 w-4" />
             Back to Home
           </Link>
         </Button>
@@ -266,7 +266,7 @@ export default function PrivacyPolicyPage() {
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Button asChild>
             <Link href="/">
-              <ArrowLeft className="mr-2 h-4 w-4" />
+              <ArrowLeft className="h-4 w-4" />
               Back to Home
             </Link>
           </Button>

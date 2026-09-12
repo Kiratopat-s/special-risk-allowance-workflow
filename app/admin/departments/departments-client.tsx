@@ -1,7 +1,7 @@
 "use client";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 import { useUrlFilter } from "@/lib/hooks/use-url-filter";
-import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell } from "@/components/workflow-ui/table";
+import { Table, TableContainer, TableHead, TableBody, TableRow, TableHeader, TableCell } from "@/components/workflow-ui/table";
 
 import { useState } from "react";
 import { toast } from "sonner";
@@ -256,7 +256,7 @@ export function DepartmentsClient({
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold">Departments</h2>
           <p className="text-sm text-muted-foreground">
@@ -264,20 +264,19 @@ export function DepartmentsClient({
           </p>
         </div>
         <Button onClick={openCreateDialog}>
-          <Plus className="h-4 w-4 mr-2" />
+          <Plus className="h-4 w-4" />
           Add Department
         </Button>
       </div>
 
       {/* Toolbar */}
       <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-50 max-w-sm">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <div className="w-full min-w-0 sm:flex-1 sm:max-w-sm">
           <Input
+            startAdornment={<Search className="h-4 w-4 text-muted-foreground" />}
             placeholder="Search departments..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
           />
         </div>
         <div className="w-full sm:w-auto sm:min-w-64">
@@ -291,14 +290,17 @@ export function DepartmentsClient({
       </div>
 
       {/* Departments Table */}
-      <div
+      <TableContainer
+        role="region"
         aria-busy={isPending || undefined}
-        className="rounded-lg border border-border overflow-hidden"
+        aria-label="Departments"
+        tabIndex={0}
+        className="rounded-lg border border-border focus-visible:outline-2 focus-visible:outline-primary"
       >
-        <Table className="w-full text-sm">
+        <Table className="w-full min-w-[36rem] text-sm">
           <TableHead>
             <TableRow className="border-b bg-muted/50">
-              <TableHeader className="text-left font-medium p-3">Department</TableHeader>
+              <TableHeader className="min-w-56 text-left font-medium p-3">Department</TableHeader>
               <TableHeader className="text-left font-medium p-3 hidden md:table-cell">
                 Parent
               </TableHeader>
@@ -318,12 +320,12 @@ export function DepartmentsClient({
                 key={dept.id}
                 className="border-b last:border-0 hover:bg-muted/30 transition-colors"
               >
-                <TableCell className="p-3">
-                  <div className="flex items-center gap-3">
+                <TableCell className="min-w-56 p-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
                       <Building2 className="h-4 w-4 text-muted-foreground" />
                     </div>
-                    <div>
+                    <div className="min-w-0 break-words">
                       <div className="font-medium">{dept.name}</div>
                       {dept.shortName && (
                         <div className="text-xs text-muted-foreground">
@@ -397,7 +399,7 @@ export function DepartmentsClient({
                   <div className="flex items-center justify-end gap-1">
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon-sm"
                       onClick={() => openEditDialog(dept)}
                       title="Edit department"
                       aria-label={`Edit ${dept.name}`}
@@ -406,7 +408,7 @@ export function DepartmentsClient({
                     </Button>
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon-sm"
                       onClick={() => openDeleteDialog(dept)}
                       title="Delete department"
                       className="text-destructive hover:text-destructive"
@@ -430,7 +432,7 @@ export function DepartmentsClient({
             )}
           </TableBody>
         </Table>
-      </div>
+      </TableContainer>
 
       {/* Create/Edit Dialog */}
       <Dialog

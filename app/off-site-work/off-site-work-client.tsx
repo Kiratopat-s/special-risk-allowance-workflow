@@ -500,12 +500,11 @@ export function OffSiteWorkClient({
 
       <section className="rounded-2xl border bg-card p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute z-10 left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
             <Input
+              startAdornment={<Search className="h-4 w-4 text-muted-foreground" />}
               value={search}
               placeholder="ค้นหาเลขที่เอกสาร, สถานที่ หรือวัตถุประสงค์"
-              className="pl-9"
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") onSearch();
@@ -761,7 +760,8 @@ export function OffSiteWorkClient({
                 <Button
                   type="button"
                   variant="outline"
-                  size="sm"
+                  size="icon-sm"
+                  aria-label="ค้นหาพนักงาน"
                   onClick={handleEmpSearch}
                   disabled={empSearchPending}
                 >
@@ -852,7 +852,7 @@ export function OffSiteWorkClient({
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6 text-destructive hover:text-destructive"
+                        className="text-destructive hover:text-destructive"
                         onClick={() => removeEmployee(emp.userId)}
                         aria-label={`ลบ ${emp.firstName} ${emp.lastName} ออกจากรายการ`}
                       >
@@ -942,7 +942,8 @@ export function OffSiteWorkClient({
                         <Button
                           type="button"
                           variant="outline"
-                          size="sm"
+                          size="icon-sm"
+                          aria-label="ค้นหาหัวหน้า"
                           onClick={handleLeaderSearch}
                           disabled={leaderSearchPending}
                         >

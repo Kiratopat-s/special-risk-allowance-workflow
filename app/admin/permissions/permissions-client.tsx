@@ -95,14 +95,13 @@ export function PermissionsClient({ permissions }: PermissionsClientProps) {
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="w-full min-w-0 sm:flex-1 sm:max-w-sm">
           <Input
+            startAdornment={<Search className="h-4 w-4 text-muted-foreground" />}
             placeholder="Search permissions..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
           />
         </div>
         <button
@@ -154,17 +153,17 @@ export function PermissionsClient({ permissions }: PermissionsClientProps) {
                   {perms.map((perm, i) => (
                     <div
                       key={perm.id}
-                      className={`flex items-center justify-between px-4 py-2.5 text-sm ${
+                      className={`flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-sm ${
                         i < perms.length - 1 ? "border-b border-border/50" : ""
                       }`}
                     >
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate">{perm.name}</div>
-                        <div className="text-xs text-muted-foreground font-mono truncate">
+                      <div className="min-w-0 flex-[1_1_14rem]">
+                        <div className="font-medium break-words">{perm.name}</div>
+                        <div className="text-xs text-muted-foreground font-mono break-all">
                           {perm.code}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5 ml-3 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <Badge
                           variant={actionBadgeVariant(perm.action)}
                           className="text-[10px]"

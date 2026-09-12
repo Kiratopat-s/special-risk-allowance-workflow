@@ -220,7 +220,7 @@ export default function EditProfilePage() {
         {/* Back button */}
         <Button variant="ghost" asChild className="-ml-4">
           <Link href="/profile">
-            <ArrowLeft className="mr-2 h-4 w-4" />
+            <ArrowLeft className="h-4 w-4" />
             Back to Profile
           </Link>
         </Button>
@@ -505,12 +505,12 @@ export default function EditProfilePage() {
                   <Button type="submit" disabled={isPending}>
                     {isPending ? (
                       <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        <Loader2 className="h-4 w-4 animate-spin" />
                         Saving...
                       </>
                     ) : (
                       <>
-                        <Save className="mr-2 h-4 w-4" />
+                        <Save className="h-4 w-4" />
                         Save Changes
                       </>
                     )}

@@ -56,7 +56,7 @@ export function Button({
             : "medium"
       }
       className={cn(
-        "shrink-0 [&_svg]:size-4 [&_svg]:shrink-0",
+        "shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current [&_svg]:size-4 [&_svg]:shrink-0",
         variant === "link" && "underline",
         className,
       )}

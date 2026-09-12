@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import MuiCheckbox from "@mui/material/Checkbox";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import NativeSelect from "@mui/material/NativeSelect";
 import MuiSelect from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
@@ -21,25 +22,27 @@ export function Checkbox({
   label?: string;
 }) {
   const generated = React.useId();
+  const control = (
+    <MuiCheckbox
+      size="small"
+      className={cn("shrink-0", !label && className)}
+      id={id || generated}
+      checked={checked}
+      defaultChecked={defaultChecked}
+      disabled={disabled}
+      onChange={onChange}
+      inputProps={props}
+    />
+  );
+  if (!label) return control;
   return (
-    <label
-      className={cn(
-        "inline-flex items-center gap-1 cursor-pointer text-sm",
-        className,
-      )}
-      htmlFor={id || generated}
-    >
-      <MuiCheckbox
-        size="small"
-        id={id || generated}
-        checked={checked}
-        defaultChecked={defaultChecked}
-        disabled={disabled}
-        onChange={onChange}
-        inputProps={props}
-      />
-      {label}
-    </label>
+    <FormControlLabel
+      control={control}
+      label={label}
+      disabled={disabled}
+      className={cn("m-0 gap-2", className)}
+      slotProps={{ typography: { className: "text-sm min-w-0 break-words" } }}
+    />
   );
 }
 export interface DropdownOption {

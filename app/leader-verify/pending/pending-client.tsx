@@ -371,7 +371,7 @@ function VerificationCard({
           loadingText="กำลังยืนยัน"
           onClick={() => submitSig && handleVerify(submitSig)}
         >
-          <ShieldCheck className="mr-2 h-4 w-4" />
+          <ShieldCheck className="h-4 w-4" />
           {isExpired
             ? "ลิงก์หมดอายุ — ติดต่อผู้ยื่น"
             : submitSig

@@ -90,7 +90,7 @@ export default async function ProfilePage() {
             <div className="absolute top-4 right-4">
               <Button asChild variant="secondary" size="sm">
                 <Link href="/profile/edit">
-                  <Edit className="mr-2 h-4 w-4" />
+                  <Edit className="h-4 w-4" />
                   แก้ไขข้อมูล
                 </Link>
               </Button>
@@ -193,7 +193,7 @@ export default async function ProfilePage() {
             <div className="flex flex-col sm:flex-row gap-3">
               <Button asChild className="flex-1">
                 <Link href="/profile/edit">
-                  <Edit className="mr-2 h-4 w-4" />
+                  <Edit className="h-4 w-4" />
                   แก้ไขข้อมูล
                 </Link>
               </Button>

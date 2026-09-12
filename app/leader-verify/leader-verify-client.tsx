@@ -538,7 +538,7 @@ export function LeaderVerifyClient({
         isLoading={submitState === "submitting"}
         loadingText="กำลังยืนยัน"
       >
-        <ShieldCheck className="mr-2 h-4 w-4" />
+        <ShieldCheck className="h-4 w-4" />
         {readyToSubmit ? "ยืนยันการออกปฏิบัติงาน" : "กรุณาลงลายเซ็นก่อน"}
       </LoadingButton>
 

@@ -122,7 +122,7 @@ export function NotificationBell() {
             </>
           )}
           {/* Header */}
-          <div className="flex items-center justify-between px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
             <div className="p-0 text-sm font-semibold">
               การแจ้งเตือน
               {unreadCount > 0 && (
@@ -177,7 +177,7 @@ export function NotificationBell() {
                   <MenuItem
                     key={n.id}
                     className={cn(
-                      "group relative flex flex-col items-start gap-0.5 px-3 py-2.5 cursor-pointer pr-8",
+                      "group relative flex min-w-0 flex-col items-start gap-0.5 whitespace-normal break-words px-3 py-2.5 cursor-pointer pr-8",
                       !n.isRead && "bg-accent/40",
                     )}
                     onClick={() => {
@@ -195,10 +195,10 @@ export function NotificationBell() {
                     >
                       <X className="h-3 w-3" />
                     </button>
-                    <div className="flex w-full items-start justify-between gap-2">
+                    <div className="flex min-w-0 w-full items-start justify-between gap-2">
                       <span
                         className={cn(
-                          "text-sm leading-snug",
+                          "min-w-0 text-sm leading-snug [overflow-wrap:anywhere]",
                           !n.isRead && "font-medium",
                         )}
                       >
@@ -209,7 +209,7 @@ export function NotificationBell() {
                       )}
                     </div>
                     {n.body && (
-                      <span className="text-xs text-muted-foreground line-clamp-2">
+                      <span className="w-full text-xs text-muted-foreground line-clamp-2 [overflow-wrap:anywhere]">
                         {n.body}
                       </span>
                     )}

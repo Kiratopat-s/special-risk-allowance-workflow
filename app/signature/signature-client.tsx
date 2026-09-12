@@ -314,7 +314,7 @@ export function SignatureClient({
   const inactive = history.filter((s) => !s.isActive);
 
   return (
-    <div className="container max-w-4xl mx-auto px-4 py-10">
+    <div className="w-full max-w-4xl mx-auto">
       {/* ---- Page Header ---- */}
       <div className="page-heading">
         <div className="space-y-1">
@@ -331,7 +331,7 @@ export function SignatureClient({
           disabled={isPending}
           className="w-full sm:w-auto"
         >
-          <PenLine className="mr-2 h-4 w-4" />
+          <PenLine className="h-4 w-4" />
           วาดลายมือชื่อใหม่
         </Button>
       </div>
@@ -365,7 +365,7 @@ export function SignatureClient({
                   onClick={() => openEditDraw(active.id)}
                   disabled={isPending}
                 >
-                  <Edit3 className="mr-1.5 h-3.5 w-3.5" />
+                  <Edit3 className="h-3.5 w-3.5" />
                   Redraw
                 </Button>
                 <Button
@@ -374,7 +374,7 @@ export function SignatureClient({
                   onClick={() => void handleDownload(active)}
                   disabled={isPending}
                 >
-                  <Download className="mr-1.5 h-3.5 w-3.5" />
+                  <Download className="h-3.5 w-3.5" />
                   Download
                 </Button>
                 <Button
@@ -384,7 +384,7 @@ export function SignatureClient({
                   onClick={() => confirmDelete(active)}
                   disabled={isPending}
                 >
-                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  <Trash2 className="h-3.5 w-3.5" />
                   Delete
                 </Button>
               </div>
@@ -450,7 +450,7 @@ export function SignatureClient({
                       onClick={() => handleActivate(sig)}
                       disabled={isPending}
                     >
-                      <Star className="mr-1 h-3 w-3" />
+                      <Star className="h-3 w-3" />
                       Use This
                     </Button>
                     <Button
@@ -460,7 +460,7 @@ export function SignatureClient({
                       onClick={() => openEditDraw(sig.id)}
                       disabled={isPending}
                     >
-                      <RotateCcw className="mr-1 h-3 w-3" />
+                      <RotateCcw className="h-3 w-3" />
                       Redraw
                     </Button>
                     <Button
@@ -470,7 +470,7 @@ export function SignatureClient({
                       onClick={() => confirmDelete(sig)}
                       disabled={isPending}
                     >
-                      <Trash2 className="mr-1 h-3 w-3" />
+                      <Trash2 className="h-3 w-3" />
                       Delete
                     </Button>
                   </div>
@@ -515,7 +515,7 @@ export function SignatureClient({
             disabled={isPending}
             className="w-full"
           >
-            <X className="mr-1.5 h-3.5 w-3.5" />
+            <X className="h-3.5 w-3.5" />
             Clear
           </Button>
         </DialogBody>
@@ -534,7 +534,7 @@ export function SignatureClient({
             isLoading={isPending}
             loadingText="Saving"
           >
-            <PenLine className="mr-2 h-4 w-4" />
+            <PenLine className="h-4 w-4" />
             Save Signature
           </LoadingButton>
         </DialogFooter>

@@ -532,7 +532,7 @@ export function MrcClient({
                             rel="noreferrer"
                             title="เปิดเอกสารเบิกในแท็บใหม่"
                           >
-                            <ArrowUpRight className="mr-1 h-4 w-4" />
+                            <ArrowUpRight className="h-4 w-4" />
                             เปิดดู
                           </a>
                         </Button>
@@ -577,7 +577,7 @@ export function MrcClient({
         </div>
         {canManage && (
           <Button onClick={openCreate} className="shrink-0">
-            <Plus className="mr-2 h-4 w-4" />
+            <Plus className="h-4 w-4" />
             สร้างรายการ
           </Button>
         )}
@@ -1019,7 +1019,7 @@ export function MrcClient({
                 target="_blank"
                 rel="noreferrer"
               >
-                <Printer className="mr-2 h-4 w-4" />
+                <Printer className="h-4 w-4" />
                 พิมพ์
               </a>
             </Button>

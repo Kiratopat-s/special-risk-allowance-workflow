@@ -1,7 +1,7 @@
 "use client";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 import { useUrlFilter } from "@/lib/hooks/use-url-filter";
-import { Table, TableHead, TableBody, TableRow, TableHeader, TableCell } from "@/components/workflow-ui/table";
+import { Table, TableContainer, TableHead, TableBody, TableRow, TableHeader, TableCell } from "@/components/workflow-ui/table";
 
 import { useState } from "react";
 import { toast } from "sonner";
@@ -261,13 +261,12 @@ export function UsersClient({
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-50 max-w-sm">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <div className="w-full min-w-0 sm:flex-1 sm:max-w-sm">
           <Input
+            startAdornment={<Search className="h-4 w-4 text-muted-foreground" />}
             placeholder="Search users..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
           />
         </div>
         <div className="w-full sm:w-auto sm:min-w-64">
@@ -281,14 +280,17 @@ export function UsersClient({
       </div>
 
       {/* User Table */}
-      <div
+      <TableContainer
+        role="region"
         aria-busy={isPending || undefined}
-        className="rounded-lg border border-border overflow-hidden"
+        aria-label="Users"
+        tabIndex={0}
+        className="rounded-lg border border-border focus-visible:outline-2 focus-visible:outline-primary"
       >
-        <Table className="w-full text-sm">
+        <Table className="w-full min-w-[36rem] text-sm">
           <TableHead>
             <TableRow className="border-b bg-muted/50">
-              <TableHeader className="text-left font-medium p-3">User</TableHeader>
+              <TableHeader className="min-w-56 text-left font-medium p-3">User</TableHeader>
               <TableHeader className="text-left font-medium p-3 hidden md:table-cell">
                 Department
               </TableHeader>
@@ -302,12 +304,12 @@ export function UsersClient({
                 key={user.id}
                 className="border-b last:border-0 hover:bg-muted/30 transition-colors"
               >
-                <TableCell className="p-3">
-                  <div className="flex items-center gap-3">
+                <TableCell className="min-w-56 p-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
                       <User className="h-4 w-4 text-muted-foreground" />
                     </div>
-                    <div>
+                    <div className="min-w-0 break-words">
                       <div className="font-medium">
                         {user.firstName} {user.lastName}
                       </div>
@@ -321,7 +323,7 @@ export function UsersClient({
                   {user.departmentName ?? "—"}
                 </TableCell>
                 <TableCell className="p-3">
-                  <ScrollArea className="max-h-24">
+                  <ScrollArea className="max-h-24 [&_[data-slot=scroll-area-viewport]]:max-h-24">
                     <div className="flex flex-wrap gap-1 pr-2">
                       {user.roles.map((role) => {
                         const isCriticalRole =
@@ -341,7 +343,7 @@ export function UsersClient({
                             ) : (
                               <Building2 className="h-3 w-3" />
                             )}
-                            <span className="flex items-center gap-1">
+                            <span className="flex min-w-0 flex-wrap items-center gap-1 break-words">
                               {role.name}
                               {!isGlobal && role.departmentName && (
                                 <span className="text-xs opacity-70">
@@ -358,7 +360,8 @@ export function UsersClient({
                                   role.departmentId,
                                 )
                               }
-                              className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 hover:bg-background/20 rounded p-0.5"
+                              className="shrink-0 opacity-100 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-current transition-opacity ml-1 hover:bg-background/20 rounded p-0.5"
+                              aria-label={`Remove ${role.name} from ${user.firstName} ${user.lastName}`}
                               disabled={isPending}
                               title={
                                 isCriticalRole
@@ -382,7 +385,8 @@ export function UsersClient({
                 <TableCell className="p-3 text-right">
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon-sm"
+                    aria-label={`Assign role to ${user.firstName} ${user.lastName}`}
                     onClick={() => openRoleDialog(user)}
                   >
                     <UserPlus className="h-4 w-4" />
@@ -402,7 +406,7 @@ export function UsersClient({
             )}
           </TableBody>
         </Table>
-      </div>
+      </TableContainer>
 
       {/* Assign Role Dialog */}
       <Dialog open={showRoleDialog} onClose={() => setShowRoleDialog(false)}>

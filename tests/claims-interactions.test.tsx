@@ -129,6 +129,18 @@ async function startNew() {
   fireEvent.click(await screen.findByRole("button", { name: /คำสั่งทดสอบ/ }));
 }
 describe("claim presentation preserves behavior", () => {
+  it("submits the adorned search input with Enter and retains other URL filters", () => {
+    mock.query = new URLSearchParams("tab=expense-claims&page=4&month=2026-09&status=PENDING");
+    mount();
+    const input = screen.getByRole("textbox", { name: "ค้นหาเลขที่เอกสาร, หมายเหตุ, หรือชื่อผู้ยื่น" });
+    fireEvent.change(input, { target: { value: "คำสั่งทดสอบ" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    const url = new URL(mock.push.mock.calls[0][0], "https://fixture.test");
+    expect(url.searchParams.get("search")).toBe("คำสั่งทดสอบ");
+    expect(url.searchParams.get("month")).toBe("2026-09");
+    expect(url.searchParams.get("status")).toBe("PENDING");
+    expect(url.searchParams.has("page")).toBe(false);
+  });
   it("applies a desktop menu filter with the existing URL and pagination contract", async () => {
     installPickerMedia(true);
     mock.query = new URLSearchParams("tab=expense-claims&page=4&month=2026-09");

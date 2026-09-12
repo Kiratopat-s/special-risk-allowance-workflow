@@ -665,11 +665,10 @@ export function ExpenseClaimDocumentClient({
 
       <section className="rounded-xl border bg-card p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute z-10 left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
             <Input
+              startAdornment={<Search className="h-4 w-4 text-muted-foreground" />}
               placeholder="ค้นหาเลขที่เอกสาร, หมายเหตุ, หรือชื่อผู้ยื่น"
-              className="pl-9"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {

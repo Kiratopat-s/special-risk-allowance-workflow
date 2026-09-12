@@ -108,10 +108,10 @@ export function NotificationsAdminClient({ users }: Props) {
   };
 
   return (
-    <div className="container max-w-5xl mx-auto px-4 py-8 space-y-6">
+    <div className="w-full max-w-5xl mx-auto space-y-6">
       {/* Page title */}
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
           <Bell className="h-5 w-5 text-primary" />
         </div>
         <div>
@@ -200,7 +200,7 @@ export function NotificationsAdminClient({ users }: Props) {
                 className="h-7 px-2 text-xs"
                 onClick={toggleAll}
               >
-                <Users className="mr-1 h-3 w-3" />
+                <Users className="h-3 w-3" />
                 {isAllSelected ? "ยกเลิกทั้งหมด" : "เลือกทั้งหมด"}
               </Button>
             </div>

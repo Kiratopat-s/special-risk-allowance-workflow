@@ -8,6 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { ThemeProvider } from "@mui/material/styles";
+import userEvent from "@testing-library/user-event";
 import { workflowTheme } from "@/components/workflow-ui/theme";
 const mock = vi.hoisted(() => ({
   eligible: vi.fn(),
@@ -51,6 +52,19 @@ beforeEach(() => {
   mock.create.mockResolvedValue({ success: false, error: "fixture failure" });
 });
 afterEach(cleanup);
+it("toggles a collection row checkbox once per click or Space without also toggling its row", async () => {
+  render(<ThemeProvider theme={workflowTheme}><MrcClient initialItems={[]} initialPagination={null} canManage canHpa={false} canRk={false} canDrt={false} /></ThemeProvider>);
+  await userEvent.click(screen.getByRole("button", { name: "สร้างรายการ" }));
+  const checkbox = await screen.findByRole("checkbox", { name: "เลือกเอกสารเบิก claim-1" });
+  await userEvent.click(checkbox);
+  expect(screen.getAllByRole("checkbox", { checked: true })).toHaveLength(1);
+  await userEvent.keyboard(" ");
+  expect(screen.queryAllByRole("checkbox", { checked: true })).toHaveLength(0);
+  await userEvent.keyboard(" ");
+  await userEvent.click(screen.getByRole("button", { name: "บันทึก" }));
+  await waitFor(() => expect(mock.create).toHaveBeenCalledTimes(1));
+  expect(mock.create.mock.calls[0][0].expenseClaimIds).toEqual(["claim-1"]);
+});
 it("keeps all service-eligible statuses selectable, including pending leader verification", async () => {
   render(
     <ThemeProvider theme={workflowTheme}>

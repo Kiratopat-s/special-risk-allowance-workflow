@@ -185,14 +185,13 @@ export function RolesClient({
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="w-full min-w-0 sm:flex-1 sm:max-w-sm">
           <Input
+            startAdornment={<Search className="h-4 w-4 text-muted-foreground" />}
             placeholder="Search roles..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
           />
         </div>
         <Button size="sm" onClick={() => setShowCreateDialog(true)}>
@@ -216,15 +215,15 @@ export function RolesClient({
               }`}
             >
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
                     <Shield className="h-4 w-4 text-muted-foreground" />
                   </div>
-                  <div>
+                  <div className="min-w-0 break-words">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm">{role.name}</span>
                       {role.isSystem && (
-                        <Lock className="h-3 w-3 text-muted-foreground" />
+                        <Lock className="h-3 w-3 shrink-0 text-muted-foreground" />
                       )}
                     </div>
                     <span className="text-xs text-muted-foreground font-mono">
@@ -232,7 +231,7 @@ export function RolesClient({
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 items-center gap-2 pl-2">
                   <Badge variant={roleLevelBadge(role.level)}>
                     Lv.{role.level}
                   </Badge>
@@ -258,8 +257,8 @@ export function RolesClient({
         {showDetailPanel && selectedRole ? (
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
                   <CardTitle className="text-base">
                     {selectedRole.name}
                   </CardTitle>
@@ -284,22 +283,21 @@ export function RolesClient({
                         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                           {resource.replace(/_/g, " ")}
                         </h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))] gap-1.5">
                           {perms.map((perm) => (
                             <label
                               key={perm.id}
-                              className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm hover:bg-muted/50 cursor-pointer transition-colors"
+                              className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-md px-2.5 py-1.5 text-sm hover:bg-muted/50 cursor-pointer transition-colors"
                             >
                               <Checkbox
                                 checked={rolePermissions.includes(perm.id)}
                                 onChange={() => handleTogglePermission(perm.id)}
                                 disabled={pendingAction === "save-permissions"}
-                                className="h-3.5 w-3.5 rounded border-input accent-primary"
                               />
-                              <span className="truncate">{perm.name}</span>
+                              <span className="min-w-0 break-words">{perm.name}</span>
                               <Badge
                                 variant="outline"
-                                className="ml-auto shrink-0 text-[10px]"
+                                className="shrink-0 whitespace-nowrap text-[10px]"
                               >
                                 {perm.scope}
                               </Badge>

@@ -251,9 +251,9 @@ export default async function Home() {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      <Code2 className="mr-1.5 h-3.5 w-3.5" />
+                      <Code2 className="h-3.5 w-3.5" />
                       GitHub
-                      <ExternalLink className="ml-1.5 h-3 w-3 opacity-40" />
+                      <ExternalLink className="h-3 w-3 opacity-40" />
                     </Link>
                   </Button>
                   <Button variant="outline" size="sm" asChild>
@@ -262,7 +262,7 @@ export default async function Home() {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      <Star className="mr-1.5 h-3.5 w-3.5" />
+                      <Star className="h-3.5 w-3.5" />
                       Star Repo
                     </Link>
                   </Button>

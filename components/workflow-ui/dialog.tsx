@@ -41,7 +41,7 @@ export function Dialog({
             "aria-modal": true,
             "aria-labelledby": titleId,
             className: cn(
-              "w-full sm:w-[680px] max-w-full flex flex-col",
+              "w-full sm:w-[680px] max-w-full flex flex-col overflow-hidden",
               className,
             ),
           },
@@ -76,7 +76,7 @@ export function DialogHeader({
   return (
     <div
       className={cn(
-        "flex flex-col gap-2 p-5 pb-0 pr-14 sm:p-7 sm:pb-0",
+        "flex shrink-0 flex-col gap-2 p-5 pb-0 pr-14 sm:p-7 sm:pb-0 sm:pr-14",
         className,
       )}
       {...props}
@@ -91,7 +91,7 @@ export function DialogTitle({
   return (
     <h2
       id={id}
-      className={cn("text-xl font-bold tracking-tight", className)}
+      className={cn("min-w-0 break-words text-xl font-bold tracking-tight", className)}
       {...props}
     />
   );
@@ -113,7 +113,7 @@ export function DialogBody({
 }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("flex-1 overflow-y-auto p-5 sm:p-7", className)}
+      className={cn("min-h-0 flex-1 overflow-y-auto p-5 sm:p-7", className)}
       {...props}
     />
   );
@@ -125,7 +125,7 @@ export function DialogFooter({
   return (
     <div
       className={cn(
-        "flex flex-wrap gap-2 border-t bg-card p-4 sm:px-7 sm:justify-end",
+        "flex shrink-0 flex-wrap gap-2 border-t bg-card p-4 sm:px-7 sm:justify-end",
         className,
       )}
       {...props}
