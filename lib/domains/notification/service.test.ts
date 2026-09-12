@@ -1,10 +1,8 @@
 vi.mock("./repository");
-vi.mock("@/lib/notification-broker", () => ({
-  notificationBroker: { push: vi.fn() },
-}));
-vi.mock("@/lib/web-push", () => ({
-  sendWebPush: vi.fn(),
-}));
+// Redirect to mock modules so concurrent lazy imports all share the same mocks.
+// Factory mocks can fall through to the real modules during sendToMany().
+vi.mock("@/lib/notification-broker");
+vi.mock("@/lib/web-push");
 
 import { notificationRepository } from "./repository";
 import { notificationBroker } from "@/lib/notification-broker";
@@ -23,8 +21,8 @@ const repo = notificationRepository as unknown as {
   deletePushSubscriptionByEndpoint: vi.Mock;
 };
 
-const mockBroker = notificationBroker as unknown as { push: vi.Mock };
-const mockWebPush = sendWebPush as unknown as vi.Mock;
+const mockBroker = vi.mocked(notificationBroker);
+const mockWebPush = vi.mocked(sendWebPush);
 
 const makeEntity = () => ({
   id: "n1",
@@ -39,23 +37,37 @@ const makeEntity = () => ({
 
 describe("notificationService", () => {
   beforeEach(() => {
+    vi.resetAllMocks();
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
+  afterEach(async () => {
+    // send() returns before its lazy delivery imports finish. Drain them even
+    // when an assertion fails, before Vitest restores mocks or closes the worker.
+    await vi.dynamicImportSettled();
+    vi.restoreAllMocks();
+  });
+
   describe("send", () => {
-    it("creates notification in repo and pushes to SSE broker", async () => {
+    it("creates notification in repo and delivers to SSE and Web Push", async () => {
       const entity = makeEntity();
       repo.create.mockResolvedValue(entity);
-      mockBroker.push.mockReturnValue(true);
       mockWebPush.mockResolvedValue(undefined);
 
       await notificationService.send("u1", "SYSTEM_ANNOUNCEMENT" as any, "Test", "Body");
-      await new Promise((r) => setTimeout(r, 50)); // flush fire-and-forget
+      await vi.dynamicImportSettled();
 
-      expect(repo.create).toHaveBeenCalled();
-      expect(mockBroker.push).toHaveBeenCalled();
+      expect(repo.create).toHaveBeenCalledExactlyOnceWith({
+        userId: "u1", type: "SYSTEM_ANNOUNCEMENT", title: "Test", body: "Body", link: undefined,
+      });
+      const payload = {
+        id: entity.id, type: entity.type, title: entity.title, body: entity.body,
+        link: entity.link, createdAt: entity.createdAt.toISOString(),
+      };
+      expect(mockBroker.push).toHaveBeenCalledExactlyOnceWith("u1", payload);
+      expect(mockWebPush).toHaveBeenCalledExactlyOnceWith("u1", payload);
     });
 
     it("does not throw when repository fails", async () => {
@@ -64,26 +76,65 @@ describe("notificationService", () => {
       await expect(
         notificationService.send("u1", "SYSTEM_ANNOUNCEMENT" as any, "Test", "Body")
       ).resolves.toBeUndefined();
-      await new Promise((r) => setTimeout(r, 50)); // flush fire-and-forget
+      await vi.dynamicImportSettled();
+
+      expect(mockBroker.push).not.toHaveBeenCalled();
+      expect(mockWebPush).not.toHaveBeenCalled();
+      expect(console.error).toHaveBeenCalledWith("[notification-service] send() failed:", expect.any(Error));
+    });
+
+    it("logs SSE delivery failures and still delivers Web Push", async () => {
+      const failure = new Error("SSE unavailable");
+      repo.create.mockResolvedValue(makeEntity());
+      mockBroker.push.mockImplementation(() => { throw failure; });
+      mockWebPush.mockResolvedValue(undefined);
+
+      await expect(
+        notificationService.send("u1", "SYSTEM_ANNOUNCEMENT", "Test", "Body")
+      ).resolves.toBeUndefined();
+      await vi.dynamicImportSettled();
+
+      expect(mockWebPush).toHaveBeenCalledExactlyOnceWith("u1", expect.any(Object));
+      expect(console.error).toHaveBeenCalledWith("[notification-service] SSE push failed:", failure);
+    });
+
+    it("handles rejected Web Push delivery without an unhandled rejection", async () => {
+      const failure = new Error("Push unavailable");
+      repo.create.mockResolvedValue(makeEntity());
+      mockWebPush.mockRejectedValue(failure);
+
+      await expect(
+        notificationService.send("u1", "SYSTEM_ANNOUNCEMENT", "Test", "Body")
+      ).resolves.toBeUndefined();
+      await vi.dynamicImportSettled();
+
+      expect(mockBroker.push).toHaveBeenCalledExactlyOnceWith("u1", expect.any(Object));
+      expect(console.error).toHaveBeenCalledWith("[notification-service] Web Push failed:", failure);
     });
   });
 
   describe("sendToMany", () => {
-    it("sends to each user", async () => {
+    it.each([0, 3, 25])("delivers through both channels for a %i-user broadcast", async (count) => {
+      const userIds = Array.from({ length: count }, (_, index) => `u${index + 1}`);
       const entity = makeEntity();
       repo.create.mockResolvedValue(entity);
-      mockBroker.push.mockReturnValue(true);
       mockWebPush.mockResolvedValue(undefined);
 
       await notificationService.sendToMany(
-        ["u1", "u2", "u3"],
+        userIds,
         "SYSTEM_ANNOUNCEMENT" as any,
         "Test",
         "Body"
       );
-      await new Promise((r) => setTimeout(r, 50)); // flush fire-and-forget
+      await vi.dynamicImportSettled();
 
-      expect(repo.create).toHaveBeenCalledTimes(3);
+      expect(repo.create).toHaveBeenCalledTimes(count);
+      expect(mockBroker.push).toHaveBeenCalledTimes(count);
+      expect(mockWebPush).toHaveBeenCalledTimes(count);
+      for (const userId of userIds) {
+        expect(mockBroker.push).toHaveBeenCalledWith(userId, expect.objectContaining({ id: entity.id }));
+        expect(mockWebPush).toHaveBeenCalledWith(userId, expect.objectContaining({ id: entity.id }));
+      }
     });
   });
 
