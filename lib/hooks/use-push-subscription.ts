@@ -11,7 +11,7 @@
  * @module lib/hooks/use-push-subscription
  */
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 
 export type PushPermissionState = "default" | "granted" | "denied" | "unsupported";
 
@@ -97,12 +97,6 @@ export function usePushSubscription() {
         return Notification.permission as PushPermissionState;
     });
     const [isLoading, setIsLoading] = useState(false);
-
-    // Sync permission state when it changes externally (e.g. browser settings)
-    useEffect(() => {
-        if (typeof window === "undefined" || !("Notification" in window)) return;
-        setPermission(Notification.permission as PushPermissionState);
-    }, []);
 
     /**
      * Request notification permission (must be called from a user gesture)

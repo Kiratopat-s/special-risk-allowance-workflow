@@ -177,6 +177,36 @@ Make sure `local.sraw.space` resolves to your local machine and update `NEXTAUTH
 | `bunx prisma db seed` | Seed default roles, permissions, and role-permission mappings. |
 | `bunx prisma studio` | Inspect and edit local data. |
 
+## Dependency Maintenance
+
+Use `bun install --frozen-lockfile` in CI and deployments, and commit `package.json` and `bun.lock` together after updates. Select stable releases within compatible major versions, keep `next` and `eslint-config-next` aligned, and pin `prisma`, `@prisma/client`, and `@prisma/adapter-pg` to the same version. Check release tags before using `bun update --latest`: Prisma's `latest` tag pointed to an 8.0 release candidate during the September 2026 update.
+
+Two security overrides remain because Prisma 7.10.0 still pins vulnerable transitive dependencies:
+
+- `mysql2: ^3.24.4` replaces Prisma's pinned 3.15.3 and includes the [compressed-protocol fix](https://github.com/advisories/GHSA-rgwj-5xj2-c3m3) and [authentication fix](https://github.com/advisories/GHSA-3f6p-5ww8-9rcr).
+- `deepmerge-ts: ^8.0.2` replaces `@prisma/config`'s pinned 7.1.5 with the [recursive-merge fix](https://github.com/advisories/GHSA-ggr8-5vv4-36mx). This crosses a major version, so verify Prisma configuration loading and client generation when changing it.
+
+Remove these overrides once Prisma's own dependency ranges include patched versions. Use bounded ranges for overrides; an open-ended `>=` can silently select an incompatible major. The previous Babel, Fast URI, Flatted, js-yaml, and Picomatch overrides are no longer needed with the refreshed lockfile.
+
+Compatibility constraints retained in this update:
+
+- Auth.js remains exactly pinned to `5.0.0-beta.32`, an explicit prerelease exception because the app uses its v5 APIs. Moving to stable NextAuth v4 requires an authentication migration. Its optional Nodemailer peer range covers versions 7 and 8; this app uses Keycloak authentication and calls patched Nodemailer 9 directly for SMTP. Review compatibility before enabling an Auth.js email provider.
+- ESLint 9.39.5 is deprecated upstream but remains the compatible major for `eslint-plugin-react` 7.37.5, whose peer range excludes ESLint 10. Upgrade them together when support is available.
+- TypeScript remains on 5.9.3; the refreshed `typescript-eslint` 8.70.0 requires TypeScript below 6.1, excluding TypeScript 7.
+
+After dependency updates, run:
+
+```bash
+bun install --frozen-lockfile
+bun audit
+bunx prisma generate
+bun run lint
+bun run test
+bun run build
+# With Docker running, verify Prisma against disposable databases:
+bun run test:migrations
+```
+
 ## Workflow Overview
 
 1. Users authenticate through Keycloak. Profile claims are synchronized into the local `User` table.

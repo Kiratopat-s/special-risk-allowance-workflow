@@ -71,6 +71,8 @@ function usePermissionState(): UsePermissionsResult {
     }, []);
 
     useEffect(() => {
+        // Show the loading gate while permissions refresh on navigation.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         void fetchPermissions();
         const onFocus = () => void fetchPermissions();
         window.addEventListener("focus", onFocus);

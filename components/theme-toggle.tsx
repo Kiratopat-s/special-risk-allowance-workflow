@@ -1,6 +1,5 @@
 "use client";
 
-import * as React from "react";
 import { Moon, Sun } from "lucide-react";
 import { useColorScheme } from "@mui/material/styles";
 
@@ -8,18 +7,13 @@ import { Button } from "@/components/workflow-ui/button";
 
 export function ThemeToggle() {
   const { setMode: setTheme, mode: theme } = useColorScheme();
-  const [mounted, setMounted] = React.useState(false);
-
-  // Avoid hydration mismatch
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
   };
 
-  if (!mounted) {
+  // MUI leaves the mode undefined until hydration has completed.
+  if (theme === undefined) {
     return (
       <Button variant="ghost" size="icon" className="h-9 w-9">
         <span className="h-4 w-4" />
