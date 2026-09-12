@@ -6,6 +6,8 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { YearCalendar } from "@mui/x-date-pickers/YearCalendar";
 import type { DateViewRendererProps } from "@mui/x-date-pickers/dateViewRenderers";
 import type { DateView } from "@mui/x-date-pickers/models";
+import { bangkokToday } from "@/lib/shared/format";
+import { BUDDHIST_YEAR_OFFSET } from "@/lib/ui/buddhist-date";
 import { parsePickerDate } from "@/lib/ui/picker-date";
 
 /** Page the full ISO year range instead of mounting 9,999 radio buttons at once. */
@@ -13,7 +15,7 @@ export function PickerYearView(props: DateViewRendererProps<DateView>) {
   const id = useId();
   const current = props.value?.isValid()
     ? props.value
-    : parsePickerDate(new Date().toISOString().slice(0, 10), "date")!;
+    : parsePickerDate(bangkokToday(), "date")!;
   const [start, setStart] = useState(
     () => Math.floor((current.year() - 1) / 80) * 80 + 1,
   );
@@ -31,7 +33,7 @@ export function PickerYearView(props: DateViewRendererProps<DateView>) {
           <ChevronLeft size={20} />
         </IconButton>
         <span id={id} className="text-sm font-semibold">
-          ปี {start}–{end}
+          ปี พ.ศ. {start + BUDDHIST_YEAR_OFFSET}–{end + BUDDHIST_YEAR_OFFSET}
         </span>
         <IconButton
           aria-label="ช่วงปีถัดไป"

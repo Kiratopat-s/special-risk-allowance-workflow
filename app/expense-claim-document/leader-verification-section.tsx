@@ -9,6 +9,7 @@
  * @module app/expense-claim-document/leader-verification-section
  */
 
+import { dateDisplay } from "@/lib/shared/format";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Copy, RefreshCw, ShieldCheck } from "lucide-react";
@@ -97,7 +98,7 @@ export function LeaderVerificationSection({
                   <p className="text-muted-foreground">{v.leaderEmail}</p>
                 ) : null}
                 <p className="text-muted-foreground">
-                  หมดอายุ: {new Date(v.expiresAt).toLocaleDateString("th-TH")}
+                  หมดอายุ: {dateDisplay(v.expiresAt, { timeZone: "Asia/Bangkok" })}
                 </p>
               </div>
               <div className="flex flex-col items-end gap-1">

@@ -58,7 +58,7 @@ import type {
   EmployeeListItem,
 } from "@/lib/domains/off-site-work";
 import type { Pagination } from "@/lib/shared/types";
-import { shortDateDisplay, toDateInputValue } from "@/lib/shared/format";
+import { bangkokToday, shortDateDisplay, toDateInputValue } from "@/lib/shared/format";
 import { PaginationControls } from "@/components/workflow-ui/pagination-controls";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ConfirmDialog } from "@/components/workflow-ui/confirm-dialog";
@@ -256,7 +256,7 @@ export function OffSiteWorkClient({
     setDirtyFields([]);
     setPdfReviewPending(false);
     setFormSession((previous) => previous + 1);
-    const today = toDateInputValue(new Date());
+    const today = bangkokToday();
     setSelected(null);
     setSelectedLeaderUser(null);
     setLeaderSearch("");

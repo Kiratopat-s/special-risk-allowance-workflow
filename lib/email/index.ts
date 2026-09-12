@@ -15,6 +15,7 @@
  */
 
 import nodemailer from "nodemailer";
+import { longDateDisplay } from "@/lib/shared/format";
 
 function createTransport() {
     const host = process.env.EMAIL_HOST;
@@ -71,12 +72,7 @@ export async function sendLeaderVerifyEmail({
     }
 
     const verifyUrl = buildLeaderVerifyUrl(token);
-    const expiryText = expiresAt.toLocaleDateString("th-TH", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-        timeZone: "Asia/Bangkok",
-    });
+    const expiryText = longDateDisplay(expiresAt, "", { timeZone: "Asia/Bangkok" });
 
     const subject = "ขอให้ยืนยันการออกปฏิบัติงานนอกสถานที่";
 

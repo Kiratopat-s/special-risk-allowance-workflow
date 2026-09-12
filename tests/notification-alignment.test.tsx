@@ -6,9 +6,9 @@ import { ThemeProvider } from "@mui/material/styles";
 import { workflowTheme } from "@/components/workflow-ui/theme";
 import { alignmentNotifications } from "./fixtures/ui-alignment";
 
-const mock = vi.hoisted(() => ({ markRead: vi.fn(), clear: vi.fn(), markAll: vi.fn() }));
+const mock = vi.hoisted(() => ({ markRead: vi.fn(), clear: vi.fn(), markAll: vi.fn(), date: undefined as Date | undefined }));
 vi.mock("@/lib/hooks/use-notifications", () => ({ useNotifications: () => ({
-  notifications: alignmentNotifications,
+  notifications: mock.date ? alignmentNotifications.map((item) => ({ ...item, createdAt: mock.date! })) : alignmentNotifications,
   unreadCount: 1,
   isLoading: false,
   markRead: mock.markRead,
@@ -23,7 +23,15 @@ beforeEach(() => vi.stubGlobal("ResizeObserver", class {
   unobserve() {}
   disconnect() {}
 }));
-afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); mock.date = undefined; vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
+
+it("shows older notification timestamps as Buddhist dates in Thailand time", async () => {
+  mock.date = new Date("2026-12-31T18:00:00Z");
+  vi.spyOn(Date, "now").mockReturnValue(new Date("2027-01-20T00:00:00Z").getTime());
+  render(<ThemeProvider theme={workflowTheme}><NotificationBell /></ThemeProvider>);
+  await userEvent.click(screen.getByRole("button", { name: /การแจ้งเตือน/ }));
+  expect(screen.getAllByText("01/01/2570").length).toBeGreaterThan(0);
+});
 
 it("retains long notification content and keeps removal separate from opening the notification", async () => {
   render(<ThemeProvider theme={workflowTheme}><NotificationBell /></ThemeProvider>);

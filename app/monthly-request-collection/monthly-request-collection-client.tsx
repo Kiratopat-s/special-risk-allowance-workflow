@@ -63,7 +63,7 @@ import type {
   MrcApprovalStage,
 } from "@/lib/domains/monthly-request-collection";
 import type { Pagination } from "@/lib/shared/types";
-import { monthDisplay, decimalText, toMonthInput } from "@/lib/shared/format";
+import { bangkokCurrentMonth, monthDisplay, decimalText, toMonthInput } from "@/lib/shared/format";
 import { PaginationControls } from "@/components/workflow-ui/pagination-controls";
 import { ConfirmDialog } from "@/components/workflow-ui/confirm-dialog";
 import { TableSkeleton } from "@/components/ui/skeleton";
@@ -138,7 +138,7 @@ export function MrcClient({
 
   // Create / edit form state
   const [collectMonth, setCollectMonth] = useState(() =>
-    toMonthInput(new Date()),
+    bangkokCurrentMonth(),
   );
   const [eligibleClaims, setEligibleClaims] = useState<
     EligibleExpenseClaimForCollection[]
@@ -198,7 +198,7 @@ export function MrcClient({
   // ---------------------------------------------------------------------------
 
   const openCreate = () => {
-    const m = toMonthInput(new Date());
+    const m = bangkokCurrentMonth();
     setCollectMonth(m);
     setSelectedClaimIds([]);
     setEligibleClaims([]);

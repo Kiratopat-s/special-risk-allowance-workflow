@@ -1,4 +1,4 @@
-import { beforeEach, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, it, expect, vi } from "vitest";
 const mock = vi.hoisted(() => ({
   auth: vi.fn(),
   overview: vi.fn(),
@@ -20,6 +20,7 @@ vi.mock("@/lib/domains/expense-claim-document", () => ({
 }));
 import { getDashboardOverview } from "@/app/actions/dashboard";
 import { listExpenseClaimDocuments } from "@/app/actions/expense-claim-document";
+afterEach(() => vi.useRealTimers());
 beforeEach(() => {
   vi.resetAllMocks();
   mock.auth.mockResolvedValue({ user: { dbUserId: "me" } });
@@ -42,6 +43,12 @@ it("does not query overview or list when the session expires", async () => {
 it("always uses the authenticated subject for overview reads", async () => {
   await getDashboardOverview("2026-09");
   expect(mock.overview).toHaveBeenCalledWith("me", "2026-09");
+});
+it("defaults the overview to the new Thai month before UTC midnight", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-12-31T18:00:00Z"));
+  await getDashboardOverview();
+  expect(mock.overview).toHaveBeenCalledWith("me", "2027-01");
 });
 it("does not allow an OWN caller to supply another user filter", async () => {
   mock.scope.mockResolvedValue({

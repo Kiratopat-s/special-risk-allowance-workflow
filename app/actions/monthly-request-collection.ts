@@ -207,7 +207,7 @@ export async function listEligibleExpenseClaimsForMonth(
     if (Number.isNaN(targetMonth.getTime())) {
         return {
             success: false,
-            error: "Invalid month format. Expected YYYY-MM (for example, 2025-01).",
+            error: "กรุณาเลือกเดือนและปี พ.ศ. ให้ถูกต้อง",
             code: "INVALID_MONTH",
         };
     }

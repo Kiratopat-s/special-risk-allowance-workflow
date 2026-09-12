@@ -28,6 +28,9 @@ describe("PDF import review", () => {
     render(<PdfImport protectedFields={["location"]} currentFields={{ ...fields, location: "กรอกเอง" }} onApply={apply} onPendingChange={pending} />);
     upload();
     await screen.findByText("ตรวจทานข้อมูลก่อนนำลงฟอร์ม");
+    expect(screen.getAllByText("17 ก.ย. 2569").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("2 ต.ค. 2569").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("TZ26010001").length).toBeGreaterThan(0);
     expect(apply).not.toHaveBeenCalled();
     expect(pending).toHaveBeenLastCalledWith(true);
     expect(mock.match).toHaveBeenCalledWith(["100001"]);

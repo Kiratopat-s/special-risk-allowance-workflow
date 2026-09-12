@@ -322,7 +322,7 @@ export function LeaderVerifyClient({
           เลขที่เอกสาร: <strong>{info.offSiteWorkId}</strong>
         </p>
         <p className="text-sm text-muted-foreground">
-          ยืนยันเมื่อ: {info.verifiedAt ? dateDisplay(info.verifiedAt) : "-"}
+          ยืนยันเมื่อ: {info.verifiedAt ? dateDisplay(info.verifiedAt, { timeZone: "Asia/Bangkok" }) : "-"}
         </p>
       </div>
     );
@@ -543,7 +543,7 @@ export function LeaderVerifyClient({
       </LoadingButton>
 
       <p className="text-center text-xs text-muted-foreground">
-        ลิงก์หมดอายุ: {dateDisplay(info.expiresAt)}
+        ลิงก์หมดอายุ: {dateDisplay(info.expiresAt, { timeZone: "Asia/Bangkok" })}
       </p>
     </div>
   );

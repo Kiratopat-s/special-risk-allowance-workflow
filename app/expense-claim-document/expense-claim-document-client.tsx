@@ -68,6 +68,8 @@ import type {
 } from "@/lib/domains/expense-claim-document";
 import type { ClaimDocumentStatus, Pagination } from "@/lib/shared/types";
 import {
+  bangkokCurrentMonth,
+  thaiDateFormat,
   monthDisplay,
   dateDisplay,
   decimalText,
@@ -111,7 +113,7 @@ const STATUS_LABEL: Record<ClaimDocumentStatus, string> = {
 };
 
 function formatDay(isoDate: string): string {
-  return new Date(isoDate).toLocaleDateString("th-TH", {
+  return thaiDateFormat(isoDate, {
     weekday: "short",
     day: "2-digit",
     month: "2-digit",
@@ -159,7 +161,7 @@ export function ExpenseClaimDocumentClient({
   );
 
   const [form, setForm] = useState<FormState>({
-    expenseMonth: toMonthInput(new Date()),
+    expenseMonth: bangkokCurrentMonth(),
     claimantPositionAtSubmission: currentUserClaimantPositionAtSubmission,
     remark: "",
     status: "DRAFT",
@@ -276,7 +278,7 @@ export function ExpenseClaimDocumentClient({
 
   const viewMonthValue = useMemo(
     () =>
-      selected ? toMonthInput(selected.expenseMonth) : toMonthInput(new Date()),
+      selected ? toMonthInput(selected.expenseMonth) : bangkokCurrentMonth(),
     [selected],
   );
 
@@ -364,7 +366,7 @@ export function ExpenseClaimDocumentClient({
 
   const openCreate = useCallback(() => {
     setStep(0);
-    const defaultMonth = toMonthInput(new Date());
+    const defaultMonth = bangkokCurrentMonth();
     setSelected(null);
     setForm({
       expenseMonth: defaultMonth,

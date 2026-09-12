@@ -1,3 +1,4 @@
+import { thaiDateFormat } from "@/lib/shared/format";
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 
@@ -31,7 +32,7 @@ export function Footer() {
               Terms
             </Link>
             <Separator orientation="vertical" className="h-4" />
-            <span>© 2026 All rights reserved.</span>
+            <span>© {thaiDateFormat("2026-01-01", { year: "numeric" })} All rights reserved.</span>
           </div>
         </div>
       </div>

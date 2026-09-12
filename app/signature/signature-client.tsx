@@ -1,4 +1,6 @@
 "use client";
+
+import { shortDateDisplay } from "@/lib/shared/format";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -63,11 +65,7 @@ interface SignatureClientProps {
 
 function thDate(date: Date | string | null): string {
   if (!date) return "";
-  return new Date(date).toLocaleDateString("th-TH", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  return shortDateDisplay(date, { timeZone: "Asia/Bangkok" });
 }
 
 // ---------------------------------------------------------------------------

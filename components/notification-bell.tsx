@@ -11,6 +11,7 @@
  * @module components/notification-bell
  */
 
+import { dateDisplay } from "@/lib/shared/format";
 import { useState } from "react";
 import { Bell, BellRing, Check, CheckCheck, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -33,7 +34,7 @@ function formatRelativeTime(date: Date): string {
   if (hours < 24) return `${hours} ชั่วโมงที่แล้ว`;
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days} วันที่แล้ว`;
-  return new Date(date).toLocaleDateString("th-TH");
+  return dateDisplay(date, { timeZone: "Asia/Bangkok" });
 }
 
 export function NotificationBell() {

@@ -122,9 +122,9 @@ afterEach(() => {
 async function startNew() {
   fireEvent.click(screen.getByRole("button", { name: "สร้างเอกสาร" }));
   await waitFor(() => expect(mock.eligible).toHaveBeenCalled());
-  fireEvent.change(
-    within(screen.getByRole("dialog")).getByLabelText("เดือน", { exact: true }),
-    { target: { value: "2026-09" } },
+  fireEvent.paste(
+    within(screen.getByRole("dialog")).getByRole("spinbutton", { name: "เดือน" }),
+    { clipboardData: { getData: () => "09/2569" } },
   );
   fireEvent.click(await screen.findByRole("button", { name: /คำสั่งทดสอบ/ }));
 }

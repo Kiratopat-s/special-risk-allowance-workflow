@@ -13,7 +13,7 @@ export const dashboardService = {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
       return {
         success: false,
-        error: "Invalid month format",
+        error: "กรุณาเลือกเดือนและปี พ.ศ. ให้ถูกต้อง",
         code: "INVALID_MONTH",
       };
     try {

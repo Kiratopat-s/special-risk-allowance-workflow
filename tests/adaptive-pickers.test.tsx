@@ -52,6 +52,7 @@ function DateFixture({
     <>
       <DatePicker
         label="วันที่ทดสอบ"
+        name="test-date"
         kind={kind}
         value={value}
         commitOnBlur={commitOnBlur}
@@ -185,7 +186,7 @@ describe("adaptive pickers", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "ช่วงปีก่อนหน้า" }),
     );
-    await userEvent.click(screen.getByRole("radio", { name: "1950" }));
+    await userEvent.click(screen.getByRole("radio", { name: "2493" }));
     expect(change).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("radio", { name: "ธันวาคม" }));
     expect(change).toHaveBeenCalledExactlyOnceWith("1950-12");
@@ -197,13 +198,13 @@ describe("adaptive pickers", () => {
       screen.getByRole("button", { name: "เปิดวันที่ทดสอบ" }),
     );
     await userEvent.click(screen.getByRole("button", { name: "เลือกปี" }));
-    await userEvent.click(screen.getByRole("radio", { name: "2027" }));
+    await userEvent.click(screen.getByRole("radio", { name: "2570" }));
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(change).not.toHaveBeenCalled();
-    expect(screen.getByRole("spinbutton", { name: "ปี" }).textContent).toBe(
-      "2026",
-    );
+    expect(
+      screen.getByRole("spinbutton", { name: "ปี พ.ศ." }).getAttribute("value"),
+    ).toBe("2569");
   });
   it("commits valid keyboard month edits on blur, with a named field group", async () => {
     const change = vi.fn();
@@ -216,7 +217,7 @@ describe("adaptive pickers", () => {
       />,
     );
     expect(screen.getByRole("group", { name: "วันที่ทดสอบ" })).toBeTruthy();
-    await userEvent.click(screen.getByRole("spinbutton", { name: "ปี" }));
+    await userEvent.click(screen.getByRole("spinbutton", { name: "ปี พ.ศ." }));
     await userEvent.keyboard("{ArrowUp}");
     expect(change).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Next field" }));
@@ -264,19 +265,22 @@ describe("adaptive pickers", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.activeElement).toBe(button);
   });
-  it("preserves native date input values across desktop/touch switching without callbacks", () => {
+  it("preserves Buddhist fields and ISO values across desktop/touch switching", () => {
     setDesktop(false);
     const change = vi.fn();
     render(<DateFixture initial="2024-02-29" change={change} />);
-    expect(
-      document.querySelector('input[type="date"]')?.getAttribute("value"),
-    ).toBe("2024-02-29");
-    setDesktop(true);
-    expect(document.querySelector('input[type="date"]')).toBeNull();
-    setDesktop(false);
-    expect(
-      (screen.getByLabelText("วันที่ทดสอบ") as HTMLInputElement).value,
-    ).toBe("2024-02-29");
+    for (const desktop of [false, true, false]) {
+      setDesktop(desktop);
+      expect(
+        document.querySelector('input[type="date"], input[type="month"]'),
+      ).toBeNull();
+      expect(
+        screen
+          .getByRole("spinbutton", { name: "ปี พ.ศ." })
+          .getAttribute("value"),
+      ).toBe("2567");
+      expect(screen.getByTestId("value").textContent).toBe("2024-02-29");
+    }
     expect(change).not.toHaveBeenCalled();
   });
   it("closes an open picker when switching input capabilities", async () => {
@@ -315,9 +319,9 @@ describe("adaptive pickers", () => {
     await userEvent.click(screen.getByRole("button", { name: "Next field" }));
     expect(screen.getByTestId("value").textContent).toBe("");
     expect(screen.getByText("กรุณากรอกวันที่ให้ครบและถูกต้อง")).toBeTruthy();
-    expect(screen.getByRole("spinbutton", { name: "ปี" }).textContent).toBe(
-      "2026",
-    );
+    expect(
+      screen.getByRole("spinbutton", { name: "ปี พ.ศ." }).getAttribute("value"),
+    ).toBe("2569");
   });
   it("keeps incomplete URL-filter edits local instead of navigating", async () => {
     const change = vi.fn();
@@ -334,5 +338,186 @@ describe("adaptive pickers", () => {
     await userEvent.click(screen.getByRole("button", { name: "Next field" }));
     expect(change).not.toHaveBeenCalled();
     expect(screen.getByText("กรุณากรอกวันที่ให้ครบและถูกต้อง")).toBeTruthy();
+  });
+});
+
+describe("Buddhist picker behavior", () => {
+  it("types Buddhist years and posts only ISO values, including five-digit Buddhist years", async () => {
+    render(<DateFixture />);
+    const year = screen.getByRole("spinbutton", { name: "ปี พ.ศ." });
+    await userEvent.clear(year);
+    await userEvent.type(year, "2570");
+    expect(screen.getByTestId("value").textContent).toBe("2027-09-11");
+    expect(
+      document.querySelector('input[name="test-date"]')?.getAttribute("value"),
+    ).toBe("2027-09-11");
+    await userEvent.clear(year);
+    await userEvent.type(year, "10542");
+    expect(screen.getByTestId("value").textContent).toBe("9999-09-11");
+  });
+
+  it("pastes a full Buddhist date, rejects impossible days, and never submits a stale date", async () => {
+    render(<DateFixture />);
+    const day = screen.getByRole("spinbutton", { name: "วัน" });
+    const paste = (text: string) =>
+      fireEvent.paste(day, { clipboardData: { getData: () => text } });
+    paste("29/02/2567");
+    expect(screen.getByTestId("value").textContent).toBe("2024-02-29");
+    paste("29/02/2569");
+    await userEvent.click(screen.getByRole("button", { name: "Next field" }));
+    fireEvent.blur(day);
+    expect(screen.getByTestId("value").textContent).toBe("");
+    expect((day as HTMLInputElement).checkValidity()).toBe(false);
+    expect(screen.getByText("กรุณากรอกวันที่ให้ครบและถูกต้อง")).toBeTruthy();
+    paste("01/01/0544");
+    expect(screen.getByTestId("value").textContent).toBe("0001-01-01");
+  });
+
+  it("commits a pasted month filter only on blur", async () => {
+    const change = vi.fn();
+    render(
+      <DateFixture
+        kind="month"
+        initial="2026-09"
+        commitOnBlur
+        change={change}
+      />,
+    );
+    const month = screen.getByRole("spinbutton", { name: "เดือน" });
+    await userEvent.click(month);
+    fireEvent.paste(month, { clipboardData: { getData: () => "12/2570" } });
+    expect(change).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Next field" }));
+    expect(change).toHaveBeenCalledExactlyOnceWith("2027-12");
+  });
+
+  it("requires mobile confirmation and discards cancelled selections", async () => {
+    setDesktop(false);
+    const change = vi.fn();
+    render(<DateFixture change={change} />);
+    const open = screen.getByRole("button", { name: "เปิดวันที่ทดสอบ" });
+    await userEvent.click(open);
+    expect(screen.getAllByText(/พ.ศ. 2569/).length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("gridcell", { name: "15" }));
+    expect(change).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "ยกเลิก" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(change).not.toHaveBeenCalled();
+    expect(screen.getByTestId("value").textContent).toBe("2026-09-11");
+    await userEvent.click(open);
+    await userEvent.click(screen.getByRole("gridcell", { name: "20" }));
+    await userEvent.click(screen.getByRole("button", { name: "ตกลง" }));
+    expect(change).toHaveBeenCalledExactlyOnceWith("2026-09-20");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(open);
+  });
+
+  it("discards a mobile selection on Escape without closing its parent dialog", async () => {
+    setDesktop(false);
+    const close = vi.fn();
+    const change = vi.fn();
+    render(
+      <Dialog open onClose={close}>
+        <DialogTitle>Editor</DialogTitle>
+        <DialogBody>
+          <DateFixture change={change} />
+        </DialogBody>
+      </Dialog>,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "เปิดวันที่ทดสอบ" }),
+    );
+    await userEvent.click(screen.getByRole("gridcell", { name: "15" }));
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.getAllByRole("dialog")).toHaveLength(1));
+    expect(change).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("discards partial desktop calendar selection on click-away", async () => {
+    const change = vi.fn();
+    render(<DateFixture change={change} />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "เปิดวันที่ทดสอบ" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "เลือกปี" }));
+    await userEvent.click(screen.getByRole("radio", { name: "2570" }));
+    await userEvent.click(screen.getByRole("button", { name: "Next field" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(change).not.toHaveBeenCalled();
+    expect(screen.getByTestId("value").textContent).toBe("2026-09-11");
+  });
+
+  it.each([
+    ["0001-01", "0544"],
+    ["9999-12", "10542"],
+  ])("keeps year %s selectable", async (initial, year) => {
+    render(<DateFixture kind="month" initial={initial} />);
+    expect(
+      screen.getByRole("spinbutton", { name: "ปี พ.ศ." }).getAttribute("value"),
+    ).toBe(year);
+    await userEvent.click(
+      screen.getByRole("button", { name: "เปิดวันที่ทดสอบ" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "เลือกปี" }));
+    expect(screen.getAllByRole("radio").length).toBeLessThanOrEqual(80);
+    const option = screen.getByRole("radio", { name: year }) as HTMLButtonElement;
+    expect(option.disabled).toBe(false);
+    await userEvent.click(option);
+    await userEvent.click(screen.getByRole("radio", { name: "กุมภาพันธ์" }));
+    expect(screen.getByTestId("value").textContent).toBe(`${initial.slice(0, 4)}-02`);
+  });
+
+  it("replaces incomplete edits on external navigation without emitting a change", async () => {
+    const change = vi.fn();
+    const { rerender } = render(
+      <DatePicker
+        label="Date"
+        kind="date"
+        value="2026-09-12"
+        onValueChange={change}
+        commitOnBlur
+      />,
+    );
+    await userEvent.clear(screen.getByRole("spinbutton", { name: "ปี พ.ศ." }));
+    rerender(
+      <DatePicker
+        label="Date"
+        kind="date"
+        value="2027-01-01"
+        onValueChange={change}
+        commitOnBlur
+      />,
+    );
+    expect(
+      screen.getByRole("spinbutton", { name: "ปี พ.ศ." }).getAttribute("value"),
+    ).toBe("2570");
+    expect(
+      screen.getByRole("spinbutton", { name: "วัน" }).getAttribute("value"),
+    ).toBe("01");
+    expect(change).not.toHaveBeenCalled();
+  });
+
+  it("renders Buddhist dates on the server and hydrates without changes", async () => {
+    const change = vi.fn();
+    const ui = <DateFixture change={change} />;
+    const markup = renderToString(ui);
+    expect(markup).toContain('value="2569"');
+    expect(markup).not.toContain('type="date"');
+    const container = document.createElement("div");
+    container.innerHTML = markup;
+    document.body.append(container);
+    const errors = vi.fn();
+    const root = hydrateRoot(container, ui, { onRecoverableError: errors });
+    await act(async () => {});
+    expect(errors).not.toHaveBeenCalled();
+    expect(change).not.toHaveBeenCalled();
+    expect(
+      container
+        .querySelector('input[aria-label="ปี พ.ศ."]')
+        ?.getAttribute("value"),
+    ).toBe("2569");
+    act(() => root.unmount());
+    container.remove();
   });
 });

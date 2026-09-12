@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { monthDisplay } from "@/lib/shared/format";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -50,10 +51,7 @@ export async function Overview({
     );
   const data = result.data;
   const claims = data.claims;
-  const monthLabel = new Date(`${data.month}-01T00:00:00Z`).toLocaleDateString(
-    "th-TH",
-    { month: "long", year: "numeric", timeZone: "UTC" },
-  );
+  const monthLabel = monthDisplay(`${data.month}-01T00:00:00Z`);
   return (
     <>
       <div className="page-heading">

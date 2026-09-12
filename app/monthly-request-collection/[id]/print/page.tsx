@@ -115,7 +115,7 @@ export default async function MrcPrintPage({ params }: PrintPageProps) {
   const mrc = await monthlyRequestCollectionRepository.findWithRelations(id);
   if (!mrc) notFound();
 
-  const printedDate = longDateDisplay(new Date());
+  const printedDate = longDateDisplay(new Date(), "", { timeZone: "Asia/Bangkok" });
   const forMonth = monthDisplay(mrc.collectForMonth);
 
   const claims = [...mrc.expenseClaims].sort((a, b) =>
@@ -501,7 +501,7 @@ button.primary {
                               </p>
                               <p className="sig-date">
                                 {step.reviewedAt
-                                  ? longDateDisplay(step.reviewedAt)
+                                  ? longDateDisplay(step.reviewedAt, "", { timeZone: "Asia/Bangkok" })
                                   : ""}
                               </p>
                             </>

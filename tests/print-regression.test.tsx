@@ -59,7 +59,22 @@ beforeEach(() => {
   mock.access.mockResolvedValue(true);
 });
 afterEach(() => {
+  vi.useRealTimers();
   document.body.innerHTML = "";
+});
+it("prints Buddhist accounting months and Thai-time approval and print dates", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-12-31T18:00:00Z"));
+  const data = fixture(1);
+  data.collectForMonth = new Date("2026-12-01T00:00:00Z");
+  data.approvalSteps[0].reviewedAt = new Date("2026-12-31T18:00:00Z");
+  mock.find.mockResolvedValue(data);
+  const html = renderToStaticMarkup(await PrintPage({ params: Promise.resolve({ id: "fixture" }) }));
+  document.body.innerHTML = html;
+  expect(document.body.textContent).toContain("ธันวาคม 2569");
+  expect(document.body.textContent).toContain("1 มกราคม 2570");
+  expect(document.body.textContent).not.toContain("2026");
+  expect(document.querySelectorAll(".sig-image")).toHaveLength(3);
 });
 it.each([
   [0, [0]],

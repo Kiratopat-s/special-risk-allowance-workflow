@@ -10,6 +10,7 @@
 
 import { resolveClaimReadScope } from "@/lib/domains/expense-claim-document/read-scope";
 import { revalidatePath } from "next/cache";
+import { bangkokCurrentMonth } from "@/lib/shared/format";
 import { auth } from "@/lib/auth";
 import { can } from "@/lib/auth/permissions";
 import { expenseClaimDocumentService } from "@/lib/domains/expense-claim-document";
@@ -47,11 +48,11 @@ export async function listEligibleOffSiteWorksForClaim(
         };
     }
 
-    const targetMonth = month ? new Date(`${month}-01`) : new Date();
+    const targetMonth = new Date(`${month || bangkokCurrentMonth()}-01T00:00:00.000Z`);
     if (Number.isNaN(targetMonth.getTime())) {
         return {
             success: false,
-            error: "Invalid month format",
+            error: "กรุณาเลือกเดือนและปี พ.ศ. ให้ถูกต้อง",
             code: "INVALID_MONTH",
         };
     }

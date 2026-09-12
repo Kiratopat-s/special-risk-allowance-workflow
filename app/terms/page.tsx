@@ -1,3 +1,4 @@
+import { longDateDisplay } from "@/lib/shared/format";
 import Link from "next/link";
 import { Button } from "@/components/workflow-ui/button";
 import {
@@ -20,7 +21,7 @@ import {
 } from "lucide-react";
 
 export default function TermsOfServicePage() {
-  const lastUpdated = "January 20, 2026";
+  const lastUpdated = longDateDisplay("2026-01-20");
 
   return (
     <div className="container max-w-4xl mx-auto px-5 py-14 legal-content">
