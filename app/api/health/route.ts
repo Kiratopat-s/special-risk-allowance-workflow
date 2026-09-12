@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    await prisma.$queryRaw`SELECT "is_deleted", "deleted_at" FROM "notifications" LIMIT 0`;
     return Response.json({ status: "ok" });
   } catch (error) {
     console.error("[health] Database readiness check failed", error);

@@ -74,6 +74,9 @@ jobs:
       - name: Run database migrations
         run: docker compose --profile ops run --rm migrate
 
+      - name: Verify database schema before replacing application
+        run: docker compose --profile ops run --rm migrate bun run check:schema
+
       - name: Deploy application
         run: docker compose up -d app
 

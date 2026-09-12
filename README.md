@@ -319,3 +319,4 @@ app`; do not attempt to roll back production Prisma migrations automatically.
 - Permission denied for a user who should have access: confirm the user has a seeded role and matching permission scope.
 - Email links are not sent: check `EMAIL_HOST`, `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_FROM`, and `NEXTAUTH_URL`.
 - Push notifications do not arrive: check VAPID keys, service worker registration, browser permission, and stored push subscriptions.
+- Missing database columns despite an up-to-date migration status: run `bun run check:schema` and follow the [migration and schema-verification guide](docs/database-migrations.md). CI also runs `bun run test:migrations` against disposable PostgreSQL.

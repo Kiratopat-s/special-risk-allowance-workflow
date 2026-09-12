@@ -40,3 +40,6 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: Test migrations against isolated PostgreSQL
+        run: bun run test:migrations

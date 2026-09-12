@@ -10,7 +10,9 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:schema": "prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code",
+    "test:migrations": "bun scripts/test-migrations.mjs"
   },
   "dependencies": {
     "@emotion/cache": "11.14.0",
