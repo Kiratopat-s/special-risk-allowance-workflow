@@ -15,6 +15,10 @@ export default defineConfig({
   oxc: { jsx: { runtime: "automatic" } },
   test: {
     globals: true,
+    // MUI/jsdom suites are CPU- and memory-heavy. Vitest's CPU-count default
+    // runs too many at once on shared laptops/runners, starving UI timers.
+    // Keep the normal 5-second timeout; limit contention instead.
+    maxWorkers: 2,
     include: ["lib/**/*.test.ts", "tests/**/*.test.ts", "tests/**/*.test.tsx"],
     exclude: ["tests/migrations/**", "tests/integration/**"],
     clearMocks: true,

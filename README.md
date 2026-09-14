@@ -276,6 +276,8 @@ bun run build
 
 Keep Node.js on `PATH` and use `bun run test`, without `--bun`. Bun remains the package manager, while Vitest and its forked jsdom workers run on Node. If Node is missing, Bun can silently substitute its own runtime; the Vitest configuration rejects that setup with an actionable error. Both CI test jobs install Node 24 LTS and the Bun version from `package.json`, and print their versions in the job log.
 
+The suite defaults to two workers because concurrent MUI/jsdom renders can exhaust CPU and memory on shared laptops and CI runners, causing otherwise passing UI tests to hit the five-second timeout. The timeout and test isolation remain unchanged. To tune concurrency for a larger machine, use `bun run test --maxWorkers=<count>`.
+
 For risky changes, manually verify the affected workflow, especially:
 
 - Keycloak sign-in and profile synchronization

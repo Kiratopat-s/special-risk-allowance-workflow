@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -177,7 +178,9 @@ describe("claim presentation preserves behavior", () => {
         .getAllByRole("button", { name: "ปิด" })
         .every((button) => button.hasAttribute("disabled")),
     ).toBe(true);
-    rejectRequest(new Error("fixture network failure"));
+    await act(async () => {
+      rejectRequest(new Error("fixture network failure"));
+    });
     await waitFor(() =>
       expect(mock.toast).toHaveBeenCalledWith(
         "เชื่อมต่อไม่สำเร็จ",

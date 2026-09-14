@@ -42,7 +42,10 @@ beforeEach(() => {
   mock.update.mockResolvedValue({ success: false, error: "fixture failure" });
   mock.match.mockResolvedValue({ success: true, data: [] });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 it("adds and submits an employee number without names or a registered account, preventing duplicates", async () => {
   mount();
@@ -54,7 +57,7 @@ it("adds and submits an employee number without names or a registered account, p
   expect(add.disabled).toBe(true);
   fireEvent.change(search, { target: { value: " 000001 " } });
   expect(add.disabled).toBe(false);
-  fireEvent.click(add);
+  await act(async () => { fireEvent.click(add); });
   await screen.findByText("รหัสพนักงาน 000001");
   expect(mock.match).toHaveBeenCalledWith(["000001"]);
   for (const label of ["รหัสพนักงาน", "ชื่อ", "นามสกุล", "ตำแหน่ง", "สังกัด"]) {
@@ -80,10 +83,14 @@ it("shows an unnamed traveler in details and allows adding another number while 
   fireEvent.click(screen.getByRole("button", { name: "ดูรายละเอียดคำสั่ง work-1" }));
   expect(screen.getByText("รอข้อมูลจากบัญชีผู้ใช้")).toBeTruthy();
   expect(screen.getByText("ยังไม่เชื่อมบัญชี")).toBeTruthy();
+  const details = screen.getByRole("dialog");
   fireEvent.click(screen.getByText("ปิด", { selector: "button" }));
-  fireEvent.click(await screen.findByRole("button", { name: "แก้ไขคำสั่ง work-1" }));
+  await waitFor(() => expect(details.isConnected).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "แก้ไขคำสั่ง work-1" }));
   fireEvent.change(screen.getByPlaceholderText("ค้นหาชื่อ / รหัสพนักงาน"), { target: { value: "000002" } });
-  fireEvent.click(screen.getByRole("button", { name: "เพิ่มด้วยรหัสพนักงาน" }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "เพิ่มด้วยรหัสพนักงาน" }));
+  });
   await screen.findByText("รหัสพนักงาน 000002");
   const update = screen.getByRole("button", { name: "อัปเดต" }) as HTMLButtonElement;
   await waitFor(() => expect(update.disabled).toBe(false));
@@ -99,7 +106,9 @@ it("immediately displays a registered account and submits its full profile", asy
   mount();
   fireEvent.click(screen.getByRole("button", { name: "เพิ่มคำสั่ง" }));
   fireEvent.change(screen.getByPlaceholderText("ค้นหาชื่อ / รหัสพนักงาน"), { target: { value: "000001" } });
-  fireEvent.click(screen.getByRole("button", { name: "เพิ่มด้วยรหัสพนักงาน" }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "เพิ่มด้วยรหัสพนักงาน" }));
+  });
   await screen.findByText("ชื่อจากบัญชี นามสกุล");
   expect(screen.getByText("ช่างจากบัญชี")).toBeTruthy();
   expect(screen.queryByText("รอเชื่อมบัญชี · เก็บเฉพาะรหัสพนักงาน")).toBeNull();
@@ -116,7 +125,9 @@ it.each(["service", "transport"])("does not treat a %s lookup failure as an unre
   fireEvent.click(screen.getByRole("button", { name: "เพิ่มคำสั่ง" }));
   const search = screen.getByPlaceholderText("ค้นหาชื่อ / รหัสพนักงาน") as HTMLInputElement;
   fireEvent.change(search, { target: { value: "000001" } });
-  fireEvent.click(screen.getByRole("button", { name: "เพิ่มด้วยรหัสพนักงาน" }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "เพิ่มด้วยรหัสพนักงาน" }));
+  });
   await waitFor(() => expect(mock.toast).toHaveBeenCalled());
   expect(search.value).toBe("000001");
   expect(screen.queryByText("รหัสพนักงาน 000001")).toBeNull();
