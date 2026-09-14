@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { canAny } from "@/lib/auth/permissions";
+import { PrintRouteLayout } from "@/components/claim-print/print-route-layout";
 
 interface MrcLayoutProps {
   children: React.ReactNode;
@@ -25,9 +26,5 @@ export default async function MrcLayout({ children }: MrcLayoutProps) {
     redirect("/");
   }
 
-  return (
-    <div className="container mx-auto max-w-7xl px-4 py-8">
-      <div className="space-y-6">{children}</div>
-    </div>
-  );
+  return <PrintRouteLayout>{children}</PrintRouteLayout>;
 }

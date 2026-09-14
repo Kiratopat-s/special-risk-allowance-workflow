@@ -16,6 +16,10 @@
  */
 
 import { monthlyRequestCollectionRepository as repo } from "./repository";
+import { resolveCollectionReadAccess } from "./read-access";
+import { canSeeCollection } from "./read-policy";
+import { toClaimPrintDocument } from "@/lib/domains/expense-claim-document/print-data";
+import type { ClaimPrintDocument } from "@/lib/shared/types/claim-print";
 import { permissionRepository } from "@/lib/domains/permission/repository";
 import { actionLogService } from "@/lib/domains/action-log/service";
 import { notificationService } from "@/lib/domains/notification";
@@ -46,6 +50,18 @@ function normalizeMonth(value: Date | string): Date {
 }
 
 export const monthlyRequestCollectionService = {
+    async getClaimsPrintData(id: string, actorId: string): Promise<Result<ClaimPrintDocument[]>> {
+        const access = await resolveCollectionReadAccess(actorId);
+        if (!access.success) return access;
+        const collection = await repo.findPrintAccess(id);
+        if (!collection) return error("ไม่พบชุดรวบรวมรายเดือน", "MRC_NOT_FOUND");
+        if (!canSeeCollection(collection, access.data)) {
+            return error("ไม่มีสิทธิ์อ่านชุดรวบรวมรายเดือนนี้", "PERMISSION_DENIED");
+        }
+        const data = await repo.findClaimsForPrint(id, access.data);
+        if (!data) return error("ไม่พบชุดรวบรวมรายเดือนที่อ่านได้", "MRC_NOT_FOUND");
+        return success(data.expenseClaims.map(toClaimPrintDocument));
+    },
     // -----------------------------------------------------------------------
     // Queries
     // -----------------------------------------------------------------------

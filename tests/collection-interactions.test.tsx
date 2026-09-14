@@ -10,6 +10,7 @@ import {
 import { ThemeProvider } from "@mui/material/styles";
 import userEvent from "@testing-library/user-event";
 import { workflowTheme } from "@/components/workflow-ui/theme";
+import type { MonthlyRequestCollectionWithRelations } from "@/lib/domains/monthly-request-collection/types";
 const mock = vi.hoisted(() => ({
   eligible: vi.fn(),
   create: vi.fn(),
@@ -52,6 +53,24 @@ beforeEach(() => {
   mock.create.mockResolvedValue({ success: false, error: "fixture failure" });
 });
 afterEach(cleanup);
+it.each(["DRAFT", "APPROVED"] as const)("keeps the packet preview separate from the monthly summary for %s", async (status) => {
+  const collection: MonthlyRequestCollectionWithRelations = {
+    id: "mrc-1", collectorId: "me", collectForMonth: new Date("2026-09-01"),
+    countDates: null, amount: null, status, createdAt: new Date("2026-09-01"),
+    updatedAt: null, cancelledAt: null, expenseClaims: [], approvalSteps: [],
+    collector: { id: "me", firstName: "ผู้", lastName: "ทดสอบ", employeeId: "000001" },
+  };
+  render(<ThemeProvider theme={workflowTheme}><MrcClient initialItems={[collection]} initialPagination={null} canManage canHpa={false} canRk={false} canDrt={false} /></ThemeProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "ดูรายละเอียด mrc-1" }));
+  const link = await screen.findByRole("link", { name: "ดูตัวอย่างใบคำขอทั้งชุด" });
+  expect(link.getAttribute("href")).toBe("/monthly-request-collection/mrc-1/claims/print");
+  expect(link.getAttribute("target")).toBe("_blank");
+  if (status === "APPROVED") {
+    expect(screen.getByRole("link", { name: "พิมพ์สรุปรายเดือน" }).getAttribute("href")).toBe("/monthly-request-collection/mrc-1/print");
+  } else {
+    expect(screen.queryByRole("link", { name: "พิมพ์สรุปรายเดือน" })).toBeNull();
+  }
+});
 it("toggles a collection row checkbox once per click or Space without also toggling its row", async () => {
   render(<ThemeProvider theme={workflowTheme}><MrcClient initialItems={[]} initialPagination={null} canManage canHpa={false} canRk={false} canDrt={false} /></ThemeProvider>);
   await userEvent.click(screen.getByRole("button", { name: "สร้างรายการ" }));

@@ -715,8 +715,8 @@ export function MrcClient({
                             size="icon"
                             className="h-8 w-8"
                             asChild
-                            title="พิมพ์"
-                            aria-label={`พิมพ์ ${item.id}`}
+                            title="พิมพ์สรุปรายเดือน"
+                            aria-label={`พิมพ์สรุปรายเดือน ${item.id}`}
                           >
                             <a
                               href={`/monthly-request-collection/${item.id}/print`}
@@ -1012,6 +1012,14 @@ export function MrcClient({
           <Button variant="outline" onClick={() => setMode(null)}>
             ปิด
           </Button>
+          {selected && (
+            <Button asChild variant="outline">
+              <a href={`/monthly-request-collection/${selected.id}/claims/print`} target="_blank" rel="noreferrer">
+                <ClipboardList className="h-4 w-4" />
+                ดูตัวอย่างใบคำขอทั้งชุด
+              </a>
+            </Button>
+          )}
           {selected?.status === "APPROVED" && (
             <Button asChild>
               <a
@@ -1020,7 +1028,7 @@ export function MrcClient({
                 rel="noreferrer"
               >
                 <Printer className="h-4 w-4" />
-                พิมพ์
+                พิมพ์สรุปรายเดือน
               </a>
             </Button>
           )}

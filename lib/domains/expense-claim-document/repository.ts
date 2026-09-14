@@ -7,6 +7,7 @@
  */
 
 import { claimWhere, claimOrderBy } from "./read-query";
+import { claimPrintSelect } from "./print-data";
 import { prisma } from "@/lib/db";
 import { Prisma } from "@/lib/generated/prisma/client";
 import { sanitizeStrings } from "@/lib/shared/sanitize";
@@ -71,6 +72,12 @@ function serializeDecimalFields<T extends { countDates: unknown; amount: unknown
 }
 
 export const expenseClaimDocumentRepository = {
+    async findForPrint(id: string, userId: string) {
+        return prisma.expenseClaim.findFirst({
+            where: { id, userId, cancelledAt: null, status: { not: "CANCELLED" } },
+            select: claimPrintSelect,
+        });
+    },
     /**
      * Find off-site work options eligible for claim creation for a specific user.
      * - Related to user: posted by user OR listed in employee_list JSON
@@ -343,4 +350,3 @@ export const expenseClaimDocumentRepository = {
         };
     },
 };
-

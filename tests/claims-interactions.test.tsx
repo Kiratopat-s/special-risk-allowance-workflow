@@ -297,6 +297,13 @@ describe("claim presentation preserves behavior", () => {
     await waitFor(() => expect(mock.detail).toHaveBeenCalledWith(claim.id));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+  it("offers the individual preview in a new tab after loading a readable claim", async () => {
+    mock.detail.mockResolvedValue({ success: true, data: claim });
+    mount([claim], claim.id);
+    const link = await screen.findByRole("link", { name: "ดูตัวอย่างใบคำขอ" });
+    expect(link.getAttribute("href")).toBe("/expense-claim-document/claim-1/print");
+    expect(link.getAttribute("target")).toBe("_blank");
+  });
   it("keeps the working filters in the navigation URL", () => {
     mock.query = new URLSearchParams("tab=expense-claims&page=4&month=2026-09");
     mount();

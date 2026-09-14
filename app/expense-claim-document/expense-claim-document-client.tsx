@@ -1515,6 +1515,14 @@ export function ExpenseClaimDocumentClient({
           >
             ปิด
           </Button>
+          {selected && selected.status !== "CANCELLED" && (
+            <Button asChild>
+              <a href={`/expense-claim-document/${selected.id}/print`} target="_blank" rel="noreferrer">
+                <FileText className="h-4 w-4" />
+                ดูตัวอย่างใบคำขอ
+              </a>
+            </Button>
+          )}
         </DialogFooter>
       </Dialog>
 

@@ -7,6 +7,9 @@
  */
 
 import { expenseClaimDocumentRepository } from "./repository";
+import { can } from "@/lib/auth/permissions";
+import { toClaimPrintDocument } from "./print-data";
+import type { ClaimPrintDocument } from "@/lib/shared/types/claim-print";
 import { offSiteWorkEmployeeService } from "@/lib/domains/off-site-work/employee-service";
 import { actionLogService } from "@/lib/domains/action-log/service";
 import { leaderVerificationService } from "@/lib/domains/leader-verification";
@@ -44,6 +47,17 @@ function isIsoDate(value: string): boolean {
 }
 
 export const expenseClaimDocumentService = {
+    async getPrintData(id: string, actorId: string): Promise<Result<ClaimPrintDocument>> {
+        const claim = await expenseClaimDocumentRepository.findById(id);
+        if (!claim || claim.status === "CANCELLED") {
+            return error("ไม่พบคำขอเบิก", "CLAIM_NOT_FOUND");
+        }
+        if (!(await can(actorId, "EXPENSE_CLAIM", "READ", { targetOwnerId: claim.userId }))) {
+            return error("ไม่มีสิทธิ์อ่านคำขอเบิกนี้", "PERMISSION_DENIED");
+        }
+        const data = await expenseClaimDocumentRepository.findForPrint(id, claim.userId);
+        return data ? success(toClaimPrintDocument(data)) : error("ไม่พบคำขอเบิก", "CLAIM_NOT_FOUND");
+    },
     /**
      * List eligible off-site works for claim creation
      */

@@ -1,0 +1,74 @@
+@font-face { font-family: ClaimSarabun; src: url('/font/THSarabun.ttf') format('truetype'); font-weight: 400; font-display: block; }
+@font-face { font-family: ClaimSarabun; src: url('/font/THSarabun Bold.ttf') format('truetype'); font-weight: 700; font-display: block; }
+@page { size: A4 landscape; margin: 10mm 8mm; }
+
+.claim-print-layout { max-width: none !important; width: 100%; margin: 0; padding: 0; }
+.claim-print-preview { background: #e5e7eb; color: #111; min-height: 100vh; padding: 24px 0; }
+.claim-print-toolbar { font-family: system-ui, sans-serif; max-width: 1100px; margin: 0 auto 24px; padding: 20px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; }
+.claim-print-toolbar h1 { font-size: 20px; font-weight: 700; margin: 0 0 8px; }
+.claim-print-toolbar p { margin: 8px 0; }
+.claim-print-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.claim-print-actions button { border: 1px solid #334155; background: #0f172a; color: white; border-radius: 5px; padding: 8px 16px; cursor: pointer; }
+.claim-print-actions button:disabled { opacity: .5; cursor: wait; }
+.claim-print-warning { margin-top: 16px; color: #78350f; }
+.claim-print-warning ul { padding-left: 24px; list-style: disc; }
+.claim-print-error { color: #b91c1c; }
+.claim-print-scroll { overflow-x: auto; padding: 0 16px 16px; }
+/* Leave 1mm for print-engine rounding so Safari does not insert a blank sheet. */
+.claim-print-sheet { position: relative; width: 281mm; height: 189mm; margin: 0 auto 24px; background: white; color: black; font: 14pt/1.1 ClaimSarabun, sans-serif; box-shadow: 0 2px 12px #0002; }
+.claim-print-sheet *, .claim-print-sheet *::before, .claim-print-sheet *::after { box-sizing: border-box; }
+.claim-print-sheet p, .claim-print-sheet h1 { margin: 0; }
+.claim-form-header { display: table; width: 100%; height: 43mm; table-layout: fixed; border: .3mm solid black; }
+.claim-form-logo { width: 55mm; border-right: .25mm solid black; display: table-cell; vertical-align: middle; text-align: center; padding: 2mm; }
+.claim-form-logo img { display: block; margin: 0 auto; width: 31mm; height: 31mm; object-fit: contain; }
+.claim-form-logo strong { display: block; font: 700 11pt/1.2 system-ui, sans-serif; }
+.claim-form-logo small { display: block; font: 700 5.5pt/1.3 Arial, sans-serif; margin-top: 1mm; }
+.claim-form-title { text-align: center; display: table-cell; vertical-align: middle; padding: 4mm; }
+.claim-form-title h1 { font-size: 21pt; font-weight: 400; line-height: 1.15; margin-bottom: 10mm; }
+.claim-form-title p { font-size: 17pt; }
+.claim-form-title span { display: inline-block; min-width: 25mm; border-bottom: .25mm dotted black; }
+.claim-form-title span:first-child { min-width: 65mm; }
+.claim-form-person { display: grid; grid-template-columns: 1.7fr 1fr 1fr; gap: 4mm; min-height: 17mm; align-items: center; padding: 3mm 8mm; border: .25mm solid black; border-top: 0; font-size: 16pt; }
+.claim-form-person p { display: flex; align-items: baseline; gap: 1mm; }
+.claim-form-person span { min-width: 0; flex: 1; border-bottom: .25mm dotted black; overflow-wrap: anywhere; }
+.claim-print-sheet table { border-collapse: collapse; width: 100%; table-layout: fixed; margin: 0; flex-shrink: 0; }
+.claim-print-sheet th, .claim-print-sheet td { border: .25mm solid black; text-align: center; font-weight: 400; padding: 1mm; overflow-wrap: anywhere; }
+.claim-form-calendar th { height: 7mm; border-top: 0; }
+.claim-form-calendar td { height: 7mm; padding: 0; }
+.claim-form-total { width: 13%; }
+.claim-form-calendar .claim-day-total { font-size: 18pt; }
+.claim-day-mark { position: relative; }
+.claim-day-mark svg { display: block; position: absolute; inset: 0; width: 100%; height: 100%; }
+.claim-day-mark line { stroke: #000; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.claim-day-unavailable::after { content: ''; position: absolute; left: 15%; right: 15%; top: 50%; border-top: .25mm solid black; }
+.claim-form-orders th { height: 9mm; border-top: 0; }
+.claim-form-orders tbody tr { height: 11mm; break-inside: avoid; page-break-inside: avoid; }
+.claim-form-orders td { border-bottom-style: dotted; vertical-align: middle; white-space: pre-wrap; }
+.claim-form-orders tr:last-child td { border-bottom-style: solid; }
+.claim-form-signature { height: 6mm; display: flex; align-items: center; justify-content: center; }
+.claim-form-signature img { max-width: 100%; max-height: 6mm; object-fit: contain; }
+.claim-form-leader, .claim-form-position { font-size: 11pt; }
+.claim-form-notes { margin-top: 3mm; flex-shrink: 0; }
+.claim-form-note-label { line-height: 6mm; }
+.claim-form-note-text { font-size: 14pt; line-height: 6mm; white-space: pre-wrap; overflow-wrap: anywhere; border-bottom: .2mm dotted #888; }
+.claim-form-footer { position: absolute; bottom: 0; width: 100%; padding-top: 2mm; min-height: 7mm; display: flex; justify-content: space-between; align-items: end; gap: 4mm; font-size: 10pt; line-height: 1.1; overflow-wrap: anywhere; }
+.claim-print-measurement { position: absolute; top: 0; left: -100000px; visibility: hidden; pointer-events: none; }
+.claim-print-measurement .claim-print-sheet { height: auto; min-height: 189mm; }
+.claim-print-measurement .claim-form-footer { position: static; }
+.claim-print-paper-height { height: 189mm; }
+.claim-print-row-height { height: 11mm; }
+.claim-print-line-height { height: 6mm; }
+.claim-print-note-overhead { height: 9mm; }
+.claim-print-guard { display: none; }
+
+@media print {
+  html:has(.claim-print-preview), body:has(.claim-print-preview) { display: block !important; height: auto !important; margin: 0 !important; padding: 0 !important; background: white !important; min-height: 0 !important; color-scheme: light; }
+  .claim-print-layout { margin: 0 !important; padding: 0 !important; }
+  .claim-print-preview { min-height: 0; background: white; padding: 0; }
+  .claim-print-toolbar, .claim-print-measurement { display: none !important; }
+  .claim-print-scroll { overflow: visible; padding: 0; }
+  .claim-print-sheet { box-shadow: none; margin: 0; break-inside: avoid; page-break-inside: avoid; break-after: page; page-break-after: always; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .claim-print-sheet:last-child { break-after: auto; page-break-after: auto; }
+  .claim-print-preview[data-ready='false'] .claim-print-scroll { display: none !important; }
+  .claim-print-preview[data-ready='false'] .claim-print-guard { display: block; color: black; }
+}

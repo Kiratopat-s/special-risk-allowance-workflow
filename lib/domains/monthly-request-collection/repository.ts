@@ -5,6 +5,8 @@
  */
 
 import { prisma } from "@/lib/db";
+import { claimPrintSelect } from "@/lib/domains/expense-claim-document/print-data";
+import { collectionVisibilityWhere, type CollectionReadAccess } from "./read-policy";
 import type {
     MonthlyRequestCollectionEntity,
     MonthlyRequestCollectionWithRelations,
@@ -62,6 +64,30 @@ function normalizeMonth(value: Date | string): Date {
 // ---------------------------------------------------------------------------
 
 export const monthlyRequestCollectionRepository = {
+    async findPrintAccess(id: string) {
+        return prisma.monthlyRequestCollection.findUnique({
+            where: { id },
+            select: { collectorId: true, status: true, approvalSteps: { select: { stage: true, status: true } } },
+        });
+    },
+
+    async findClaimsForPrint(id: string, access: CollectionReadAccess) {
+        return prisma.monthlyRequestCollection.findFirst({
+            where: { AND: [{ id }, collectionVisibilityWhere(access)] },
+            select: {
+                expenseClaims: {
+                    where: { cancelledAt: null, status: { not: "CANCELLED" } },
+                    orderBy: [
+                        { claimant: { employeeId: "asc" } },
+                        { claimant: { firstName: "asc" } },
+                        { claimant: { lastName: "asc" } },
+                        { id: "asc" },
+                    ],
+                    select: claimPrintSelect,
+                },
+            },
+        });
+    },
     // -----------------------------------------------------------------------
     // Read
     // -----------------------------------------------------------------------
