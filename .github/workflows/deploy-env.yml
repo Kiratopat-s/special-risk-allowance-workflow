@@ -22,6 +22,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Verify Node runtime
+        run: node --version
+
       - name: Set immutable image and deployment version
         env:
           RELEASE_LABEL: ${{ inputs.image_tag }}
@@ -109,8 +117,34 @@ jobs:
         env:
           APP_PORT: ${{ vars.APP_PORT }}
         run: |
-          response=$(curl --fail --silent "http://127.0.0.1:${APP_PORT:-3000}/api/version")
-          VERSION_RESPONSE="$response" node -e 'if (JSON.parse(process.env.VERSION_RESPONSE).version !== process.env.DEPLOYMENT_VERSION) process.exit(1)'
+          response=$(curl --fail --silent --show-error "http://127.0.0.1:${APP_PORT:-3000}/api/version")
+          VERSION_RESPONSE="$response" node <<'NODE'
+          const expected = process.env.DEPLOYMENT_VERSION;
+          if (!expected) {
+            console.error("Deployment verification failed: expected DEPLOYMENT_VERSION is missing.");
+            process.exit(1);
+          }
+
+          let data;
+          try {
+            data = JSON.parse(process.env.VERSION_RESPONSE);
+          } catch {
+            console.error("Deployment verification failed: /api/version returned invalid JSON.");
+            process.exit(1);
+          }
+
+          if (!data || typeof data.version !== "string" || !data.version.trim()) {
+            console.error("Deployment verification failed: /api/version is missing a non-empty version string.");
+            process.exit(1);
+          }
+
+          if (data.version !== expected) {
+            console.error(`Deployment version mismatch: expected ${JSON.stringify(expected)}, actual ${JSON.stringify(data.version)}.`);
+            process.exit(1);
+          }
+
+          console.log(`Deployment version verified: ${expected}`);
+          NODE
 
       - name: Clean up .env
         if: always()
