@@ -1,5 +1,7 @@
 "use client";
 
+import { runServerAction } from "@/lib/deployment/client";
+
 /**
  * LeaderVerificationSection
  *
@@ -54,8 +56,9 @@ export function LeaderVerificationSection({
 
   const handleRefresh = async (verificationId: string) => {
     setRefreshing(verificationId);
-    const res = await refreshVerificationToken(verificationId);
+    const res = await runServerAction(() => refreshVerificationToken(verificationId));
     setRefreshing(null);
+    if (res === undefined) return;
     if (!res.success) {
       toast.error("ต่ออายุลิงก์ไม่สำเร็จ", { description: res.error });
       return;

@@ -159,11 +159,13 @@ Manages organizational departments with hierarchy support.
 ### Repository (`department/repository.ts`)
 
 ```typescript
-import { departmentRepository } from "@/lib/domains/department";
+import { departmentRepository, departmentService } from "@/lib/domains/department";
 
 const dept = await departmentRepository.findById(id);
 const dept = await departmentRepository.findByName(name);
-const dept = await departmentRepository.findOrCreateByName(name, shortName);
+const result = await departmentService.resolveFromKeycloak({ name, shortName });
+// result.success && result.data contains a resolved department.
+// null keeps existing membership (or leaves a new user unassigned).
 const depts = await departmentRepository.findAll();
 const depts = await departmentRepository.findChildren(parentId);
 ```

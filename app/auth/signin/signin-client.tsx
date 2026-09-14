@@ -25,7 +25,9 @@ export function SignInClient({ callbackUrl, error }: SignInClientProps) {
     <div className="space-y-5">
       {error ? (
         <div className="rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-sm text-destructive">
-          ไม่สามารถเข้าสู่ระบบได้ กรุณาลองใหม่อีกครั้ง
+          {error === "AccessDenied"
+            ? "ไม่สามารถเตรียมข้อมูลบัญชีเพื่อเข้าสู่ระบบได้ กรุณาลองใหม่อีกครั้ง หากยังพบปัญหาให้ติดต่อผู้ดูแลระบบ"
+            : "ไม่สามารถเข้าสู่ระบบได้ กรุณาลองใหม่อีกครั้ง"}
         </div>
       ) : null}
 

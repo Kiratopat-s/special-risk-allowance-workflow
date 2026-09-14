@@ -1,12 +1,12 @@
 vi.mock("@/lib/domains/off-site-work/employee-service", () => ({ offSiteWorkEmployeeService: { linkForUser: vi.fn(async () => ({ success: true, data: 0 })), prepare: vi.fn(async (data) => ({ success: true, data })) } }));
 vi.mock("./repository");
 vi.mock("@/lib/domains/action-log/service");
-vi.mock("@/lib/domains/department/repository");
+vi.mock("@/lib/domains/department/service");
 vi.mock("@/lib/domains/permission/repository");
 
 import { userRepository } from "./repository";
 import { actionLogService } from "@/lib/domains/action-log/service";
-import { departmentRepository } from "@/lib/domains/department/repository";
+import { departmentService } from "@/lib/domains/department/service";
 import { userRoleRepository, roleRepository } from "@/lib/domains/permission/repository";
 import { userService } from "./service";
 
@@ -21,7 +21,9 @@ const repo = userRepository as unknown as {
 };
 
 const mockLogService = actionLogService as unknown as { log: vi.Mock };
-const mockDeptRepo = departmentRepository as unknown as { findOrCreateByName: vi.Mock };
+const mockDeptService = departmentService as unknown as { resolveFromKeycloak: vi.Mock };
+
+beforeEach(() => { mockDeptService.resolveFromKeycloak.mockResolvedValue({ success: true, data: null }); });
 const mockRoleRepo = roleRepository as unknown as { findByCode: vi.Mock };
 const mockUserRoleRepo = userRoleRepository as unknown as { assign: vi.Mock };
 
@@ -52,6 +54,27 @@ describe("userService", () => {
       positionShort: "Eng",
       positionLevel: "L5",
     };
+
+    it.each([null, makeUser({ departmentId: "keep-department" })])("continues without changing membership on an unresolved conflict", async (existing) => {
+      repo.findByKeycloakId.mockResolvedValue(existing);
+      repo.create.mockResolvedValue(makeUser());
+      repo.update.mockResolvedValue(existing);
+      mockRoleRepo.findByCode.mockResolvedValue(null);
+      const result = await userService.syncFromKeycloak({ ...profile, department: "conflicting name", departmentShort: "conflicting abbreviation" });
+      expect(result.success).toBe(true);
+      if (existing) {
+        expect(repo.update).toHaveBeenCalledWith(existing.id, expect.objectContaining({ departmentId: undefined }));
+      } else {
+        expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ departmentId: undefined }));
+      }
+    });
+
+    it("does not create a user after a department storage failure", async () => {
+      mockDeptService.resolveFromKeycloak.mockResolvedValue({ success: false, error: "unavailable", code: "DEPARTMENT_SYNC_FAILED" });
+      expect(await userService.syncFromKeycloak(profile)).toMatchObject({ success: false });
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(repo.update).not.toHaveBeenCalled();
+    });
 
     it("creates new user and assigns default employee role", async () => {
       repo.findByKeycloakId.mockResolvedValue(null);
@@ -111,11 +134,12 @@ describe("userService", () => {
       repo.create.mockResolvedValue(makeUser());
       mockLogService.log.mockResolvedValue({});
       mockRoleRepo.findByCode.mockResolvedValue(null);
-      mockDeptRepo.findOrCreateByName.mockResolvedValue({ id: "dept1" });
+      mockDeptService.resolveFromKeycloak.mockResolvedValue({ success: true, data: { id: "dept1" } });
 
       await userService.syncFromKeycloak({ ...profile, department: "IT", departmentShort: "IT" });
 
-      expect(mockDeptRepo.findOrCreateByName).toHaveBeenCalledWith("IT", "IT");
+      expect(mockDeptService.resolveFromKeycloak).toHaveBeenCalledWith({ name: "IT", shortName: "IT" }, "keycloak-sync");
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ departmentId: "dept1" }));
     });
   });
 

@@ -1,4 +1,6 @@
 "use client";
+
+import { runServerAction } from "@/lib/deployment/client";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -187,7 +189,8 @@ export function ExpenseClaimDocumentClient({
     let cancelled = false;
 
     const openInitialClaim = async () => {
-      const result = await getExpenseClaimDocument(initialViewId);
+      const result = await runServerAction(() => getExpenseClaimDocument(initialViewId));
+      if (result === undefined) return;
       if (!cancelled) {
         if (result.success) {
           setSelected(result.data);
@@ -214,7 +217,8 @@ export function ExpenseClaimDocumentClient({
         setMode((current) => (current === "view" ? null : current));
         return;
       }
-      const result = await getExpenseClaimDocument(id);
+      const result = await runServerAction(() => getExpenseClaimDocument(id));
+      if (result === undefined) return;
       if (result.success) {
         setSelected(result.data);
         setMode("view");
@@ -294,12 +298,13 @@ export function ExpenseClaimDocumentClient({
 
   const refresh = useCallback(
     async (nextPage = page, nextSearch = search) => {
-      const result = await listExpenseClaimDocuments({
+      const result = await runServerAction(() => listExpenseClaimDocuments({
         ...filters,
         page: nextPage,
         pageSize: PAGE_SIZE,
         search: nextSearch || undefined,
-      });
+      }));
+      if (result === undefined) return;
 
       if (!result.success) {
         toast.error("ไม่สามารถโหลดข้อมูลได้", { description: result.error });
@@ -321,7 +326,9 @@ export function ExpenseClaimDocumentClient({
       savedDates?: string[] | null,
     ) => {
       setIsLoadingEligibleOffSites(true);
-      const result = await listEligibleOffSiteWorksForClaim(monthValue);
+      const result = await runServerAction(() => listEligibleOffSiteWorksForClaim(monthValue));
+      setIsLoadingEligibleOffSites(false);
+      if (result === undefined) return;
       if (!result.success) {
         toast.error("ไม่สามารถโหลด Off-site Work ได้", {
           description: result.error,
@@ -480,7 +487,7 @@ export function ExpenseClaimDocumentClient({
     }
 
     startTransition(async () => {
-      const result = await createExpenseClaimDocument(
+      const result = await runServerAction(() => createExpenseClaimDocument(
         claimCreatePayload(
           form,
           selectedOffSiteWorkIds,
@@ -489,7 +496,8 @@ export function ExpenseClaimDocumentClient({
           totalAmount,
           status,
         ),
-      );
+      ));
+      if (result === undefined) return;
 
       if (!result.success) {
         toast.error("สร้างเอกสารไม่สำเร็จ", { description: result.error });
@@ -518,10 +526,11 @@ export function ExpenseClaimDocumentClient({
     if (!selected) return;
 
     startTransition(async () => {
-      const result = await updateExpenseClaimDocument(
+      const result = await runServerAction(() => updateExpenseClaimDocument(
         selected.id,
         toUpdatePayload(),
-      );
+      ));
+      if (result === undefined) return;
 
       if (!result.success) {
         toast.error("แก้ไขเอกสารไม่สำเร็จ", { description: result.error });
@@ -538,7 +547,8 @@ export function ExpenseClaimDocumentClient({
     if (!selected) return;
 
     startTransition(async () => {
-      const result = await deleteExpenseClaimDocument(selected.id);
+      const result = await runServerAction(() => deleteExpenseClaimDocument(selected.id));
+      if (result === undefined) return;
 
       if (!result.success) {
         toast.error("ยกเลิกเอกสารไม่สำเร็จ", { description: result.error });
@@ -577,7 +587,8 @@ export function ExpenseClaimDocumentClient({
     }
 
     startTransition(async () => {
-      const result = await submitDraftExpenseClaimDocument(item.id);
+      const result = await runServerAction(() => submitDraftExpenseClaimDocument(item.id));
+      if (result === undefined) return;
       if (!result.success) {
         toast.error("ส่งเอกสารไม่สำเร็จ", { description: result.error });
         return;
@@ -603,10 +614,11 @@ export function ExpenseClaimDocumentClient({
 
     startTransition(async () => {
       // Step 1: save updated OSW links
-      const updateResult = await updateExpenseClaimDocument(
+      const updateResult = await runServerAction(() => updateExpenseClaimDocument(
         selected.id,
         toUpdatePayload(),
-      );
+      ));
+      if (updateResult === undefined) return;
       if (!updateResult.success) {
         toast.error("อัปเดตเอกสารไม่สำเร็จ", {
           description: updateResult.error,
@@ -615,7 +627,8 @@ export function ExpenseClaimDocumentClient({
       }
 
       // Step 2: submit the draft
-      const submitResult = await submitDraftExpenseClaimDocument(selected.id);
+      const submitResult = await runServerAction(() => submitDraftExpenseClaimDocument(selected.id));
+      if (submitResult === undefined) return;
       if (!submitResult.success) {
         toast.error("ส่งเอกสารไม่สำเร็จ", {
           description: submitResult.error,

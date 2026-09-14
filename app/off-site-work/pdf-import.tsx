@@ -1,5 +1,7 @@
 "use client";
 
+import { runServerAction } from "@/lib/deployment/client";
+
 import { useEffect, useRef, useState } from "react";
 import { FileUp, Loader2 } from "lucide-react";
 import { Button } from "@/components/workflow-ui/button";
@@ -67,7 +69,8 @@ export function PdfImport({ protectedFields, currentFields, disabled, onApply, o
       if (current.signal.aborted) return;
       if (!result.success) { setMessage(result.error); return; }
       const codes = result.data.employees.flatMap((employee) => employee.employeeId && /^\d{6}$/.test(employee.employeeId) ? [employee.employeeId] : []);
-      const matches = await matchOffSiteWorkEmployees(codes);
+      const matches = await runServerAction(() => matchOffSiteWorkEmployees(codes));
+      if (matches === undefined) return;
       if (current.signal.aborted) return;
       const employees = result.data.employees.map((employee) =>
         matches.success ? matches.data.find((user) => user.employeeId === employee.employeeId) || employee : employee);

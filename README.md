@@ -313,6 +313,8 @@ From the repository root on the server, run:
 
 ```bash
 git pull --ff-only
+export DEPLOYMENT_VERSION="$(git rev-parse --short=12 HEAD)-$(date -u +%Y%m%dT%H%M%SZ)"
+export IMAGE_TAG="$DEPLOYMENT_VERSION"
 docker compose --env-file .env build app migrate
 docker compose --env-file .env --profile ops run --rm migrate
 docker compose --env-file .env up -d --remove-orphans app
@@ -333,7 +335,62 @@ Check readiness through the host proxy or locally on the server:
 
 ```bash
 curl --fail http://127.0.0.1:3000/api/health
+curl --fail http://127.0.0.1:3000/api/version
 ```
+
+Generate a fresh deployment version for every image build, including rebuilds of
+the same revision. Keep the exported image tag through the deploy commands. The
+Docker build requires this version and embeds it in the server and browser;
+changing runtime environment variables cannot change an already built version.
+GitHub Actions generates a version from the revision, UTC timestamp, run ID, and
+attempt, uses an immutable image tag, and verifies `/api/version` after startup.
+Keep the previous image tag for rollback; do not rebuild it under the same tag.
+
+Tabs check the version when visible, on focus, and once per minute while visible.
+When a new build is detected, a persistent refresh notice appears, including
+inside edit dialogs. Further Server Actions stop until the user refreshes; inputs
+remain available to copy and submissions are never replayed automatically. Tabs
+opened before this recovery code was deployed need one manual refresh. An
+unavailable version endpoint is ignored; it does not prove that a build changed.
+
+Keycloak department sync matches both name and short name. It reuses a single
+matching record without renaming it. If the two fields identify different rows,
+sign-in continues and synchronizes other profile fields, preserving existing
+department membership or leaving a new account unassigned. Server warnings tagged
+`[department-sync]` report the incoming values, matching records, and sync source.
+Resolve these discrepancies in the department/Keycloak data deliberately; seeds
+retain their stricter conflict-reporting behavior. Storage failures prevent a new
+application session and send the user to a retryable sign-in error page.
+
+Run `bun run test:department-db` to test sign-in and seed concurrency using a
+disposable PostgreSQL container. It never uses the application's database.
+
+To repeat the two-build browser recovery check locally, build disposable images:
+
+```bash
+node scripts/build-deployment-fixture.mjs check-a
+node scripts/build-deployment-fixture.mjs check-b
+docker run --rm -d --name sraw-recovery-check -p 127.0.0.1:3301:3000 -e AUTH_SECRET=local-validation-only sraw-deployment-validation:check-a
+```
+
+Open `http://127.0.0.1:3301/deployment-validation`, submit once, then type an
+unfinished draft. Keep the tab open while replacing its container:
+
+```bash
+docker stop sraw-recovery-check
+docker run --rm -d --name sraw-recovery-check -p 127.0.0.1:3301:3000 -e AUTH_SECRET=local-validation-only sraw-deployment-validation:check-b
+```
+
+The notice should appear on the next visible-tab check or failed old action.
+Verify the draft stays intact and further submissions stop. Copy the draft,
+click the notice's refresh button, and submit it on build B. The result should
+show build B with `submissions: 1`. Stop the test container with
+`docker stop sraw-recovery-check` when finished. The fixture has no database
+access and is injected only into these validation images; never deploy them.
+Normal application builds do not contain its route.
+
+After rollout, verify `/api/version` matches the image's build version and
+review `[department-sync]` warnings and missing-action errors after users refresh.
 
 The app container has no persistent volume: application files are immutable
 and uploaded document content is stored in PostgreSQL. Migrations and seeds

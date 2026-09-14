@@ -1,5 +1,7 @@
 "use client";
 
+import { runServerAction } from "@/lib/deployment/client";
+
 import { shortDateDisplay } from "@/lib/shared/format";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
@@ -204,7 +206,8 @@ export function SignatureClient({
 
   const refreshState = useCallback(() => {
     startTransition(async () => {
-      const res = await getMySignatureState();
+      const res = await runServerAction(() => getMySignatureState());
+      if (res === undefined) return;
       if (res.success) setState(res.data);
     });
   }, [startTransition]);
@@ -234,8 +237,9 @@ export function SignatureClient({
         startTransition(async () => {
           const result =
             editingId !== null
-              ? await updateMySignature(editingId, dataUrl)
-              : await createMySignature(dataUrl);
+              ? await runServerAction(() => updateMySignature(editingId, dataUrl))
+              : await runServerAction(() => createMySignature(dataUrl));
+          if (result === undefined) return;
 
           if (result.success) {
             toast.success(editingId ? "Signature updated" : "Signature saved");
@@ -253,7 +257,8 @@ export function SignatureClient({
   const handleActivate = useCallback(
     (sig: SignatureListItem) => {
       startTransition(async () => {
-        const result = await activateMySignature(sig.id);
+        const result = await runServerAction(() => activateMySignature(sig.id));
+        if (result === undefined) return;
         if (result.success) {
           toast.success("Signature activated");
           refreshState();
@@ -273,7 +278,8 @@ export function SignatureClient({
   const handleDelete = useCallback(() => {
     if (!deleteTarget) return;
     startTransition(async () => {
-      const result = await deleteMySignature(deleteTarget.id);
+      const result = await runServerAction(() => deleteMySignature(deleteTarget.id));
+      if (result === undefined) return;
       if (result.success) {
         toast.success("Signature deleted");
         setDeleteTarget(null);

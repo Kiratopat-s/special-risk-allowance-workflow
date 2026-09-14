@@ -1,4 +1,6 @@
 "use client";
+
+import { runServerAction } from "@/lib/deployment/client";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 import { useUrlFilter } from "@/lib/hooks/use-url-filter";
 import { Table, TableContainer, TableHead, TableBody, TableRow, TableHeader, TableCell } from "@/components/workflow-ui/table";
@@ -96,10 +98,11 @@ export function DepartmentsClient({
   });
 
   const refreshDepartments = async () => {
-    const result = await listAllDepartments({
+    const result = await runServerAction(() => listAllDepartments({
       search: search || undefined,
       // Always fetch all departments to support all filter states
-    });
+    }));
+    if (result === undefined) return;
     if (result.success) setDepartments(result.data);
   };
 
@@ -133,12 +136,13 @@ export function DepartmentsClient({
 
   const handleCreate = () => {
     startTransition(async () => {
-      const result = await createDepartment({
+      const result = await runServerAction(() => createDepartment({
         name: formData.name,
         shortName: formData.shortName || undefined,
         description: formData.description || undefined,
         parentId: formData.parentId || undefined,
-      });
+      }));
+      if (result === undefined) return;
 
       if (result.success) {
         toast.success("Department created", {
@@ -158,7 +162,7 @@ export function DepartmentsClient({
     if (!selectedDepartment) return;
 
     startTransition(async () => {
-      const result = await updateDepartment(selectedDepartment.id, {
+      const result = await runServerAction(() => updateDepartment(selectedDepartment.id, {
         name:
           formData.name !== selectedDepartment.name ? formData.name : undefined,
         shortName:
@@ -173,7 +177,8 @@ export function DepartmentsClient({
           formData.parentId !== (selectedDepartment.parentId || "")
             ? formData.parentId || undefined
             : undefined,
-      });
+      }));
+      if (result === undefined) return;
 
       if (result.success) {
         toast.success("Department updated", {
@@ -193,7 +198,8 @@ export function DepartmentsClient({
     if (!selectedDepartment) return;
 
     startTransition(async () => {
-      const result = await deleteDepartment(selectedDepartment.id);
+      const result = await runServerAction(() => deleteDepartment(selectedDepartment.id));
+      if (result === undefined) return;
 
       if (result.success) {
         toast.success("Department deleted", {
@@ -211,7 +217,8 @@ export function DepartmentsClient({
 
   const handleToggleStatus = (department: DepartmentWithHierarchy) => {
     startTransition(async () => {
-      const result = await toggleDepartmentStatus(department.id);
+      const result = await runServerAction(() => toggleDepartmentStatus(department.id));
+      if (result === undefined) return;
 
       if (result.success) {
         const newStatus = !department.isActive;

@@ -77,26 +77,14 @@ export const departmentRepository = {
         });
     },
 
-    /**
-     * Find or create department by name
-     * Useful for Keycloak sync where department might not exist
-     */
-    async findOrCreateByName(
-        name: string,
-        shortName?: string
-    ): Promise<DepartmentEntity> {
-        const existing = await this.findByName(name);
-
-        if (existing) {
-            return existing;
-        }
-
-        return prisma.department.create({
-            data: {
-                name,
-                shortName,
-            },
-        });
+    /** Read both unique identifiers in one snapshot. */
+    async findByIdentity(name?: string, shortName?: string): Promise<DepartmentEntity[]> {
+        const OR = [
+            ...(name ? [{ name }] : []),
+            ...(shortName ? [{ shortName }] : []),
+        ];
+        if (OR.length === 0) return [];
+        return prisma.department.findMany({ where: { OR } });
     },
 
     /**
@@ -108,8 +96,8 @@ export const departmentRepository = {
         });
     },
 
-    /** Insert seed data without changing rows that share either unique key. */
-    async createIfAbsent(data: { name: string; shortName: string }): Promise<boolean> {
+    /** Insert without changing rows that share either unique key. */
+    async createIfAbsent(data: { name: string; shortName?: string }): Promise<boolean> {
         const { count } = await prisma.department.createMany({
             data: [data],
             skipDuplicates: true,

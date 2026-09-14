@@ -3,6 +3,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
+import { DeploymentAlert } from "@/components/deployment-notice";
 
 // =============================================================================
 // DIALOG (lightweight modal)
@@ -58,6 +59,7 @@ function Dialog({ open, onClose, children, className }: DialogProps) {
           className,
         )}
       >
+        <DeploymentAlert />
         {children}
       </div>
     </div>

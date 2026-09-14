@@ -1,4 +1,6 @@
 "use client";
+
+import { runServerAction } from "@/lib/deployment/client";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 import {
   Table,
@@ -150,14 +152,15 @@ export function MrcClient({
 
   const refresh = useCallback(
     async (nextPage = page) => {
-      const result = await listMonthlyRequestCollections({
+      const result = await runServerAction(() => listMonthlyRequestCollections({
         search: filters.search,
         status: filters.status,
         collectForMonthFrom: filters.expenseMonthFrom,
         collectForMonthTo: filters.expenseMonthTo,
         page: nextPage,
         pageSize: PAGE_SIZE,
-      });
+      }));
+      if (result === undefined) return;
       if (!result.success) {
         toast.error("ไม่สามารถโหลดข้อมูลได้", { description: result.error });
         return;
@@ -173,7 +176,9 @@ export function MrcClient({
   const loadEligibleClaims = useCallback(
     async (month: string, mrcId?: string) => {
       setIsLoadingClaims(true);
-      const result = await listEligibleExpenseClaimsForMonth(month, mrcId);
+      const result = await runServerAction(() => listEligibleExpenseClaimsForMonth(month, mrcId));
+      setIsLoadingClaims(false);
+      if (result === undefined) return;
       if (!result.success) {
         toast.error("ไม่สามารถโหลดรายการเบิกได้", {
           description: result.error,
@@ -182,7 +187,6 @@ export function MrcClient({
       } else {
         setEligibleClaims(result.data);
       }
-      setIsLoadingClaims(false);
     },
     [],
   );
@@ -248,10 +252,11 @@ export function MrcClient({
         toast.error("กรุณาเลือกรายการเบิกอย่างน้อย 1 รายการ");
         return;
       }
-      const result = await createMonthlyRequestCollection({
+      const result = await runServerAction(() => createMonthlyRequestCollection({
         collectForMonth: `${collectMonth}-01`,
         expenseClaimIds: selectedClaimIds,
-      });
+      }));
+      if (result === undefined) return;
       if (!result.success) {
         toast.error("ไม่สามารถสร้างได้", { description: result.error });
         return;
@@ -269,9 +274,10 @@ export function MrcClient({
         toast.error("กรุณาเลือกรายการเบิกอย่างน้อย 1 รายการ");
         return;
       }
-      const result = await updateMonthlyRequestCollection(selected.id, {
+      const result = await runServerAction(() => updateMonthlyRequestCollection(selected.id, {
         expenseClaimIds: selectedClaimIds,
-      });
+      }));
+      if (result === undefined) return;
       if (!result.success) {
         toast.error("ไม่สามารถอัปเดตได้", { description: result.error });
         return;
@@ -284,7 +290,8 @@ export function MrcClient({
 
   const submitForReview = (id: string) => {
     startTransition(async () => {
-      const result = await submitMonthlyRequestCollection(id);
+      const result = await runServerAction(() => submitMonthlyRequestCollection(id));
+      if (result === undefined) return;
       if (!result.success) {
         toast.error("ไม่สามารถส่งตรวจได้", { description: result.error });
         return;
@@ -298,11 +305,12 @@ export function MrcClient({
   const doReview = () => {
     if (!selected || !currentReviewStage) return;
     startTransition(async () => {
-      const result = await reviewMonthlyRequestCollectionStep(selected.id, {
+      const result = await runServerAction(() => reviewMonthlyRequestCollectionStep(selected.id, {
         stage: currentReviewStage,
         approved: reviewApproved,
         remark: reviewRemark.trim() || undefined,
-      });
+      }));
+      if (result === undefined) return;
       if (!result.success) {
         if (result.code === "SIGNATURE_REQUIRED") {
           toast.error("กรุณาลงลายมือชื่อก่อนอนุมัติ", {
@@ -327,7 +335,8 @@ export function MrcClient({
   const doCancel = () => {
     if (!selected) return;
     startTransition(async () => {
-      const result = await cancelMonthlyRequestCollection(selected.id);
+      const result = await runServerAction(() => cancelMonthlyRequestCollection(selected.id));
+      if (result === undefined) return;
       if (!result.success) {
         toast.error("ไม่สามารถยกเลิกได้", { description: result.error });
         return;

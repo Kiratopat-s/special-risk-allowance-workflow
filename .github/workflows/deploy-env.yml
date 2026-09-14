@@ -22,12 +22,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set image tag
-        run: echo "IMAGE_TAG=${{ inputs.image_tag }}" >> "$GITHUB_ENV"
+      - name: Set immutable image and deployment version
+        env:
+          RELEASE_LABEL: ${{ inputs.image_tag }}
+        run: |
+          version="${GITHUB_SHA:0:12}-$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "DEPLOYMENT_VERSION=$version" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=$RELEASE_LABEL-$version" >> "$GITHUB_ENV"
 
       - name: Inject .env
         env:
-          IMAGE_TAG: ${{ inputs.image_tag }}
           APP_PORT: ${{ vars.APP_PORT }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NEXTAUTH_URL: ${{ vars.NEXTAUTH_URL }}
@@ -66,7 +70,7 @@ jobs:
           } > .env
 
       - name: Build app image
-        run: docker build --target runner -t sraw-app:${IMAGE_TAG} .
+        run: docker build --target runner --build-arg DEPLOYMENT_VERSION="$DEPLOYMENT_VERSION" -t "sraw-app:$IMAGE_TAG" .
 
       - name: Build migrator image
         run: docker build --target migrator -t sraw-migrator:${IMAGE_TAG} .
@@ -81,6 +85,8 @@ jobs:
         run: docker compose up -d app
 
       - name: Wait for health check
+        env:
+          APP_PORT: ${{ vars.APP_PORT }}
         run: |
           echo "Waiting for app to become healthy..."
           sleep 10
@@ -96,6 +102,13 @@ jobs:
           echo "Health check failed after 70s"
           docker compose logs app --tail=50
           exit 1
+
+      - name: Verify deployed version
+        env:
+          APP_PORT: ${{ vars.APP_PORT }}
+        run: |
+          response=$(curl --fail --silent "http://127.0.0.1:${APP_PORT:-3000}/api/version")
+          VERSION_RESPONSE="$response" node -e 'if (JSON.parse(process.env.VERSION_RESPONSE).version !== process.env.DEPLOYMENT_VERSION) process.exit(1)'
 
       - name: Clean up .env
         if: always()

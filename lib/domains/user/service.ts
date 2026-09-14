@@ -10,7 +10,7 @@
 import { userRepository } from "./repository";
 import { offSiteWorkEmployeeService } from "@/lib/domains/off-site-work/employee-service";
 import { actionLogService } from "@/lib/domains/action-log/service";
-import { departmentRepository } from "@/lib/domains/department/repository";
+import { departmentService } from "@/lib/domains/department/service";
 import { userRoleRepository, roleRepository } from "@/lib/domains/permission/repository";
 import { ActionType, UserStatus } from "@/lib/shared/types";
 import { success, error, type Result } from "@/lib/shared/types";
@@ -89,15 +89,13 @@ export const userService = {
     ): Promise<Result<UserEntity>> {
         const existingUser = await userRepository.findByKeycloakId(profile.keycloakId);
 
-        // Find or create department if provided
-        let departmentId: string | undefined;
-        if (profile.department) {
-            const dept = await departmentRepository.findOrCreateByName(
-                profile.department,
-                profile.departmentShort
-            );
-            departmentId = dept.id;
-        }
+        const departmentResult = await departmentService.resolveFromKeycloak({
+            name: profile.department,
+            shortName: profile.departmentShort,
+        }, context?.requestPath ?? "keycloak-sync");
+        if (!departmentResult.success) return departmentResult;
+        // Undefined preserves membership on update and leaves new users unassigned.
+        const departmentId = departmentResult.data?.id;
 
         if (existingUser) {
             // Update existing user

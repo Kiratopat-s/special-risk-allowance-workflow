@@ -1,4 +1,6 @@
 "use client";
+
+import { runServerAction } from "@/lib/deployment/client";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
 /**
@@ -192,11 +194,12 @@ function VerificationCard({
 
   const handleVerify = (sigDataUrl: string) => {
     startTransition(async () => {
-      const res = await verifyAsLeader(
+      const res = await runServerAction(() => verifyAsLeader(
         item.expenseClaimId,
         item.offSiteWorkId,
         sigDataUrl,
-      );
+      ));
+      if (res === undefined) return;
       if (!res.success) {
         toast.error("ยืนยันไม่สำเร็จ", { description: res.error });
         return;

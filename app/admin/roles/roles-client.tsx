@@ -1,4 +1,6 @@
 "use client";
+
+import { runServerAction } from "@/lib/deployment/client";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 import { useUrlFilter } from "@/lib/hooks/use-url-filter";
 import { Checkbox } from "@/components/workflow-ui/form-controls";
@@ -103,7 +105,8 @@ export function RolesClient({
     setPendingAction("load-role");
     startTransition(async () => {
       try {
-        const result = await getRole(role.id);
+        const result = await runServerAction(() => getRole(role.id));
+        if (result === undefined) return;
         if (result.success) {
           setRolePermissions(result.data.permissions.map((p) => p.id));
         } else {
@@ -130,15 +133,17 @@ export function RolesClient({
     setPendingAction("save-permissions");
     startTransition(async () => {
       try {
-        const result = await setRolePermissionsAction(
+        const result = await runServerAction(() => setRolePermissionsAction(
           selectedRole.id,
           rolePermissions,
-        );
+        ));
+        if (result === undefined) return;
         if (result.success) {
           toast.success("Permissions updated", {
             description: `Updated permissions for ${selectedRole.name}`,
           });
-          const updated = await getRole(selectedRole.id);
+          const updated = await runServerAction(() => getRole(selectedRole.id));
+          if (updated === undefined) return;
           if (updated.success) {
             setRolePermissions(updated.data.permissions.map((p) => p.id));
           }
@@ -162,7 +167,8 @@ export function RolesClient({
     setPendingAction("create-role");
     startTransition(async () => {
       try {
-        const result = await createRole({ code, name, description, level });
+        const result = await runServerAction(() => createRole({ code, name, description, level }));
+        if (result === undefined) return;
         if (result.success) {
           setRoles((prev) => [...prev, result.data]);
           setShowCreateDialog(false);
@@ -343,7 +349,10 @@ export function RolesClient({
           <DialogTitle>Create Role</DialogTitle>
           <DialogDescription>Add a new role to the system</DialogDescription>
         </DialogHeader>
-        <form action={handleCreateRole}>
+        <form onSubmit={(event) => {
+          event.preventDefault();
+          handleCreateRole(new FormData(event.currentTarget));
+        }}>
           <DialogBody className="space-y-4">
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Code</label>

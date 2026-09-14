@@ -1,5 +1,7 @@
 "use client";
 
+import { runServerAction } from "@/lib/deployment/client";
+
 /**
  * useNotifications
  *
@@ -46,7 +48,11 @@ export function useNotifications() {
 
         async function load() {
             setIsLoading(true);
-            const result = await getMyNotificationPageState();
+            const result = await runServerAction(() => getMyNotificationPageState());
+            if (result === undefined) {
+                if (!cancelled) setIsLoading(false);
+                return;
+            }
             if (!cancelled && result.success) {
                 setNotifications(result.data.notifications);
                 setUnreadCount(result.data.unreadCount);
@@ -170,31 +176,30 @@ export function useNotifications() {
     // Actions
     // ---------------------------------------------------------------------------
     const markRead = useCallback(async (id: string) => {
+        if ((await runServerAction(() => markNotificationRead(id))) === undefined) return;
         setNotifications((prev) =>
             prev.map((n) =>
                 n.id === id ? { ...n, isRead: true, readAt: new Date() } : n
             )
         );
         setUnreadCount((c) => Math.max(0, c - 1));
-
-        await markNotificationRead(id);
     }, []);
 
     const markAllRead = useCallback(async () => {
+        if ((await runServerAction(() => markAllNotificationsRead())) === undefined) return;
         setNotifications((prev) =>
             prev.map((n) => ({ ...n, isRead: true, readAt: n.readAt ?? new Date() }))
         );
         setUnreadCount(0);
-
-        await markAllNotificationsRead();
     }, []);
 
     const clearOne = useCallback(async (id: string) => {
+        const result = await runServerAction(() => clearNotification(id));
+        if (result === undefined) return;
         const removed = notificationsRef.current.find((n) => n.id === id);
         setNotifications((prev) => prev.filter((n) => n.id !== id));
         if (removed && !removed.isRead) setUnreadCount((c) => Math.max(0, c - 1));
 
-        const result = await clearNotification(id);
         if (!result.success && removed) {
             setNotifications((prev) => {
                 const next = [...prev, removed];
@@ -207,10 +212,11 @@ export function useNotifications() {
     }, []);
 
     const clearAllRead = useCallback(async () => {
+        const result = await runServerAction(() => clearAllReadNotifications());
+        if (result === undefined) return;
         const readItems = notificationsRef.current.filter((n) => n.isRead);
         setNotifications((prev) => prev.filter((n) => !n.isRead));
 
-        const result = await clearAllReadNotifications();
         if (!result.success) {
             setNotifications((prev) => {
                 const next = [...prev, ...readItems];

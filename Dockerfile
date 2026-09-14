@@ -13,7 +13,9 @@ RUN bun install --frozen-lockfile
 FROM dependencies AS builder
 
 COPY . .
-RUN bunx prisma generate && bun run build
+ARG DEPLOYMENT_VERSION
+RUN test -n "$DEPLOYMENT_VERSION" || (echo "DEPLOYMENT_VERSION is required: use the Git revision plus a build timestamp" >&2; exit 1)
+RUN bunx prisma generate && DEPLOYMENT_VERSION="$DEPLOYMENT_VERSION" bun run build
 
 # This target is used only by the explicit Docker Compose migration and seed jobs.
 FROM dependencies AS migrator

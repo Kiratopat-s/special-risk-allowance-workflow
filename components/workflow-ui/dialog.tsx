@@ -5,6 +5,7 @@ import Drawer from "@mui/material/Drawer";
 import IconButton from "@mui/material/IconButton";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DeploymentAlert } from "@/components/deployment-notice";
 const TitleContext = React.createContext("");
 const BusyContext = React.createContext(false);
 interface DialogProps {
@@ -26,7 +27,10 @@ export function Dialog({
   const titleId = React.useId();
   const content = (
     <BusyContext.Provider value={busy}>
-      <TitleContext.Provider value={titleId}>{children}</TitleContext.Provider>
+      <TitleContext.Provider value={titleId}>
+        <DeploymentAlert />
+        {children}
+      </TitleContext.Provider>
     </BusyContext.Provider>
   );
   if (presentation === "drawer")

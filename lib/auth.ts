@@ -1,10 +1,35 @@
 import NextAuth from "next-auth";
 import Keycloak from "next-auth/providers/keycloak";
 import type { NextAuthConfig } from "next-auth";
+import type {} from "next-auth/jwt";
 import { authEvents } from "@/lib/auth/events";
+
+declare module "next-auth/jwt" {
+    interface JWT {
+        dbUserId?: string;
+        keycloakId?: string;
+        firstName?: string;
+        lastName?: string;
+        peaEmail?: string;
+        employeeId?: string;
+        position?: string;
+        positionShort?: string;
+        positionLevel?: string;
+        department?: string;
+        departmentShort?: string;
+        phoneNumber?: string;
+        accessToken?: string;
+        refreshToken?: string;
+        expiresAt?: number;
+        error?: string;
+    }
+}
 
 // Extend the default session and JWT types
 declare module "next-auth" {
+    interface User {
+        dbUserId?: string;
+    }
     interface Session {
         user: {
             id: string;
@@ -39,9 +64,24 @@ const config: NextAuthConfig = {
     ],
     pages: {
         signIn: "/auth/signin",
+        error: "/auth/signin",
     },
     callbacks: {
-        async jwt({ token, account, profile, trigger, session }) {
+        async signIn({ user, account, profile }) {
+            if (account?.provider !== "keycloak" || !profile) return false;
+            try {
+                const result = await authEvents.onSignIn(
+                    profile as Parameters<typeof authEvents.onSignIn>[0]
+                );
+                if (!result?.userId) return false;
+                user.dbUserId = result.userId;
+                return true;
+            } catch {
+                console.error("[auth] Unable to synchronize account at sign-in");
+                return false;
+            }
+        },
+        async jwt({ token, user, account, profile, trigger, session }) {
             // Handle session update (when user updates their profile)
             if (trigger === "update" && session?.user) {
                 // Update token with new user data from the session update
@@ -61,6 +101,9 @@ const config: NextAuthConfig = {
 
             // Initial sign in
             if (account && profile) {
+                // Only the sign-in callback may supply the database identity.
+                if (!user?.dbUserId) return null;
+                token.dbUserId = user.dbUserId;
                 token.accessToken = account.access_token;
                 token.refreshToken = account.refresh_token;
                 token.expiresAt = account.expires_at;
@@ -78,18 +121,6 @@ const config: NextAuthConfig = {
                 token.department = profile.department as string | undefined;
                 token.departmentShort = profile.department_short as string | undefined;
                 token.phoneNumber = profile.phone as string | undefined;
-
-                // Sync user to database and log authentication event
-                try {
-                    const result = await authEvents.onSignIn(
-                        profile as Parameters<typeof authEvents.onSignIn>[0]
-                    );
-                    if (result?.userId) {
-                        token.dbUserId = result.userId;
-                    }
-                } catch (err) {
-                    console.error("Error syncing user on sign in:", err);
-                }
             }
 
             // Return previous token if the access token has not expired yet

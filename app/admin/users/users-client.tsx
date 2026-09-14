@@ -1,4 +1,6 @@
 "use client";
+
+import { runServerAction } from "@/lib/deployment/client";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 import { useUrlFilter } from "@/lib/hooks/use-url-filter";
 import { Table, TableContainer, TableHead, TableBody, TableRow, TableHeader, TableCell } from "@/components/workflow-ui/table";
@@ -109,7 +111,8 @@ export function UsersClient({
   });
 
   const refreshUsers = async () => {
-    const result = await listUsersWithRoles(search || undefined);
+    const result = await runServerAction(() => listUsersWithRoles(search || undefined));
+    if (result === undefined) return;
     if (result.success) setUsers(result.data);
   };
 
@@ -120,9 +123,10 @@ export function UsersClient({
       allDepartments.find((d) => d.id === selectedDepartmentId)?.name || null;
 
     startTransition(async () => {
-      const result = await assignRoleToUser(selectedUser.id, selectedRoleId, {
+      const result = await runServerAction(() => assignRoleToUser(selectedUser.id, selectedRoleId, {
         departmentId: selectedDepartmentId || undefined,
-      });
+      }));
+      if (result === undefined) return;
       if (result.success) {
         const contextMsg = selectedDepartmentId
           ? ` (${deptName})`
@@ -189,7 +193,8 @@ export function UsersClient({
       );
 
     startTransition(async () => {
-      const result = await revokeRoleFromUser(userId, roleId, departmentId);
+      const result = await runServerAction(() => revokeRoleFromUser(userId, roleId, departmentId));
+      if (result === undefined) return;
       if (result.success) {
         const contextMsg = targetRole?.departmentName
           ? ` (${targetRole.departmentName})`

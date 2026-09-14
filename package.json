@@ -14,6 +14,7 @@
     "check:schema": "prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code",
     "test:migrations": "bun scripts/test-migrations.mjs",
     "prepare:pdf": "node scripts/prepare-pdf-worker.mjs",
+    "test:department-db": "node scripts/test-department-db.mjs",
     "test:off-site-work-db": "node scripts/test-off-site-work-db.mjs"
   },
   "dependencies": {

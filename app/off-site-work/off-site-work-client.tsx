@@ -1,4 +1,6 @@
 "use client";
+
+import { runServerAction } from "@/lib/deployment/client";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -233,11 +235,12 @@ export function OffSiteWorkClient({
 
   const refresh = useCallback(
     async (nextPage = page, nextSearch = search) => {
-      const result = await listOffSiteWorks({
+      const result = await runServerAction(() => listOffSiteWorks({
         page: nextPage,
         pageSize: initialPagination?.pageSize ?? DEFAULT_PAGE_SIZE,
         search: nextSearch || undefined,
-      });
+      }));
+      if (result === undefined) return;
 
       if (!result.success) {
         toast.error("ไม่สามารถโหลดข้อมูลได้", { description: result.error });
@@ -310,7 +313,8 @@ export function OffSiteWorkClient({
 
   const handleLeaderSearch = () => {
     startLeaderSearch(async () => {
-      const res = await searchUsersForLeader(leaderSearch);
+      const res = await runServerAction(() => searchUsersForLeader(leaderSearch));
+      if (res === undefined) return;
       if (res.success) {
         setLeaderResults(res.data as LeaderUser[]);
       }
@@ -319,7 +323,8 @@ export function OffSiteWorkClient({
 
   const handleEmpSearch = () => {
     startEmpSearch(async () => {
-      const res = await searchUsersForLeader(empSearch);
+      const res = await runServerAction(() => searchUsersForLeader(empSearch));
+      if (res === undefined) return;
       if (res.success) {
         setEmpResults(res.data as LeaderUser[]);
       }
@@ -400,7 +405,7 @@ export function OffSiteWorkClient({
 
   const submitCreate = () => {
     startTransition(async () => {
-      const result = await createOffSiteWork({
+      const result = await runServerAction(() => createOffSiteWork({
         id: form.id.trim(),
         innerRefDocumentId: form.innerRefDocumentId.trim() || undefined,
         startDate: form.startDate,
@@ -410,7 +415,8 @@ export function OffSiteWorkClient({
         employeeList:
           form.employeeList.length > 0 ? form.employeeList : undefined,
         ...buildLeaderPayload(form),
-      });
+      }));
+      if (result === undefined) return;
 
       if (!result.success) {
         toast.error("สร้างรายการไม่สำเร็จ", { description: result.error });
@@ -427,7 +433,7 @@ export function OffSiteWorkClient({
     if (!selected) return;
 
     startTransition(async () => {
-      const result = await updateOffSiteWork(selected.id, {
+      const result = await runServerAction(() => updateOffSiteWork(selected.id, {
         innerRefDocumentId:
           form.innerRefDocumentId !== (selected.innerRefDocumentId || "")
             ? form.innerRefDocumentId || null
@@ -450,7 +456,8 @@ export function OffSiteWorkClient({
             : undefined,
         employeeList: form.employeeList,
         ...buildLeaderPayload(form),
-      });
+      }));
+      if (result === undefined) return;
 
       if (!result.success) {
         toast.error("อัปเดตรายการไม่สำเร็จ", { description: result.error });
@@ -467,7 +474,8 @@ export function OffSiteWorkClient({
     if (!selected) return;
 
     startTransition(async () => {
-      const result = await deleteOffSiteWork(selected.id);
+      const result = await runServerAction(() => deleteOffSiteWork(selected.id));
+      if (result === undefined) return;
       if (!result.success) {
         toast.error("ลบรายการไม่สำเร็จ", { description: result.error });
         return;

@@ -1,4 +1,6 @@
 "use client";
+
+import { runServerAction } from "@/lib/deployment/client";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
 /**
@@ -232,7 +234,8 @@ export function LeaderVerifyClient({
     let cancelled = false;
 
     const load = async () => {
-      const res = await getVerificationByToken(token);
+      const res = await runServerAction(() => getVerificationByToken(token));
+      if (res === undefined) return;
       if (cancelled) return;
 
       if (!res.success) {
@@ -267,7 +270,11 @@ export function LeaderVerifyClient({
     if (!token) return;
     setSubmitState("submitting");
     startTransition(async () => {
-      const res = await verifyByToken(token, sigDataUrl);
+      const res = await runServerAction(() => verifyByToken(token, sigDataUrl));
+      if (res === undefined) {
+        setSubmitState("idle");
+        return;
+      }
       if (!res.success) {
         setSubmitState("error");
         setSubmitError(res.error ?? "เกิดข้อผิดพลาด");

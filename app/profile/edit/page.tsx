@@ -1,5 +1,7 @@
 "use client";
 
+import { runServerAction } from "@/lib/deployment/client";
+
 import { useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -158,7 +160,8 @@ export default function EditProfilePage() {
         departmentShort: data.departmentShort ?? "",
       };
 
-      const result = await updateKeycloakProfile(formData);
+      const result = await runServerAction(() => updateKeycloakProfile(formData));
+      if (result === undefined) return;
 
       if (result.success) {
         toast.success(result.message);

@@ -1,5 +1,7 @@
 "use client";
 
+import { runServerAction } from "@/lib/deployment/client";
+
 /**
  * Hook: useProfileSync
  *
@@ -67,10 +69,14 @@ export function useProfileSync(options: UseProfileSyncOptions = {}) {
         }
         lastSyncTime.current = now;
 
-        return new Promise<SyncProfileResult>((resolve) => {
+        return new Promise<SyncProfileResult | undefined>((resolve) => {
             startTransition(async () => {
                 try {
-                    const result = await syncProfileFromKeycloak();
+                    const result = await runServerAction(() => syncProfileFromKeycloak());
+                    if (result === undefined) {
+                        resolve(undefined);
+                        return;
+                    }
                     setLastSyncResult(result);
 
                     if (result.success && result.profile) {

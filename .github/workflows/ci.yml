@@ -44,5 +44,8 @@ jobs:
       - name: Test
         run: bun run test
 
+      - name: Test department synchronization against isolated PostgreSQL
+        run: bun run test:department-db
+
       - name: Test migrations against isolated PostgreSQL
         run: bun run test:migrations

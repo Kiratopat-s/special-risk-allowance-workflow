@@ -3,6 +3,7 @@ import InitColorSchemeScript from "@mui/material/InitColorSchemeScript";
 import { Providers } from "@/components/providers";
 import { AppShell } from "@/components/workflow-ui/app-shell";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
+import { DeploymentNotice } from "@/components/deployment-notice";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,6 +26,7 @@ export default function RootLayout({
           modeStorageKey="theme"
         />
         <Providers>
+          <DeploymentNotice />
           <ServiceWorkerRegistration />
           <AppShell>{children}</AppShell>
         </Providers>

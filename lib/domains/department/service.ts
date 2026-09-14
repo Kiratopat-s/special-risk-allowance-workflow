@@ -37,6 +37,47 @@ interface RequestContext {
  * Department Service - Business logic functions
  */
 export const departmentService = {
+    /** Resolve Keycloak identity without renaming departments or guessing between two records. */
+    async resolveFromKeycloak(
+        input: { name?: string; shortName?: string },
+        source = "keycloak-sync"
+    ): Promise<Result<DepartmentEntity | null>> {
+        const name = input.name?.trim() || undefined;
+        const shortName = input.shortName?.trim() || undefined;
+        if (!name && !shortName) return success(null);
+
+        let matches = await departmentRepository.findByIdentity(name, shortName);
+        if (matches.length === 0 && name) {
+            await departmentRepository.createIfAbsent({ name, shortName });
+            // A concurrent signup or seed can own either key by this point.
+            matches = await departmentRepository.findByIdentity(name, shortName);
+            if (matches.length === 0) {
+                return error("Department could not be read after creation", "DEPARTMENT_SYNC_FAILED");
+            }
+        }
+
+        const byName = matches.find((row) => row.name === name);
+        const byShortName = matches.find((row) => row.shortName === shortName);
+        const conflict = byName && byShortName && byName.id !== byShortName.id;
+        const department = conflict ? null : byShortName ?? byName ?? null;
+        const mismatch = department && (
+            (name !== undefined && department.name !== name) ||
+            (shortName !== undefined && department.shortName !== shortName)
+        );
+
+        if (conflict || mismatch || !department) {
+            console.warn("[department-sync] Identity discrepancy", {
+                code: conflict ? "DEPARTMENT_IDENTITY_CONFLICT" : department ? "DEPARTMENT_IDENTITY_MISMATCH" : "DEPARTMENT_NAME_MISSING",
+                source,
+                incoming: { name: name ?? null, shortName: shortName ?? null },
+                matches: matches.map((row) => ({ id: row.id, name: row.name, shortName: row.shortName })),
+                resolvedDepartmentId: department?.id ?? null,
+            });
+        }
+
+        return success(department);
+    },
+
     /** Seed one department, preserving existing records and reporting mismatched keys. */
     async seedDefault(
         data: { name: string; shortName: string }

@@ -1,4 +1,6 @@
 "use client";
+
+import { runServerAction } from "@/lib/deployment/client";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
 /**
@@ -85,12 +87,13 @@ export function NotificationsAdminClient({ users }: Props) {
     }
 
     startTransition(async () => {
-      const result = await sendSystemNotification(
+      const result = await runServerAction(() => sendSystemNotification(
         Array.from(selectedIds),
         title.trim(),
         body.trim(),
         link.trim() || undefined,
-      );
+      ));
+      if (result === undefined) return;
 
       if (!result.success) {
         toast.error("ไม่สามารถส่งการแจ้งเตือนได้", {

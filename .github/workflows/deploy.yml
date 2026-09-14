@@ -43,6 +43,9 @@ jobs:
       - name: Test
         run: bun run test
 
+      - name: Test department synchronization against isolated PostgreSQL
+        run: bun run test:department-db
+
       - name: Test migrations against isolated PostgreSQL
         run: bun run test:migrations
 
@@ -52,7 +55,7 @@ jobs:
     uses: ./.github/workflows/deploy-env.yml
     with:
       environment: uat
-      image_tag: "uat-$(echo ${{ github.sha }} | cut -c1-7)"
+      image_tag: "uat"
       compose_project: sraw-uat
     secrets: inherit
 
