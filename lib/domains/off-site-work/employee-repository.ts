@@ -22,14 +22,15 @@ export const offSiteWorkEmployeeRepository = {
           CASE WHEN NULLIF(emp->>'userId', '') IS NULL AND emp->>'employeeId' = u.employee_id
             THEN emp || jsonb_build_object(
               'userId', u.id,
-              'firstName', CASE WHEN NULLIF(btrim(emp->>'firstName'), '') IS NULL
-                THEN u.first_name ELSE emp->>'firstName' END,
-              'lastName', CASE WHEN NULLIF(btrim(emp->>'lastName'), '') IS NULL
-                THEN u.last_name ELSE emp->>'lastName' END
+              'firstName', u.first_name,
+              'lastName', u.last_name,
+              'position', u.position,
+              'departmentId', u.department_id,
+              'departmentName', COALESCE(NULLIF(d.short_name, ''), d.name)
             ) ELSE emp END ORDER BY ordinal
         ) FROM jsonb_array_elements(osw.employee_list) WITH ORDINALITY AS entries(emp, ordinal)
       ), updated_at = CURRENT_TIMESTAMP
-      FROM users AS u
+      FROM users AS u LEFT JOIN departments AS d ON d.id = u.department_id
       WHERE u.id = ${userId} AND u.status = 'ACTIVE' AND u.employee_id IS NOT NULL
         AND osw.deleted_at IS NULL AND jsonb_typeof(osw.employee_list) = 'array'
         AND EXISTS (

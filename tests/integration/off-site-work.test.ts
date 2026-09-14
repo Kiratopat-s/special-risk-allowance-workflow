@@ -19,6 +19,7 @@ import { userService } from "@/lib/domains/user/service";
 import type { EmployeeListItem } from "@/lib/domains/off-site-work/types";
 
 const person: EmployeeListItem = { userId: null, employeeId: "100001", firstName: "ผู้เดินทาง", lastName: "ทดสอบ", position: "ตำแหน่งเดิม", departmentId: null, departmentName: "ฝ่ายเดิม" };
+const pending = (employeeId: string): EmployeeListItem => ({ userId: null, employeeId, firstName: "", lastName: "", position: null, departmentId: null, departmentName: null });
 const base = { startDate: "2026-09-01", endDate: "2026-09-30" };
 beforeAll(async () => {
   await prisma.user.create({ data: { id: "author", keycloakId: "author", email: "author@example.test", firstName: "ผู้บันทึก", lastName: "ทดสอบ" } });
@@ -26,7 +27,7 @@ beforeAll(async () => {
 afterAll(async () => { await prisma.$disconnect(); });
 
 describe.sequential("PDF traveler account lifecycle", () => {
-  it("saves ID-only travelers and fills missing names across documents on registration", async () => {
+  it("stores only pending numbers and takes the full registered account profile across documents", async () => {
     const idOnly: EmployeeListItem = { userId: null, employeeId: "000001", firstName: "", lastName: "", position: null, departmentId: null, departmentName: null };
     const recorded = { ...idOnly, firstName: "ชื่อที่บันทึกไว้", position: "ตำแหน่งในเอกสาร", departmentName: "สังกัดในเอกสาร" };
     const unmatched = { ...idOnly, employeeId: "000002" };
@@ -36,13 +37,14 @@ describe.sequential("PDF traveler account lifecycle", () => {
     const before = await offSiteWorkService.getById("id-only");
     if (!before.success) throw Error(before.error);
     expect(before.data.employeeList).toEqual([idOnly, unmatched]);
+    expect((await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "id-only-edited" } })).employeeList).toEqual([idOnly]);
 
-    const signup = await userService.syncFromKeycloak({ id: "id-only-account", keycloakId: "id-only-account", email: "id-only@example.test", firstName: "ชื่อจากบัญชี", lastName: "นามสกุลจากบัญชี", employeeId: "000001" });
+    const signup = await userService.syncFromKeycloak({ id: "id-only-account", keycloakId: "id-only-account", email: "id-only@example.test", firstName: "ชื่อจากบัญชี", lastName: "นามสกุลจากบัญชี", employeeId: "000001", position: "ตำแหน่งจากบัญชี", department: "ฝ่ายจากบัญชี", departmentShort: "ฝบ." });
     if (!signup.success) throw Error(signup.error);
-    const linked = { ...idOnly, userId: signup.data.id, firstName: signup.data.firstName, lastName: signup.data.lastName };
+    const linked = { ...idOnly, userId: signup.data.id, firstName: signup.data.firstName, lastName: signup.data.lastName, position: "ตำแหน่งจากบัญชี", departmentId: signup.data.departmentId, departmentName: "ฝบ." };
     expect((await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "id-only" } })).employeeList).toEqual([linked, unmatched]);
     expect((await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "id-only-edited" } })).employeeList).toEqual([
-      { ...recorded, userId: signup.data.id, lastName: signup.data.lastName },
+      linked,
     ]);
     expect(await offSiteWorkEmployeeService.linkForUser(signup.data.id)).toMatchObject({ success: true, data: 0 });
     const eligible = await expenseClaimDocumentService.listEligibleOffSiteWorksForUser(signup.data.id, new Date("2026-09-01"));
@@ -62,7 +64,7 @@ describe.sequential("PDF traveler account lifecycle", () => {
     expect((await offSiteWorkService.create({ id: "late-number", ...base, employeeList: [idOnly] }, "author")).success).toBe(true);
     expect((await userService.syncFromKeycloak({ ...profile, employeeId: "000003" })).success).toBe(true);
     expect((await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "late-number" } })).employeeList).toEqual([
-      { ...idOnly, userId: signup.data.id, firstName: profile.firstName, lastName: profile.lastName },
+      { ...pending("000003"), userId: signup.data.id, firstName: profile.firstName, lastName: profile.lastName },
     ]);
   });
 
@@ -73,7 +75,7 @@ describe.sequential("PDF traveler account lifecycle", () => {
     if (!signup.success) throw Error(signup.error);
     const record = await offSiteWorkService.getById("TZ26010001");
     if (!record.success) throw Error(record.error);
-    expect(record.data.employeeList).toEqual([{ ...person, userId: signup.data.id }, { ...person, employeeId: "100002" }]);
+    expect(record.data.employeeList).toEqual([{ ...pending("100001"), userId: signup.data.id, firstName: "ชื่อในระบบ", lastName: "ทดสอบ" }, pending("100002")]);
     expect(await offSiteWorkEmployeeService.linkForUser(signup.data.id)).toMatchObject({ success: true, data: 0 });
     const options = await expenseClaimDocumentService.listEligibleOffSiteWorksForUser(signup.data.id, new Date("2026-09-01"));
     if (!options.success) throw Error(options.error);
@@ -88,7 +90,7 @@ describe.sequential("PDF traveler account lifecycle", () => {
     expect((item.employeeList as unknown as EmployeeListItem[])[1].userId).toBeNull();
   });
 
-  it("preserves concurrent edits and the links added by another account", async () => {
+  it("preserves concurrent document edits and other links while replacing untrusted traveler details", async () => {
     for (const code of ["100003", "100004"]) {
       await prisma.user.create({ data: { id: code, keycloakId: code, email: `${code}@example.test`, firstName: "พร้อมกัน", lastName: "ทดสอบ", employeeId: code } });
     }
@@ -97,7 +99,7 @@ describe.sequential("PDF traveler account lifecycle", () => {
     try {
       await client.connect();
       await client.query("BEGIN");
-      await client.query("UPDATE off_site_works SET employee_list = jsonb_set(employee_list, '{0,position}', '\"แก้ไขพร้อมกัน\"') WHERE id = 'concurrent'");
+      await client.query("UPDATE off_site_works SET objective = 'แก้ไขพร้อมกัน' WHERE id = 'concurrent'");
       const first = offSiteWorkEmployeeService.linkForUser("100003");
       const second = offSiteWorkEmployeeService.linkForUser("100004");
       await client.query("COMMIT");
@@ -105,7 +107,10 @@ describe.sequential("PDF traveler account lifecycle", () => {
       expect((await second).success).toBe(true);
     } finally { await client.end(); }
     const saved = await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "concurrent" } });
-    expect(saved.employeeList).toEqual([{ ...person, employeeId: "100003", userId: "100003", position: "แก้ไขพร้อมกัน" }, { ...person, employeeId: "100004", userId: "100004" }]);
+    expect(saved.objective).toBe("แก้ไขพร้อมกัน");
+    expect(saved.employeeList).toEqual(["100003", "100004"].map((employeeId) => ({
+      ...pending(employeeId), userId: employeeId, firstName: "พร้อมกัน", lastName: "ทดสอบ",
+    })));
   });
 
   it("reconciles late matches on save and before claim lookup without changing linked identities", async () => {

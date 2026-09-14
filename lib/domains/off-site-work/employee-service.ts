@@ -1,6 +1,6 @@
 import { error, success, type Result } from "@/lib/shared/types/result";
 import { offSiteWorkEmployeeRepository } from "./employee-repository";
-import { employeeListSchema } from "./employee-list";
+import { employeeListSchema, pendingEmployee } from "./employee-list";
 import type { EmployeeListItem } from "./types";
 
 export const offSiteWorkEmployeeService = {
@@ -32,14 +32,9 @@ export const offSiteWorkEmployeeService = {
         if (employee.userId && (!user || (employee.employeeId && user.employeeId !== employee.employeeId))) {
           return error("บัญชีหรือรหัสพนักงานเปลี่ยนแปลง กรุณาเลือกพนักงานใหม่", "EMPLOYEE_MISMATCH");
         }
-        // Preserve recorded details; an ID-only entry gets its missing names
-        // from the account when one becomes available.
-        result.push({
-          ...employee,
-          userId: user?.userId || null,
-          firstName: employee.firstName.trim() ? employee.firstName : user?.firstName ?? "",
-          lastName: employee.lastName.trim() ? employee.lastName : user?.lastName ?? "",
-        });
+        // Account data is authoritative; never persist personal details supplied
+        // by the form or PDF for an unregistered traveler.
+        result.push(user ?? pendingEmployee(employee.employeeId));
       }
       const checked = employeeListSchema.safeParse(result);
       return checked.success ? success(checked.data) : error(checked.error.issues[0].message, "INVALID_EMPLOYEES");

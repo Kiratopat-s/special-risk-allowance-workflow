@@ -29,13 +29,28 @@ export const employeeListSchema = z.array(z.object({
 export function employeeKey(employee: EmployeeListItem): string {
   return employee.userId ? `user:${employee.userId}` : `employee:${employee.employeeId}`;
 }
+
+/** An unregistered traveler has no personal data until an account is found. */
+export function pendingEmployee(employeeId: string | null): EmployeeListItem {
+  return {
+    userId: null,
+    employeeId: employeeId?.trim() ?? null,
+    firstName: "",
+    lastName: "",
+    position: null,
+    departmentId: null,
+    departmentName: null,
+  };
+}
 export function sameEmployee(a: EmployeeListItem, b: EmployeeListItem): boolean {
   return Boolean((a.userId && a.userId === b.userId) || (a.employeeId && /^\d{6}$/.test(a.employeeId) && a.employeeId === b.employeeId));
 }
 export function mergeEmployees(current: EmployeeListItem[], incoming: EmployeeListItem[]): EmployeeListItem[] {
-  const merged = [...current];
+  const merged = current.map((employee) => employee.userId ? employee : pendingEmployee(employee.employeeId));
   for (const employee of incoming) {
-    if (!merged.some((existing) => sameEmployee(existing, employee))) merged.push(employee);
+    const index = merged.findIndex((existing) => sameEmployee(existing, employee));
+    if (index < 0) merged.push(employee.userId ? employee : pendingEmployee(employee.employeeId));
+    else if (!merged[index].userId && employee.userId) merged[index] = employee;
   }
   return merged;
 }

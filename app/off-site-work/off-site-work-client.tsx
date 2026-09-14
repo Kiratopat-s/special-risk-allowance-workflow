@@ -5,7 +5,7 @@ import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PdfImport } from "./pdf-import";
-import { employeeKey, employeeListSchema, mergeEmployees, validWorkDate } from "@/lib/domains/off-site-work/employee-list";
+import { employeeKey, employeeListSchema, mergeEmployees, pendingEmployee, validWorkDate } from "@/lib/domains/off-site-work/employee-list";
 import type { PdfField } from "@/lib/pdf/off-site-work-parser";
 import { useRouter, useSearchParams } from "next/navigation";
 import { updateListQuery } from "@/lib/ui/list-query";
@@ -52,6 +52,7 @@ import {
   createOffSiteWork,
   deleteOffSiteWork,
   listOffSiteWorks,
+  matchOffSiteWorkEmployees,
   updateOffSiteWork,
 } from "@/app/actions/off-site-work";
 import { searchUsersForLeader } from "@/app/actions/user";
@@ -220,6 +221,7 @@ export function OffSiteWorkClient({
   const [empSearch, setEmpSearch] = useState("");
   const [empResults, setEmpResults] = useState<LeaderUser[]>([]);
   const [empSearchPending, startEmpSearch] = useTransition();
+  const [employeeLookupPending, startEmployeeLookup] = useTransition();
   const employeeIdToAdd = empSearch.trim();
   const employeeIdAlreadyAdded = form.employeeList.some(
     (employee) => employee.employeeId?.trim() === employeeIdToAdd,
@@ -309,7 +311,8 @@ export function OffSiteWorkClient({
       endDate: toDateInputValue(item.endDate),
       location: item.location || "",
       objective: item.objective || "",
-      employeeList: item.employeeList ?? [],
+      employeeList: (item.employeeList ?? []).map((employee) =>
+        employee.userId ? employee : pendingEmployee(employee.employeeId)),
       ...leaderData,
     });
     setMode("edit");
@@ -361,22 +364,23 @@ export function OffSiteWorkClient({
   };
 
   const addEmployeeById = () => {
-    if (!/^\d{6}$/.test(employeeIdToAdd) || employeeIdAlreadyAdded) return;
-    const employee: EmployeeListItem = {
-      userId: null,
-      employeeId: employeeIdToAdd,
-      firstName: "",
-      lastName: "",
-      position: null,
-      departmentId: null,
-      departmentName: null,
-    };
-    setForm((previous) => ({
-      ...previous,
-      employeeList: mergeEmployees(previous.employeeList, [employee]),
-    }));
-    setEmpSearch("");
-    setEmpResults([]);
+    if (!/^\d{6}$/.test(employeeIdToAdd) || employeeIdAlreadyAdded || employeeLookupPending) return;
+    startEmployeeLookup(async () => {
+      const result = await runServerAction(() => matchOffSiteWorkEmployees([employeeIdToAdd]));
+      if (result === undefined) return;
+      if (!result.success) {
+        toast.error("ตรวจสอบรหัสพนักงานไม่สำเร็จ", { description: result.error });
+        return;
+      }
+      const employee = result.data.find((user) => user.employeeId === employeeIdToAdd)
+        ?? pendingEmployee(employeeIdToAdd);
+      setForm((previous) => ({
+        ...previous,
+        employeeList: mergeEmployees(previous.employeeList, [employee]),
+      }));
+      setEmpSearch("");
+      setEmpResults([]);
+    });
   };
 
   const selectInternalLeader = (u: LeaderUser) => {
@@ -694,7 +698,7 @@ export function OffSiteWorkClient({
 
       {/* Create / Edit Dialog */}
       <Dialog
-        busy={isPending}
+        busy={isPending || employeeLookupPending}
         className="max-w-3xl"
         open={mode === "create" || mode === "edit"}
         onClose={() => setMode(null)}
@@ -800,6 +804,7 @@ export function OffSiteWorkClient({
                 <Input
                   placeholder="ค้นหาชื่อ / รหัสพนักงาน"
                   value={empSearch}
+                  disabled={employeeLookupPending}
                   onChange={(e) => setEmpSearch(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleEmpSearch();
@@ -812,7 +817,7 @@ export function OffSiteWorkClient({
                   size="icon-sm"
                   aria-label="ค้นหาพนักงาน"
                   onClick={handleEmpSearch}
-                  disabled={empSearchPending}
+                  disabled={empSearchPending || employeeLookupPending}
                 >
                   {empSearchPending ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -824,15 +829,17 @@ export function OffSiteWorkClient({
 
               {/* Add an employee before their account is registered */}
               <div className="flex flex-wrap items-center gap-2">
-                <Button
+                <LoadingButton
                   type="button"
                   variant="outline"
                   onClick={addEmployeeById}
-                  disabled={!/^\d{6}$/.test(employeeIdToAdd) || employeeIdAlreadyAdded || empSearchPending}
+                  disabled={!/^\d{6}$/.test(employeeIdToAdd) || employeeIdAlreadyAdded || empSearchPending || employeeLookupPending}
+                  isLoading={employeeLookupPending}
+                  loadingText="กำลังตรวจสอบรหัสพนักงาน"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   เพิ่มด้วยรหัสพนักงาน
-                </Button>
+                </LoadingButton>
                 <p className="text-xs text-muted-foreground">
                   กรอกรหัสพนักงาน 6 หลักในช่องค้นหาเพื่อเพิ่มได้เลย แม้ยังไม่ได้ลงทะเบียน
                 </p>
@@ -864,7 +871,7 @@ export function OffSiteWorkClient({
                       <li key={u.id}>
                         <button
                           type="button"
-                          disabled={already}
+                          disabled={already || employeeLookupPending}
                           className="w-full px-3 py-2 text-left hover:bg-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           onClick={() => addEmployee(u)}
                         >
@@ -902,24 +909,19 @@ export function OffSiteWorkClient({
                       className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2 text-sm"
                     >
                       <div className="min-w-0 flex-1">
-                        {!emp.userId ? <div className="space-y-2 pr-2">
-                          <p className="text-xs font-medium text-amber-800 dark:text-amber-300">ยังไม่เชื่อมบัญชี · จะเชื่อมตามรหัสพนักงานอัตโนมัติ</p>
-                          <p className="text-xs text-muted-foreground">กรอกเฉพาะรหัสพนักงานได้ ชื่อ–นามสกุลที่เว้นว่างจะเติมให้เมื่อพบบัญชีตอนบันทึกหรือเมื่อลงทะเบียน</p>
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {([ ["employeeId", "รหัสพนักงาน"], ["firstName", "ชื่อ"], ["lastName", "นามสกุล"], ["position", "ตำแหน่ง"], ["departmentName", "สังกัด"] ] as const).map(([field, label]) => <label key={field} className="space-y-1 text-xs">
-                              <span>{label}{field !== "employeeId" ? " (ไม่บังคับ)" : " (6 หลัก)"}</span><Input aria-label={`${label} ผู้เดินทาง ${index + 1}`} value={emp[field] || ""}
-                                onChange={(event) => setForm((previous) => ({ ...previous, employeeList: previous.employeeList.map((entry, row) => row === index ? { ...entry, [field]: event.target.value } : entry) }))} />
-                            </label>)}
-                          </div>
+                        {!emp.userId ? <div className="space-y-1 pr-2">
+                          <p className="font-medium">รหัสพนักงาน {emp.employeeId}</p>
+                          <p className="text-xs text-amber-800 dark:text-amber-300">รอเชื่อมบัญชี · เก็บเฉพาะรหัสพนักงาน</p>
+                          <p className="text-xs text-muted-foreground">ชื่อ ตำแหน่ง และสังกัดจะเติมจากบัญชีผู้ใช้เมื่อลงทะเบียน</p>
                         </div> : <span className="font-medium">
                           {emp.firstName} {emp.lastName}
                         </span>}
-                        {emp.employeeId ? (
+                        {emp.userId && emp.employeeId ? (
                           <span className="ml-2 text-xs text-muted-foreground">
                             {emp.employeeId}
                           </span>
                         ) : null}
-                        {emp.position ? (
+                        {emp.userId && emp.position ? (
                           <p className="text-xs text-muted-foreground">
                             {emp.position}
                           </p>
@@ -1156,12 +1158,12 @@ export function OffSiteWorkClient({
           <Button
             variant="outline"
             onClick={() => setMode(null)}
-            disabled={isPending}
+            disabled={isPending || employeeLookupPending}
           >
             ยกเลิก
           </Button>
           <LoadingButton
-            disabled={!validForm || isPending || pdfReviewPending}
+            disabled={!validForm || isPending || pdfReviewPending || employeeLookupPending}
             isLoading={isPending}
             loadingText={mode === "create" ? "กำลังบันทึก" : "กำลังอัปเดต"}
             onClick={mode === "create" ? submitCreate : submitEdit}
@@ -1271,7 +1273,7 @@ export function OffSiteWorkClient({
                         className="rounded-lg border bg-muted/40 px-3 py-2 text-sm"
                       >
                         <span className="font-medium">
-                          {[emp.firstName, emp.lastName].filter(Boolean).join(" ") || "ยังไม่มีข้อมูลชื่อ"}
+                          {emp.userId ? [emp.firstName, emp.lastName].filter(Boolean).join(" ") : "รอข้อมูลจากบัญชีผู้ใช้"}
                         </span>
                         {!emp.userId && <span className="ml-2 text-xs text-muted-foreground">ยังไม่เชื่อมบัญชี</span>}
                         {emp.employeeId ? (
@@ -1279,7 +1281,7 @@ export function OffSiteWorkClient({
                             {emp.employeeId}
                           </span>
                         ) : null}
-                        {emp.position ? (
+                        {emp.userId && emp.position ? (
                           <p className="text-xs text-muted-foreground">
                             {emp.position}
                           </p>

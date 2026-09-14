@@ -9,6 +9,7 @@ vi.mock("@/lib/pdf/off-site-work-reader", () => ({ parseOffSiteWorkPdf: mock.par
 vi.mock("@/app/actions/off-site-work", () => ({ matchOffSiteWorkEmployees: mock.match }));
 const fields = { id: "TZ26010001", startDate: "2026-09-17", endDate: "2026-10-02", objective: "ทดสอบ", location: "ศูนย์ฝึก", innerRefDocumentId: "กท. 10/2569" };
 const draft: OffSiteWorkPdfDraft = { fields, employees: [{ userId: null, employeeId: "100001", firstName: "ทดสอบ", lastName: "รายชื่อ", position: null, departmentId: null, departmentName: null }], issues: [] };
+const pendingTravelers = [{ userId: null, employeeId: "100001", firstName: "", lastName: "", position: null, departmentId: null, departmentName: null }];
 function upload(name = "order.pdf") {
   fireEvent.change(screen.getByLabelText("เลือกไฟล์ PDF"), { target: { files: [new File(["%PDF-test"], name, { type: "application/pdf" })] } });
 }
@@ -37,7 +38,7 @@ describe("PDF import review", () => {
     fireEvent.click(screen.getByRole("button", { name: "นำข้อมูลลงฟอร์ม" }));
     const { location: _location, ...expected } = fields;
     void _location;
-    expect(apply).toHaveBeenCalledWith(expected, draft.employees);
+    expect(apply).toHaveBeenCalledWith(expected, pendingTravelers);
     expect(pending).toHaveBeenLastCalledWith(false);
     expect(screen.queryByText("ตรวจทานข้อมูลก่อนนำลงฟอร์ม")).toBeNull();
   });
@@ -53,7 +54,7 @@ describe("PDF import review", () => {
     expect(checkbox.checked).toBe(false);
     fireEvent.click(checkbox);
     fireEvent.click(screen.getByRole("button", { name: "นำข้อมูลลงฟอร์ม" }));
-    expect(apply).toHaveBeenCalledWith(fields, draft.employees);
+    expect(apply).toHaveBeenCalledWith(fields, pendingTravelers);
   });
   it("ignores stale results when replacing a file and releases local preview URLs", async () => {
     let finish!: (value: unknown) => void;

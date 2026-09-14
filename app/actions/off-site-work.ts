@@ -23,11 +23,12 @@ import type {
   OffSiteWorkFilterCriteria,
 } from "@/lib/domains/off-site-work";
 
-/** Reads account matches only. PDF bytes and draft text never leave the browser. */
+/** Exact account matches for adding employees manually or importing a PDF. */
 export async function matchOffSiteWorkEmployees(employeeIds: string[]): Promise<Result<EmployeeListItem[]>> {
   const session = await auth();
   if (!session?.user?.dbUserId) return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
-  if (!await can(session.user.dbUserId, "OFF_SITE_WORK", "CREATE")) {
+  if (!await can(session.user.dbUserId, "OFF_SITE_WORK", "CREATE") &&
+      !await can(session.user.dbUserId, "OFF_SITE_WORK", "UPDATE")) {
     return { success: false, error: "Permission denied", code: "PERMISSION_DENIED" };
   }
   return offSiteWorkEmployeeService.match(employeeIds);

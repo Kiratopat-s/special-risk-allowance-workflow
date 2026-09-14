@@ -9,6 +9,7 @@ import { matchOffSiteWorkEmployees } from "@/app/actions/off-site-work";
 import { parseOffSiteWorkPdf } from "@/lib/pdf/off-site-work-reader";
 import { PDF_FIELDS, type OffSiteWorkPdfDraft, type PdfField } from "@/lib/pdf/off-site-work-parser";
 import type { EmployeeListItem } from "@/lib/domains/off-site-work/types";
+import { pendingEmployee } from "@/lib/domains/off-site-work/employee-list";
 import { shortDateDisplay } from "@/lib/shared/format";
 
 interface Props {
@@ -73,8 +74,8 @@ export function PdfImport({ protectedFields, currentFields, disabled, onApply, o
       if (matches === undefined) return;
       if (current.signal.aborted) return;
       const employees = result.data.employees.map((employee) =>
-        matches.success ? matches.data.find((user) => user.employeeId === employee.employeeId) || employee : employee);
-      if (!matches.success) setMessage(`${matches.error} รายชื่อจะถูกเก็บไว้เพื่อเชื่อมบัญชีเมื่อบันทึก`);
+        (matches.success && matches.data.find((user) => user.employeeId === employee.employeeId)) || pendingEmployee(employee.employeeId));
+      if (!matches.success) setMessage(`${matches.error} จะเก็บเฉพาะรหัสพนักงานและตรวจสอบบัญชีอีกครั้งเมื่อบันทึก`);
       const url = URL.createObjectURL(file);
       previewUrl.current = url;
       setSource({ name: file.name, url });
@@ -131,6 +132,7 @@ export function PdfImport({ protectedFields, currentFields, disabled, onApply, o
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={includeEmployees} disabled={disabled || applied} onChange={(event) => setIncludeEmployees(event.target.checked)} />
           รวมรายชื่อผู้เดินทาง {draft.employees.length} คน (เชื่อมบัญชีได้ {draft.employees.filter((employee) => employee.userId).length} คน)
         </label>
+        <p className="text-xs text-muted-foreground">ผู้ที่ยังไม่พบบัญชีจะเก็บเฉพาะรหัสพนักงาน ข้อมูลส่วนตัวจะมาจากบัญชีเมื่อลงทะเบียน</p>
         {draft.issues.length > 0 && <div className="space-y-1 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           <p className="font-medium">จุดที่ต้องตรวจทานกับต้นฉบับ</p>
           <ul className="list-disc space-y-1 pl-5">{draft.issues.map((issue, index) => <li key={index}>{issue.message}</li>)}</ul>

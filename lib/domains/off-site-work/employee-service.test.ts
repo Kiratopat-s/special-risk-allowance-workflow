@@ -15,15 +15,12 @@ describe("employee import and matching", () => {
       .toEqual({ success: true, data: [idOnly] });
     expect(repository.findActive).toHaveBeenCalledWith(["000001"], []);
   });
-  it("fills missing names on an exact account match without replacing recorded details", async () => {
+  it("uses the full account profile instead of client-supplied details on an exact match", async () => {
     const account = { ...person, employeeId: "000001", userId: "user-1" };
     vi.mocked(repository.findActive).mockResolvedValue([account]);
-    expect(await service.prepare([idOnly])).toEqual({ success: true, data: [
-      { ...idOnly, userId: "user-1", firstName: account.firstName, lastName: account.lastName },
-    ] });
-    expect(await service.prepare([{ ...idOnly, firstName: "ชื่อในเอกสาร" }])).toEqual({ success: true, data: [
-      { ...idOnly, userId: "user-1", firstName: "ชื่อในเอกสาร", lastName: account.lastName },
-    ] });
+    expect(await service.prepare([idOnly])).toEqual({ success: true, data: [account] });
+    expect(await service.prepare([{ ...idOnly, firstName: "ชื่อในเอกสาร" }])).toEqual({ success: true, data: [account] });
+    expect(await service.prepare([{ ...idOnly, userId: "user-1", position: "ตำแหน่งผิด" }])).toEqual({ success: true, data: [account] });
   });
   it("rejects invalid and duplicate employee numbers even without names", async () => {
     for (const employeeId of [null, "", "00001", "0000001", "00000x"]) {
@@ -32,10 +29,11 @@ describe("employee import and matching", () => {
     expect((await service.prepare([idOnly, { ...idOnly, employeeId: " 000001 " }])).success).toBe(false);
     expect(repository.findActive).not.toHaveBeenCalled();
   });
-  it("keeps unmatched travelers, links exact codes, and preserves the document snapshot", async () => {
-    vi.mocked(repository.findActive).mockResolvedValue([{ ...person, userId: "user-1", departmentName: "ฝ่ายใหม่" }]);
+  it("keeps only the number for unknown travelers and takes known profiles from the account", async () => {
+    const account = { ...person, userId: "user-1", departmentId: "dept-1", departmentName: "ฝ่ายใหม่" };
+    vi.mocked(repository.findActive).mockResolvedValue([account]);
     const result = await service.prepare([person, { ...person, employeeId: "100002" }]);
-    expect(result).toEqual({ success: true, data: [{ ...person, userId: "user-1" }, { ...person, employeeId: "100002" }] });
+    expect(result).toEqual({ success: true, data: [account, { ...idOnly, employeeId: "100002" }] });
   });
   it("rejects forged account/code pairs", async () => {
     vi.mocked(repository.findActive).mockResolvedValue([{ ...person, userId: "user-1", employeeId: "100002" }]);
@@ -52,9 +50,9 @@ describe("employee import and matching", () => {
     vi.mocked(repository.linkForUser).mockRejectedValue(Error("database unavailable"));
     expect(await service.linkForUser("user-1")).toMatchObject({ success: false, code: "EMPLOYEE_LINK_FAILED" });
   });
-  it("merges by either identity without discarding manually edited names", () => {
+  it("upgrades a pending number with account data and strips unknown personal details during import", () => {
     expect(mergeEmployees([person], [{ ...person, userId: "user-1", firstName: "เปลี่ยนชื่อ" }, { ...person, employeeId: "100002" }]))
-      .toEqual([person, { ...person, employeeId: "100002" }]);
+      .toEqual([{ ...person, userId: "user-1", firstName: "เปลี่ยนชื่อ" }, { ...idOnly, employeeId: "100002" }]);
   });
   it("accepts legacy linked users without an employee code and rejects invalid dates", () => {
     expect(employeeListSchema.safeParse([{ ...person, userId: "legacy", employeeId: null }]).success).toBe(true);
