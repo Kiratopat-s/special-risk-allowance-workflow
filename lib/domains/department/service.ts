@@ -37,6 +37,40 @@ interface RequestContext {
  * Department Service - Business logic functions
  */
 export const departmentService = {
+    /** Seed one department, preserving existing records and reporting mismatched keys. */
+    async seedDefault(
+        data: { name: string; shortName: string }
+    ): Promise<Result<"created" | "existing">> {
+        // Let the database enforce both unique keys, including concurrent seed runs.
+        if (await departmentRepository.createIfAbsent(data)) {
+            return success("created");
+        }
+
+        const matches = await Promise.all([
+            departmentRepository.findByName(data.name),
+            departmentRepository.findByShortName(data.shortName),
+        ]);
+        const existing = [...new Map(
+            matches.filter((row) => row !== null).map((row) => [row.id, row])
+        ).values()];
+
+        if (existing.length === 1 && existing[0].name === data.name && existing[0].shortName === data.shortName) {
+            return success("existing");
+        }
+
+        if (existing.length === 0) {
+            return error("Department disappeared after its seed insert was skipped", "DEPARTMENT_SEED_FAILED");
+        }
+
+        const details = existing.map((row) =>
+            `id=${row.id}, name=${JSON.stringify(row.name)}, short_name=${JSON.stringify(row.shortName)}`
+        ).join("; ");
+        return error(
+            `Requested name=${JSON.stringify(data.name)}, short_name=${JSON.stringify(data.shortName)} conflicts with: ${details}`,
+            "DEPARTMENT_SEED_CONFLICT"
+        );
+    },
+
     /**
      * Get department by ID
      */

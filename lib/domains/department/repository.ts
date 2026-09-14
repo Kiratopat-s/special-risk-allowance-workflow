@@ -108,6 +108,15 @@ export const departmentRepository = {
         });
     },
 
+    /** Insert seed data without changing rows that share either unique key. */
+    async createIfAbsent(data: { name: string; shortName: string }): Promise<boolean> {
+        const { count } = await prisma.department.createMany({
+            data: [data],
+            skipDuplicates: true,
+        });
+        return count > 0;
+    },
+
     /**
      * Update an existing department
      */

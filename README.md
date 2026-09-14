@@ -149,11 +149,16 @@ Apply local migrations:
 bunx prisma migrate dev
 ```
 
-Seed default permissions and roles:
+Seed default departments, permissions, and roles:
 
 ```bash
 bunx prisma db seed
 ```
+
+Department seeds skip exact name/short-name matches. If either unique field belongs
+to a different pairing (including a missing short name), the seed reports the
+requested values and conflicting records, leaves them unchanged, and continues
+with the remaining departments.
 
 Start the development server:
 
@@ -185,7 +190,7 @@ Make sure `local.sraw.space` resolves to your local machine and update `NEXTAUTH
 | `bunx prisma generate` | Regenerate the Prisma client. |
 | `bunx prisma migrate dev --name <name>` | Create and apply a local migration. |
 | `bunx prisma migrate deploy` | Apply migrations in production. |
-| `bunx prisma db seed` | Seed default roles, permissions, and role-permission mappings. |
+| `bunx prisma db seed` | Seed default departments, roles, permissions, and role-permission mappings; report department conflicts. |
 | `bunx prisma studio` | Inspect and edit local data. |
 
 ## Dependency Maintenance
