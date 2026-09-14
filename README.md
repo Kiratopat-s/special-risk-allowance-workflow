@@ -340,11 +340,24 @@ curl --fail http://127.0.0.1:3000/api/version
 
 Generate a fresh deployment version for every image build, including rebuilds of
 the same revision. Keep the exported image tag through the deploy commands. The
-Docker build requires this version and embeds it in the server and browser;
+Docker build embeds this version in the server and browser;
 changing runtime environment variables cannot change an already built version.
 GitHub Actions generates a version from the revision, UTC timestamp, run ID, and
-attempt, uses an immutable image tag, and verifies `/api/version` after startup.
+attempt, passes `github.sha` directly as `GIT_COMMIT_SHA`, uses an immutable image
+tag, and verifies `/api/version` after startup.
 Keep the previous image tag for rollback; do not rebuild it under the same tag.
+
+If `DEPLOYMENT_VERSION` is omitted, Docker generates it from `GIT_COMMIT_SHA` or
+the checkout's commit metadata, plus the UTC build time and a random suffix.
+Plain `docker build .` and `docker compose build app` work from a normal Git
+checkout without exporting a version. Only HEAD, branch refs, and packed refs
+are allowed into the build context; Git config, hooks, credentials, and history
+remain excluded, and the runtime image contains no Git metadata. Cached builds
+reuse the existing image and version; a fresh compilation gets a fresh version.
+For source archives or worktrees whose Git directory is outside the build
+context, pass `--build-arg GIT_COMMIT_SHA="$(git rev-parse HEAD)"` explicitly.
+For a BuildKit remote Git URL context, use
+`--build-arg BUILDKIT_CONTEXT_KEEP_GIT_DIR=1` to make the commit metadata available.
 
 Tabs check the version when visible, on focus, and once per minute while visible.
 When a new build is detected, a persistent refresh notice appears, including

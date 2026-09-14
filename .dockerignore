@@ -1,8 +1,16 @@
 # Secrets and local configuration
 .env*
 
-# Source-control and editor files
-.git
+# Only commit identity is needed for automatic deployment versions.
+# Keep Git config, credentials, hooks, index and object history excluded.
+.git/**
+!.git/HEAD
+!.git/packed-refs
+!.git/refs
+!.git/refs/heads
+!.git/refs/heads/**
+
+# Editor files
 .gitignore
 .DS_Store
 

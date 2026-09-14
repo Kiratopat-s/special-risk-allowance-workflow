@@ -5,6 +5,7 @@ services:
       target: runner
       args:
         DEPLOYMENT_VERSION: ${DEPLOYMENT_VERSION:-}
+        GIT_COMMIT_SHA: ${GIT_COMMIT_SHA:-}
     image: sraw-app:${IMAGE_TAG:-latest}
     env_file:
       - ${ENV_FILE:-.env}

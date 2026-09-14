@@ -70,7 +70,9 @@ jobs:
           } > .env
 
       - name: Build app image
-        run: docker build --target runner --build-arg DEPLOYMENT_VERSION="$DEPLOYMENT_VERSION" -t "sraw-app:$IMAGE_TAG" .
+        env:
+          GIT_COMMIT_SHA: ${{ github.sha }}
+        run: docker build --target runner --build-arg GIT_COMMIT_SHA="$GIT_COMMIT_SHA" --build-arg DEPLOYMENT_VERSION="$DEPLOYMENT_VERSION" -t "sraw-app:$IMAGE_TAG" .
 
       - name: Build migrator image
         run: docker build --target migrator -t sraw-migrator:${IMAGE_TAG} .
