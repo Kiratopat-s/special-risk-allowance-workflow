@@ -59,8 +59,6 @@ interface DashboardTabMeta {
 interface MonthlyAccess {
   canManage: boolean;
   canHpa: boolean;
-  canRk: boolean;
-  canDrt: boolean;
 }
 
 interface PermissionCheck {
@@ -264,8 +262,6 @@ async function renderMonthlyRequestsTab(
       initialPagination={data.pagination}
       canManage={monthlyAccess.canManage}
       canHpa={monthlyAccess.canHpa}
-      canRk={monthlyAccess.canRk}
-      canDrt={monthlyAccess.canDrt}
     />
   );
 }
@@ -442,20 +438,16 @@ export default async function DashboardPage({
   const canManageMonthly = hasPermission("MONTHLY_REQUEST", "MANAGE");
   const isSuperAdmin = roles.some((role) => role.code === "super-admin");
   const exactHpa = hasExactPermission("MONTHLY_REQUEST", "REVIEW_HPA");
-  const exactRk = hasExactPermission("MONTHLY_REQUEST", "REVIEW_RK");
-  const exactDrt = hasExactPermission("MONTHLY_REQUEST", "REVIEW_OK");
 
   const monthlyAccess = {
     canManage: canManageMonthly,
     canHpa: exactHpa || isSuperAdmin,
-    canRk: exactRk || isSuperAdmin,
-    canDrt: exactDrt || isSuperAdmin,
   };
   const hasMonthlyRequestAccess =
     monthlyAccess.canManage ||
     monthlyAccess.canHpa ||
-    monthlyAccess.canRk ||
-    monthlyAccess.canDrt;
+    hasPermission("MONTHLY_REQUEST", "LIST") ||
+    hasPermission("MONTHLY_REQUEST", "READ");
 
   const tabAccess: Record<DashboardTabId, boolean> = {
     overview: true,

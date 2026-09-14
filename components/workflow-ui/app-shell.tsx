@@ -40,7 +40,7 @@ function Navigation({ close }: { close: () => void }) {
   const exactMonthly = permissions?.permissions.some(
     (p) =>
       p.resource === "MONTHLY_REQUEST" &&
-      ["REVIEW_HPA", "REVIEW_RK", "REVIEW_OK"].includes(p.action),
+      p.action === "REVIEW_HPA",
   );
   const resourceAccess = (
     resource: "OFF_SITE_WORK" | "EXPENSE_CLAIM" | "SIGNATURE",
@@ -71,6 +71,8 @@ function Navigation({ close }: { close: () => void }) {
       icon: FolderOpen,
       show:
         can("MONTHLY_REQUEST", "MANAGE") ||
+        can("MONTHLY_REQUEST", "READ") ||
+        can("MONTHLY_REQUEST", "LIST") ||
         exactMonthly ||
         hasRole("super-admin"),
     },

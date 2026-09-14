@@ -6,10 +6,11 @@
 
 import type { ClaimDocumentStatus } from "@/lib/shared/types";
 import type { Prisma } from "@/lib/generated/prisma/client";
-import type { MrcApprovalStage, MrcStepStatus } from "@/lib/generated/prisma/client";
+import type { MrcApprovalStage as StoredMrcApprovalStage, MrcStepStatus } from "@/lib/generated/prisma/client";
 
 // Re-export for convenience
-export type { MrcApprovalStage, MrcStepStatus };
+export type { MrcStepStatus };
+export type MrcApprovalStage = "HPA_CHECK";
 
 // ---------------------------------------------------------------------------
 // Core entities
@@ -18,10 +19,12 @@ export type { MrcApprovalStage, MrcStepStatus };
 export interface MrcApprovalStepEntity {
     id: string;
     monthlyRequestCollectionId: string;
-    stage: MrcApprovalStage;
+    stage: StoredMrcApprovalStage;
     status: MrcStepStatus;
     reviewerId: string | null;
     reviewedAt: Date | null;
+    reviewerNameAtApproval: string | null;
+    reviewerPositionAtApproval: string | null;
     remark: string | null;
     createdAt: Date;
     updatedAt: Date | null;
@@ -50,8 +53,6 @@ export interface MrcApprovalStepWithReviewer extends MrcApprovalStepEntity {
         lastName: string;
         positionShort: string | null;
         positionLevel: string | null;
-        /** Active signature binary rows (0 or 1 element) */
-        signatures?: Array<{ signatureData: Buffer }>;
     } | null;
 }
 
@@ -144,4 +145,9 @@ export interface EligibleExpenseClaimForCollection {
         positionShort: string | null;
         positionLevel: string | null;
     };
+}
+
+/** Binary signature data is only selected for authorized summary printing. */
+export interface MrcSummaryPrintData extends MonthlyRequestCollectionWithRelations {
+    approvalSteps: Array<MrcApprovalStepWithReviewer & { signatureData: Uint8Array | null }>;
 }

@@ -106,7 +106,7 @@ describe("authorized dashboard overview", () => {
     expect(mock.claims).not.toHaveBeenCalled();
     expect(mock.collections).not.toHaveBeenCalled();
   });
-  it("passes every exact role to collection visibility for mixed-role users", async () => {
+  it("allows read-only users to access collection visibility without retired reviewer permissions", async () => {
     mock.can.mockImplementation(
       async (_user, resource, action) =>
         resource === "MONTHLY_REQUEST" && action === "LIST",
@@ -122,8 +122,6 @@ describe("authorized dashboard overview", () => {
       manage: false,
       superAdmin: false,
       hpa: false,
-      rk: true,
-      ok: true,
     });
   });
   it("distinguishes loading failure from an empty overview", async () => {

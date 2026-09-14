@@ -40,8 +40,6 @@ export const dashboardService = {
         manage,
         superAdmin,
         hpa,
-        rk,
-        ok,
       ] = await Promise.all([
         resolveClaimReadScope(userId),
         can(userId, "EXPENSE_CLAIM", "UPDATE", { targetOwnerId: userId }),
@@ -55,8 +53,6 @@ export const dashboardService = {
         can(userId, "MONTHLY_REQUEST", "MANAGE"),
         hasRole(userId, "super-admin"),
         canExact(userId, "MONTHLY_REQUEST", "REVIEW_HPA"),
-        canExact(userId, "MONTHLY_REQUEST", "REVIEW_RK"),
-        canExact(userId, "MONTHLY_REQUEST", "REVIEW_OK"),
       ]);
       const actionable: Prisma.ExpenseClaimWhereInput | null =
         updateAll || updateOwn
@@ -76,16 +72,13 @@ export const dashboardService = {
               actionable,
             )
           : null,
-        (listMonthly || readMonthly) &&
-        (manage || superAdmin || hpa || rk || ok)
+        listMonthly || readMonthly
           ? dashboardRepository.collections(start, end, {
               userId,
               ownOnly: !listMonthly,
               manage,
               superAdmin,
               hpa,
-              rk,
-              ok,
             })
           : null,
       ]);
@@ -182,9 +175,9 @@ export const dashboardService = {
                     stage: step.stage,
                     status: step.status,
                     reviewedAt: step.reviewedAt?.toISOString() || null,
-                    reviewer: step.reviewer
+                    reviewer: step.reviewerNameAtApproval ?? (step.reviewer
                       ? `${step.reviewer.firstName} ${step.reviewer.lastName}`
-                      : null,
+                      : null),
                   })),
                 })),
               }

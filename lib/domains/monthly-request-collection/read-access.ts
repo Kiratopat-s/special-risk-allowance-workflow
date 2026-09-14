@@ -8,12 +8,10 @@ export async function resolveCollectionReadAccess(userId: string): Promise<Resul
   if (!list && !(await can(userId, "MONTHLY_REQUEST", "READ"))) {
     return error("ไม่มีสิทธิ์อ่านชุดรวบรวมรายเดือน", "PERMISSION_DENIED");
   }
-  const [manage, superAdmin, hpa, rk, ok] = await Promise.all([
+  const [manage, superAdmin, hpa] = await Promise.all([
     can(userId, "MONTHLY_REQUEST", "MANAGE"),
     hasRole(userId, "super-admin"),
     canExact(userId, "MONTHLY_REQUEST", "REVIEW_HPA"),
-    canExact(userId, "MONTHLY_REQUEST", "REVIEW_RK"),
-    canExact(userId, "MONTHLY_REQUEST", "REVIEW_OK"),
   ]);
-  return success({ userId, ownOnly: !list, manage, superAdmin, hpa, rk, ok });
+  return success({ userId, ownOnly: !list, manage, superAdmin, hpa });
 }

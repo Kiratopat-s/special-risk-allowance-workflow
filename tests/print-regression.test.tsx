@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, it, expect, vi } from "vitest";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 const mock = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -9,7 +11,7 @@ const mock = vi.hoisted(() => ({
 vi.mock("@/lib/auth", () => ({ auth: mock.auth }));
 vi.mock("@/lib/auth/permissions", () => ({ canAny: mock.access }));
 vi.mock("@/lib/domains/monthly-request-collection", () => ({
-  monthlyRequestCollectionRepository: { findWithRelations: mock.find },
+  monthlyRequestCollectionService: { getSummaryPrintData: async (...args: unknown[]) => mock.access() ? { success: true, data: await mock.find(...args) } : { success: false, code: "PERMISSION_DENIED" } },
 }));
 vi.mock("@/app/monthly-request-collection/[id]/print-client", () => ({
   PrintPageControls: () => null,
@@ -23,7 +25,7 @@ vi.mock("next/navigation", () => ({
   },
 }));
 import PrintPage from "@/app/monthly-request-collection/[id]/print/page";
-const signature = Buffer.from("isolated-signature-fixture");
+const signature = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAHgAAAA4CAYAAAA2PDy+AAAAy0lEQVR4nO3RMQ7DIBBEUV+D+x+UVCkjRbJhWO8rXjta+Nec8+K94gcgMAIjcFPxAxAYgRG4qfgBCIzACNxU/AAERmAEbip+AAIjMAI3FT8AgTk58Bhjftnfv7818IrH2D808FOPsR8O/KbPqrh/65DTHtNhf2vg6p9VcT8WuOJnVdzfEvgtn1V9f3ngfx5jf8/+8sC/HmN///7ywJwjfgACIzACNxU/AIERGIGbih+AwAiMwE3FD0BgBEbgpuIHIDACI3BT8QMQmBs++1WRbru9fxMAAAAASUVORK5CYII=", "base64");
 function fixture(count: number) {
   return {
     id: "fixture",
@@ -41,9 +43,12 @@ function fixture(count: number) {
         department: { shortName: "กองทดสอบ" },
       },
     })),
-    approvalSteps: ["HPA_CHECK", "RK_CHECK", "OK_APPROVE"].map((stage) => ({
+    approvalSteps: ["HPA_CHECK"].map((stage) => ({
       stage,
       status: "APPROVED",
+      signatureData: signature,
+      reviewerNameAtApproval: "ผู้ ลงนามเดิม",
+      reviewerPositionAtApproval: "หผ. 8",
       reviewedAt: new Date("2026-09-10"),
       reviewer: {
         firstName: "ผู้",
@@ -56,7 +61,7 @@ function fixture(count: number) {
 }
 beforeEach(() => {
   mock.auth.mockResolvedValue({ user: { dbUserId: "me" } });
-  mock.access.mockResolvedValue(true);
+  mock.access.mockReturnValue(true);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -74,7 +79,7 @@ it("prints Buddhist accounting months and Thai-time approval and print dates", a
   expect(document.body.textContent).toContain("ธันวาคม 2569");
   expect(document.body.textContent).toContain("1 มกราคม 2570");
   expect(document.body.textContent).not.toContain("2026");
-  expect(document.querySelectorAll(".sig-image")).toHaveLength(3);
+  expect(document.querySelectorAll(".sig-image")).toHaveLength(1);
 });
 it.each([
   [0, [0]],
@@ -91,6 +96,9 @@ it.each([
     const html = renderToStaticMarkup(
       await PrintPage({ params: Promise.resolve({ id: "fixture" }) }),
     );
+    if (process.env.MRC_PRINT_PREVIEW_DIR && [12, 35].includes(count)) {
+      writeFileSync(join(process.env.MRC_PRINT_PREVIEW_DIR, `${count}.html`), `<!doctype html><html lang="th"><meta charset="utf-8"><body>${html}</body></html>`);
+    }
     document.body.innerHTML = html;
     const pages = Array.from(document.querySelectorAll(".print-sheet"));
     expect(
@@ -106,7 +114,7 @@ it.each([
       (count * 300).toLocaleString("th-TH", { minimumFractionDigits: 2 }),
     );
     expect(document.querySelectorAll(".signatures")).toHaveLength(1);
-    expect(pages.at(-1)?.querySelectorAll(".sig-image")).toHaveLength(3);
+    expect(pages.at(-1)?.querySelectorAll(".sig-image")).toHaveLength(1);
     expect(document.querySelector(".sig-image")?.getAttribute("src")).toBe(
       `data:image/png;base64,${signature.toString("base64")}`,
     );
@@ -124,16 +132,31 @@ it.each([
 );
 it("does not show a signature for an unapproved stage", async () => {
   const data = fixture(1);
-  data.approvalSteps[1].status = "PENDING";
+  data.approvalSteps[0].status = "PENDING";
   mock.find.mockResolvedValue(data);
   document.body.innerHTML = renderToStaticMarkup(
     await PrintPage({ params: Promise.resolve({ id: "fixture" }) }),
   );
-  expect(document.querySelectorAll(".sig-image")).toHaveLength(2);
+  expect(document.querySelectorAll(".sig-image")).toHaveLength(0);
 });
 it("retains the print permission guard", async () => {
-  mock.access.mockResolvedValue(false);
+  mock.access.mockReturnValue(false);
   await expect(
     PrintPage({ params: Promise.resolve({ id: "fixture" }) }),
   ).rejects.toThrow("redirect:/");
+});
+
+it("prints the saved signer even if the current profile/signature changes", async () => {
+  const data = fixture(1);
+  data.approvalSteps[0].reviewer.firstName = "ชื่อใหม่";
+  data.approvalSteps[0].reviewer.signatures = [];
+  mock.find.mockResolvedValue(data);
+  document.body.innerHTML = renderToStaticMarkup(await PrintPage({ params: Promise.resolve({ id: "fixture" }) }));
+  expect(document.body.textContent).toContain("ผู้ ลงนามเดิม");
+  expect(document.body.textContent).toContain("หผ. 8");
+  expect(document.body.textContent).not.toContain("ชื่อใหม่");
+  expect(document.body.textContent).not.toContain("รก.");
+  expect(document.body.textContent).not.toContain("อก.");
+  expect(document.querySelectorAll(".sig-block")).toHaveLength(1);
+  expect(document.querySelector(".sig-image")?.getAttribute("src")).toContain(signature.toString("base64"));
 });

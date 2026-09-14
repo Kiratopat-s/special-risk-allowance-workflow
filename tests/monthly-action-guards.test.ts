@@ -52,7 +52,7 @@ it("rejects expired sessions before any review", async () => {
   ).toMatchObject({ success: false, code: "UNAUTHORIZED" });
   expect(mock.review).not.toHaveBeenCalled();
 });
-it.each(["HPA_CHECK", "RK_CHECK", "OK_APPROVE"] as const)(
+it.each(["HPA_CHECK"] as const)(
   "requires an active signature at %s",
   async (stage) => {
     mock.signature.mockResolvedValue(null);
@@ -66,19 +66,19 @@ it("does not let MANAGE stand in for an exact stage permission", async () => {
   mock.exact.mockResolvedValue(false);
   expect(
     await reviewMonthlyRequestCollectionStep("m", {
-      stage: "RK_CHECK",
+      stage: "HPA_CHECK",
       approved: true,
     }),
   ).toMatchObject({ success: false, code: "PERMISSION_DENIED" });
   expect(mock.review).not.toHaveBeenCalled();
 });
 it.each(["RK_CHECK", "OK_APPROVE"] as const)(
-  "rejects skipped prior stages for %s",
+  "rejects retired stages even for super-admin: %s",
   async (stage) => {
-    mock.step.mockResolvedValue({ status: "PENDING" });
+    mock.role.mockResolvedValue(true);
     expect(
-      await reviewMonthlyRequestCollectionStep("m", { stage, approved: true }),
-    ).toMatchObject({ success: false, code: "STEP_SEQUENCE_VIOLATED" });
+      await reviewMonthlyRequestCollectionStep("m", { stage: stage as "HPA_CHECK", approved: true }),
+    ).toMatchObject({ success: false, code: "INVALID_APPROVAL_STAGE" });
     expect(mock.review).not.toHaveBeenCalled();
   },
 );

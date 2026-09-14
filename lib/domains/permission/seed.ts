@@ -89,10 +89,8 @@ export const DEFAULT_PERMISSIONS: CreatePermissionInput[] = [
     { code: "monthly-request:submit", name: "Submit Monthly Requests", resource: "MONTHLY_REQUEST", action: "SUBMIT", scope: "DEPARTMENT", isSystem: true },
     { code: "monthly-request:approve", name: "Approve Monthly Requests", resource: "MONTHLY_REQUEST", action: "APPROVE", scope: "ALL", isSystem: true },
     { code: "monthly-request:manage", name: "Manage Monthly Requests", resource: "MONTHLY_REQUEST", action: "MANAGE", scope: "ALL", isSystem: true },
-    // Per-approval-stage review permissions (1-to-1 with MrcApprovalStage)
-    { code: "monthly-request:review:hpa", name: "Review MRC — HPA_CHECK Stage", resource: "MONTHLY_REQUEST", action: "REVIEW_HPA", scope: "ALL", isSystem: true },
-    { code: "monthly-request:review:rk", name: "Review MRC — RK_CHECK Stage", resource: "MONTHLY_REQUEST", action: "REVIEW_RK", scope: "ALL", isSystem: true },
-    { code: "monthly-request:review:ok", name: "Review MRC — OK_APPROVE Stage", resource: "MONTHLY_REQUEST", action: "REVIEW_OK", scope: "ALL", isSystem: true },
+    // Single-stage monthly approval permission
+    { code: "monthly-request:review:hpa", name: "Approve and Sign Monthly Requests — HPA", resource: "MONTHLY_REQUEST", action: "REVIEW_HPA", scope: "ALL", isSystem: true },
 
     // SIGNATURE PERMISSIONS
     { code: "signature:create", name: "Create Own Signature", resource: "SIGNATURE", action: "CREATE", scope: "OWN", isSystem: true },
@@ -132,8 +130,8 @@ export const DEFAULT_PERMISSIONS: CreatePermissionInput[] = [
  * employee  — Regular employee with basic permissions (can create OSW, ECD, signature)
  * collector — Employee extended with MRC management permissions
  * hpa       — Employee extended with HPA_CHECK review permission
- * rk        — Employee extended with RK_CHECK review permission
- * drt       — Employee extended with OK_APPROVE permission
+ * rk        — Employee extended with read access to approved collections
+ * drt       — Employee extended with read access to approved collections
  * super-admin — Full system access with all permissions
  */
 export const DEFAULT_ROLES: CreateRoleInput[] = [
@@ -159,26 +157,26 @@ export const DEFAULT_ROLES: CreateRoleInput[] = [
         isSystem: true,
     },
     // -------------------------------------------------------------------------
-    // MRC Approval workflow roles (1-to-1 with approval stages)
+    // MRC approver and read-only organizational roles
     // -------------------------------------------------------------------------
     {
         code: "hpa",
         name: "หัวหน้าแผนก (HPA)",
-        description: "ผู้ตรวจสอบในขั้นตอน HPA_CHECK — หัวหน้าแผนก",
+        description: "ผู้อนุมัติและลงนามรายงานรวบรวมรายเดือน — หัวหน้าแผนก",
         level: 45,
         isSystem: true,
     },
     {
         code: "rk",
         name: "รองผู้อำนวยการกอง (RK)",
-        description: "ผู้ตรวจสอบในขั้นตอน RK_CHECK — รองผู้อำนวยการกอง",
+        description: "อ่านรายงานรวบรวมที่อนุมัติแล้ว — ลงนามในระบบเอกสารขององค์กร",
         level: 55,
         isSystem: true,
     },
     {
         code: "drt",
         name: "ผู้อำนวยการกอง (DRT)",
-        description: "ผู้อนุมัติขั้นสุดท้าย OK_APPROVE — ผู้อำนวยการกอง",
+        description: "อ่านรายงานรวบรวมที่อนุมัติแล้ว — ลงนามในระบบเอกสารขององค์กร",
         level: 70,
         isSystem: true,
     },
@@ -227,8 +225,6 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         "monthly-request:manage",
         "monthly-request:list",
         "monthly-request:review:hpa",
-        "monthly-request:review:rk",
-        "monthly-request:review:ok",
         "signature:manage",
         "file:manage",
         "action-log:read:all",
@@ -281,8 +277,6 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         "department:list",
         "monthly-request:read:all",
         "monthly-request:list",
-        "monthly-request:submit",       // sidebar visibility
-        "monthly-request:review:rk",    // stage gate
     ],
     drt: [
         ...EMPLOYEE_BASE_PERMISSIONS,
@@ -291,8 +285,6 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
         "department:list",
         "monthly-request:read:all",
         "monthly-request:list",
-        "monthly-request:approve",      // sidebar visibility
-        "monthly-request:review:ok",    // stage gate
     ],
 };
 

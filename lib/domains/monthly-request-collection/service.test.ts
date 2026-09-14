@@ -1,3 +1,6 @@
+vi.mock("@/lib/auth/permissions", () => ({ can: vi.fn(), canExact: vi.fn(), hasRole: vi.fn() }));
+import { can, canExact, hasRole } from "@/lib/auth/permissions";
+import { notificationService } from "@/lib/domains/notification";
 vi.mock("./repository");
 vi.mock("@/lib/domains/permission/repository");
 vi.mock("@/lib/domains/action-log/service");
@@ -21,12 +24,11 @@ const mockRepo = repo as unknown as {
   findEligibleExpenseClaimsForMonth: vi.Mock;
   create: vi.Mock;
   setExpenseClaims: vi.Mock;
-  updateStatus: vi.Mock;
-  findApprovalStep: vi.Mock;
-  createApprovalStep: vi.Mock;
-  reviewApprovalStep: vi.Mock;
-  bulkUpdateLinkedClaimsStatus: vi.Mock;
-  rollbackLinkedClaims: vi.Mock;
+  submitForReview: vi.Mock;
+  reviewCollection: vi.Mock;
+  cancelCollection: vi.Mock;
+  findPrintAccess: vi.Mock;
+  findSummaryForPrint: vi.Mock;
 };
 
 const mockLogService = actionLogService as unknown as { log: vi.Mock };
@@ -53,7 +55,7 @@ describe("monthlyRequestCollectionService", () => {
     it("creates MRC successfully", async () => {
       mockRepo.findActiveForMonth.mockResolvedValue(null);
       mockRepo.create.mockResolvedValue(makeMrc());
-      mockRepo.setExpenseClaims.mockResolvedValue({});
+      mockRepo.setExpenseClaims.mockResolvedValue({ success: true, data: makeMrc() });
       mockLogService.log.mockResolvedValue({});
 
       const result = await monthlyRequestCollectionService.create(
@@ -90,7 +92,7 @@ describe("monthlyRequestCollectionService", () => {
   describe("update", () => {
     it("updates DRAFT MRC", async () => {
       mockRepo.findById.mockResolvedValue(makeMrc());
-      mockRepo.setExpenseClaims.mockResolvedValue({});
+      mockRepo.setExpenseClaims.mockResolvedValue({ success: true, data: makeMrc() });
       mockRepo.findById.mockResolvedValueOnce(makeMrc()).mockResolvedValueOnce(makeMrc());
       mockLogService.log.mockResolvedValue({});
 
@@ -130,187 +132,76 @@ describe("monthlyRequestCollectionService", () => {
     });
   });
 
-  describe("submit", () => {
-    it("transitions DRAFT to PENDING and creates HPA_CHECK step", async () => {
-      mockRepo.findById.mockResolvedValue(makeMrc());
-      mockRepo.updateStatus.mockResolvedValue({});
-      mockRepo.createApprovalStep.mockResolvedValue({});
-      mockRepo.findById.mockResolvedValueOnce(makeMrc()).mockResolvedValueOnce(makeMrc({ status: "PENDING" }));
+  describe("single-stage transitions", () => {
+    beforeEach(() => {
+      vi.mocked(can).mockResolvedValue(true);
+      vi.mocked(canExact).mockResolvedValue(true);
+      vi.mocked(hasRole).mockResolvedValue(false);
       mockRepo.findWithRelations.mockResolvedValue(makeMrcWithRelations({ status: "PENDING" }));
-      mockPermRepo.findUserIdsByPermissionCode.mockResolvedValue([]);
+      mockPermRepo.findUserIdsByPermissionCode.mockResolvedValue(["hpa1"]);
       mockLogService.log.mockResolvedValue({});
-
-      const result = await monthlyRequestCollectionService.submit("mrc1", "actor1");
-
-      expect(result.success).toBe(true);
-      expect(mockRepo.updateStatus).toHaveBeenCalledWith("mrc1", "PENDING");
-      expect(mockRepo.createApprovalStep).toHaveBeenCalledWith("mrc1", "HPA_CHECK");
+      vi.mocked(notificationService.sendToMany).mockResolvedValue(undefined);
     });
-
-    it("rejects when not DRAFT", async () => {
-      mockRepo.findById.mockResolvedValue(makeMrc({ status: "PENDING" }));
-
-      const result = await monthlyRequestCollectionService.submit("mrc1", "actor1");
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("MRC_NOT_DRAFT");
+    it("submits to HPA and notifies the collector, claimants and HPA only", async () => {
+      mockRepo.submitForReview.mockResolvedValue({ success: true, data: makeMrc({ status: "PENDING" }) });
+      expect((await monthlyRequestCollectionService.submit("mrc1", "collector1")).success).toBe(true);
+      expect(mockPermRepo.findUserIdsByPermissionCode).toHaveBeenCalledWith("monthly-request:review:hpa");
+      expect(notificationService.sendToMany).toHaveBeenCalledWith(["collector1", "u1", "hpa1"], "MRC_SUBMITTED", expect.any(String), expect.any(String), expect.any(String));
     });
-  });
-
-  describe("reviewStep", () => {
-    it("HPA approves and advances to RK_CHECK", async () => {
-      mockRepo.findWithRelations.mockResolvedValue(makeMrcWithRelations({ status: "PENDING" }));
-      mockRepo.findApprovalStep.mockResolvedValue({ status: "PENDING" });
-      mockRepo.reviewApprovalStep.mockResolvedValue({});
-      mockRepo.createApprovalStep.mockResolvedValue({});
-      mockRepo.findById.mockResolvedValue(makeMrc({ status: "PENDING" }));
-      mockPermRepo.findUserIdsByPermissionCode.mockResolvedValue([]);
-      mockLogService.log.mockResolvedValue({});
-
-      const result = await monthlyRequestCollectionService.reviewStep(
-        "mrc1",
-        { stage: "HPA_CHECK", approved: true },
-        "reviewer1"
-      );
-
-      expect(result.success).toBe(true);
-      expect(mockRepo.createApprovalStep).toHaveBeenCalledWith("mrc1", "RK_CHECK");
+    it.each([true, false])("announces the final result only after the transaction succeeds: approved=%s", async (approved) => {
+      const status = approved ? "APPROVED" : "REJECTED";
+      mockRepo.reviewCollection.mockResolvedValue({ success: true, data: makeMrc({ status }) });
+      const result = await monthlyRequestCollectionService.reviewStep("mrc1", { stage: "HPA_CHECK", approved }, "hpa1");
+      expect(result).toMatchObject({ success: true, data: { status } });
+      expect(notificationService.sendToMany).toHaveBeenCalledTimes(1);
+      expect(notificationService.sendToMany).toHaveBeenCalledWith(["collector1", "u1"], approved ? "MRC_APPROVED" : "MRC_REJECTED", expect.any(String), expect.any(String), expect.any(String));
+      expect(mockPermRepo.findUserIdsByPermissionCode).not.toHaveBeenCalled();
     });
-
-    it("OK approves and sets MRC to APPROVED", async () => {
-      mockRepo.findWithRelations.mockResolvedValue(makeMrcWithRelations({ status: "PENDING" }));
-      // HPA and RK already approved
-      mockRepo.findApprovalStep.mockImplementation(async (_id: string, stage: string) => {
-        if (stage === "HPA_CHECK" || stage === "RK_CHECK") return { status: "APPROVED" };
-        return { status: "PENDING" };
-      });
-      mockRepo.reviewApprovalStep.mockResolvedValue({});
-      mockRepo.updateStatus.mockResolvedValue({});
-      mockRepo.bulkUpdateLinkedClaimsStatus.mockResolvedValue({});
-      mockRepo.findById.mockResolvedValue(makeMrc({ status: "APPROVED" }));
-      mockLogService.log.mockResolvedValue({});
-
-      const result = await monthlyRequestCollectionService.reviewStep(
-        "mrc1",
-        { stage: "OK_APPROVE", approved: true },
-        "reviewer1"
-      );
-
-      expect(result.success).toBe(true);
-      expect(mockRepo.updateStatus).toHaveBeenCalledWith("mrc1", "APPROVED");
-      expect(mockRepo.bulkUpdateLinkedClaimsStatus).toHaveBeenCalledWith("mrc1", "APPROVED");
+    it.each(["RK_CHECK", "OK_APPROVE", "bogus"])("rejects unsupported stage %s before database access", async (stage) => {
+      const result = await monthlyRequestCollectionService.reviewStep("mrc1", { stage: stage as "HPA_CHECK", approved: true }, "hpa1");
+      expect(result).toMatchObject({ code: "INVALID_APPROVAL_STAGE" });
+      expect(mockRepo.reviewCollection).not.toHaveBeenCalled();
     });
-
-    it("rejection sets MRC to REJECTED and rolls back claims", async () => {
-      mockRepo.findWithRelations.mockResolvedValue(makeMrcWithRelations({ status: "PENDING" }));
-      mockRepo.findApprovalStep.mockResolvedValue({ status: "PENDING" });
-      mockRepo.reviewApprovalStep.mockResolvedValue({});
-      mockRepo.updateStatus.mockResolvedValue({});
-      mockRepo.rollbackLinkedClaims.mockResolvedValue({});
-      mockRepo.findById.mockResolvedValue(makeMrc({ status: "REJECTED" }));
-      mockLogService.log.mockResolvedValue({});
-
-      const result = await monthlyRequestCollectionService.reviewStep(
-        "mrc1",
-        { stage: "HPA_CHECK", approved: false, remark: "Not enough info" },
-        "reviewer1"
-      );
-
-      expect(result.success).toBe(true);
-      expect(mockRepo.updateStatus).toHaveBeenCalledWith("mrc1", "REJECTED");
-      expect(mockRepo.rollbackLinkedClaims).toHaveBeenCalledWith("mrc1");
+    it("does not accept MANAGE in place of the exact HPA permission", async () => {
+      vi.mocked(canExact).mockResolvedValue(false);
+      expect(await monthlyRequestCollectionService.reviewStep("mrc1", { stage: "HPA_CHECK", approved: true }, "manager")).toMatchObject({ code: "PERMISSION_DENIED" });
+      expect(mockRepo.reviewCollection).not.toHaveBeenCalled();
     });
-
-    it("rejects when MRC not PENDING", async () => {
-      mockRepo.findWithRelations.mockResolvedValue(makeMrcWithRelations({ status: "DRAFT" }));
-
-      const result = await monthlyRequestCollectionService.reviewStep(
-        "mrc1",
-        { stage: "HPA_CHECK", approved: true },
-        "reviewer1"
-      );
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("MRC_NOT_PENDING");
+    it("keeps the super-admin exception", async () => {
+      vi.mocked(canExact).mockResolvedValue(false);
+      vi.mocked(hasRole).mockResolvedValue(true);
+      mockRepo.reviewCollection.mockResolvedValue({ success: true, data: makeMrc({ status: "APPROVED" }) });
+      expect((await monthlyRequestCollectionService.reviewStep("mrc1", { stage: "HPA_CHECK", approved: true }, "admin")).success).toBe(true);
     });
-
-    it("rejects when step not pending", async () => {
-      mockRepo.findWithRelations.mockResolvedValue(makeMrcWithRelations({ status: "PENDING" }));
-      mockRepo.findApprovalStep.mockResolvedValue(null);
-
-      const result = await monthlyRequestCollectionService.reviewStep(
-        "mrc1",
-        { stage: "HPA_CHECK", approved: true },
-        "reviewer1"
-      );
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("STEP_NOT_PENDING");
+    it.each(["MRC_NOT_PENDING", "STEP_NOT_PENDING", "SIGNATURE_REQUIRED"])("returns %s without announcing a transition", async (code) => {
+      mockRepo.reviewCollection.mockResolvedValue({ success: false, code, error: "fixture" });
+      expect(await monthlyRequestCollectionService.reviewStep("mrc1", { stage: "HPA_CHECK", approved: true }, "hpa")).toMatchObject({ code });
+      expect(mockLogService.log).not.toHaveBeenCalled();
+      expect(notificationService.sendToMany).not.toHaveBeenCalled();
     });
-
-    it("rejects when prior stage not approved", async () => {
-      mockRepo.findWithRelations.mockResolvedValue(makeMrcWithRelations({ status: "PENDING" }));
-      // RK step is pending, but HPA is not approved
-      mockRepo.findApprovalStep.mockImplementation(async (_id: string, stage: string) => {
-        if (stage === "RK_CHECK") return { status: "PENDING" };
-        return { status: "PENDING" }; // HPA not approved
-      });
-
-      const result = await monthlyRequestCollectionService.reviewStep(
-        "mrc1",
-        { stage: "RK_CHECK", approved: true },
-        "reviewer1"
-      );
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("STEP_SEQUENCE_VIOLATED");
+    it("returns a Result on transaction failure without logging or notifying approval", async () => {
+      mockRepo.reviewCollection.mockRejectedValue(new Error("db failure"));
+      expect(await monthlyRequestCollectionService.reviewStep("mrc1", { stage: "HPA_CHECK", approved: true }, "hpa")).toMatchObject({ code: "MRC_UPDATE_FAILED" });
+      expect(mockLogService.log).not.toHaveBeenCalled();
+      expect(notificationService.sendToMany).not.toHaveBeenCalled();
     });
-  });
-
-  describe("cancel", () => {
-    it("cancels DRAFT MRC and rolls back claims", async () => {
-      mockRepo.findWithRelations.mockResolvedValue(makeMrcWithRelations({ status: "DRAFT" }));
-      mockRepo.updateStatus.mockResolvedValue({});
-      mockRepo.rollbackLinkedClaims.mockResolvedValue({});
-      mockLogService.log.mockResolvedValue({});
-
-      const result = await monthlyRequestCollectionService.cancel("mrc1", "actor1");
-
-      expect(result.success).toBe(true);
-      expect(mockRepo.updateStatus).toHaveBeenCalledWith("mrc1", "CANCELLED", expect.any(Date));
-      expect(mockRepo.rollbackLinkedClaims).toHaveBeenCalledWith("mrc1");
+    it("cancels atomically before notifying participants", async () => {
+      mockRepo.cancelCollection.mockResolvedValue({ success: true, data: makeMrc({ status: "CANCELLED" }) });
+      expect((await monthlyRequestCollectionService.cancel("mrc1", "collector1")).success).toBe(true);
+      expect(notificationService.sendToMany).toHaveBeenCalledWith(["collector1", "u1"], "MRC_CANCELLED", expect.any(String), expect.any(String), expect.any(String));
     });
-
-    it("rejects when already cancelled", async () => {
-      mockRepo.findWithRelations.mockResolvedValue(makeMrcWithRelations({ status: "CANCELLED" }));
-
-      const result = await monthlyRequestCollectionService.cancel("mrc1", "actor1");
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("MRC_ALREADY_CANCELLED");
+    it.each(["MRC_ALREADY_CANCELLED", "MRC_APPROVED", "MRC_STEP_ALREADY_APPROVED"])("preserves cancellation guard %s", async (code) => {
+      mockRepo.cancelCollection.mockResolvedValue({ success: false, code, error: "fixture" });
+      expect(await monthlyRequestCollectionService.cancel("mrc1", "collector1")).toMatchObject({ code });
+      expect(notificationService.sendToMany).not.toHaveBeenCalled();
     });
-
-    it("rejects when already approved", async () => {
-      mockRepo.findWithRelations.mockResolvedValue(makeMrcWithRelations({ status: "APPROVED" }));
-
-      const result = await monthlyRequestCollectionService.cancel("mrc1", "actor1");
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("MRC_APPROVED");
-    });
-
-    it("rejects when has approved step", async () => {
-      mockRepo.findWithRelations.mockResolvedValue(
-        makeMrcWithRelations({
-          status: "PENDING",
-          approvalSteps: [{ status: "APPROVED" }],
-        })
-      );
-
-      const result = await monthlyRequestCollectionService.cancel("mrc1", "actor1");
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("MRC_STEP_ALREADY_APPROVED");
+    it("denies detail and summary signatures before selecting them for a read-only viewer", async () => {
+      vi.mocked(can).mockImplementation(async (_id, _resource, action) => action === "LIST");
+      vi.mocked(canExact).mockResolvedValue(false);
+      mockRepo.findPrintAccess.mockResolvedValue(makeMrc({ status: "PENDING" }));
+      expect(await monthlyRequestCollectionService.getById("mrc1", "reader")).toMatchObject({ code: "PERMISSION_DENIED" });
+      expect(await monthlyRequestCollectionService.getSummaryPrintData("mrc1", "reader")).toMatchObject({ code: "PERMISSION_DENIED" });
+      expect(mockRepo.findSummaryForPrint).not.toHaveBeenCalled();
     });
   });
 });

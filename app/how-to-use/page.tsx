@@ -103,8 +103,8 @@ const FLOW_STAGES: FlowStage[] = [
   },
   {
     label: "06",
-    title: "HPA / RK / OK",
-    description: "ตรวจสอบตามลำดับ หผ. ตรวจสอบ, รก. ตรวจสอบ, อก. อนุมัติ",
+    title: "หผ. อนุมัติ",
+    description: "หผ. อนุมัติและลงนามรายงานรวบรวมรายเดือน",
     href: signInHref("/dashboard?tab=monthly-requests"),
     icon: ShieldCheck,
   },
@@ -139,19 +139,19 @@ const ROLE_LANES: RoleLane[] = [
   {
     role: "HPA",
     label: "หผ.",
-    description: "ตรวจสอบขั้นแรกของรายการประจำเดือน",
+    description: "อนุมัติและลงนามรายงานรายเดือนให้จบในระบบนี้",
     icon: CheckCircle2,
   },
   {
     role: "RK",
     label: "รก.",
-    description: "ตรวจสอบขั้นที่สองหลัง หผ. ผ่านแล้ว",
+    description: "อ่านรายงานที่อนุมัติแล้ว และลงนามในระบบเอกสารขององค์กร",
     icon: FileCheck2,
   },
   {
     role: "OK / DRT",
     label: "อก.",
-    description: "อนุมัติขั้นสุดท้ายและปล่อยให้เอกสารเสร็จสมบูรณ์",
+    description: "อ่านรายงานที่อนุมัติแล้ว และลงนามในระบบเอกสารขององค์กร",
     icon: ShieldCheck,
   },
   {
@@ -216,21 +216,9 @@ const EXPENSE_CLAIM_STATUSES: StatusItem[] = [
 const APPROVAL_STAGES: StatusItem[] = [
   {
     code: "HPA_CHECK",
-    label: "หผ. ตรวจสอบ",
-    description: "เปิดเป็นขั้นแรกเมื่อส่งรายการรายเดือน",
+    label: "หผ. อนุมัติ",
+    description: "ขั้นเดียวของรายงานรวบรวมรายเดือน โดย หผ. หรือ Super-admin",
     tone: "info",
-  },
-  {
-    code: "RK_CHECK",
-    label: "รก. ตรวจสอบ",
-    description: "เปิดหลังจาก หผ. อนุมัติแล้วเท่านั้น",
-    tone: "warning",
-  },
-  {
-    code: "OK_APPROVE",
-    label: "อก. อนุมัติ",
-    description: "ขั้นสุดท้ายที่เปลี่ยนรายการและคำขอเป็นอนุมัติ",
-    tone: "success",
   },
 ];
 
@@ -244,7 +232,7 @@ const STEP_STATUSES: StatusItem[] = [
   {
     code: "APPROVED",
     label: "ผ่าน",
-    description: "ขั้นนี้ผ่านแล้ว ระบบเปิดขั้นถัดไปหรือจบงาน",
+    description: "หผ. อนุมัติแล้ว รายงานและใบเบิกในชุดจบงานในระบบนี้",
     tone: "success",
   },
   {
@@ -318,11 +306,11 @@ const EVENT_GROUPS: EventGroup[] = [
     icon: ShieldCheck,
     events: [
       "ผู้ตรวจสอบต้องมีลายมือชื่อก่อนอนุมัติหรือปฏิเสธ",
-      "HPA_CHECK อนุมัติแล้วเปิด RK_CHECK",
-      "RK_CHECK อนุมัติแล้วเปิด OK_APPROVE",
-      "OK_APPROVE อนุมัติแล้วเปลี่ยน MRC และคำขอเป็น APPROVED",
-      "ปฏิเสธขั้นใดก็ได้เพื่อหยุด MRC และคืนคำขอเป็น WAIT_FOR_COLLECTION",
-      "ยกเลิก MRC ก่อนมีขั้นที่อนุมัติแล้ว",
+      "หผ. อนุมัติแล้วรายงานรวบรวมและใบเบิกในชุดเป็นอนุมัติแล้ว",
+      "เก็บลายเซ็น ชื่อ และตำแหน่ง ณ เวลาอนุมัติไว้สำหรับพิมพ์ซ้ำ",
+      "ผู้รวบรวมพิมพ์/PDF เพื่อนำส่งให้ รก./อก. ลงนามในระบบเอกสารขององค์กร",
+      "หผ. ปฏิเสธรายงานและคืนใบเบิกเป็นรอรวบรวม",
+      "ยกเลิกรายงานได้ก่อน หผ. อนุมัติ",
       "พิมพ์เอกสารพร้อมลายมือชื่อและประวัติการตรวจสอบ",
       "ส่ง notification ให้ผู้เกี่ยวข้องเมื่อสถานะสำคัญเปลี่ยน",
     ],
@@ -353,7 +341,7 @@ const OVERVIEW_STATS = [
   {
     value: APPROVAL_STAGES.length,
     label: "Approval steps",
-    description: "หผ. ตรวจสอบ, รก. ตรวจสอบ, อก. อนุมัติ",
+    description: "หผ. อนุมัติและลงนามขั้นเดียว",
   },
   {
     value: TOTAL_EVENTS,
@@ -411,7 +399,7 @@ export default function HowToUsePage() {
                 <p className="text-base leading-7 text-muted-foreground sm:text-lg">
                   หน้านี้สรุปภาพรวมการทำงานของ Special Risk Allowance
                   Workflow ตั้งแต่บันทึกงานนอกพื้นที่ สร้างเอกสารเบิกจ่าย
-                  ยืนยันโดยหัวหน้า รวบรวมรายเดือน อนุมัติ 3 ขั้น
+                  ยืนยันโดยหัวหน้า รวบรวมรายเดือน หผ. อนุมัติและลงนาม
                   ไปจนถึงพิมพ์เอกสารพร้อมลายมือชื่อ
                 </p>
               </div>

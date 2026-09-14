@@ -242,3 +242,17 @@ describe("leaderVerificationService", () => {
     });
   });
 });
+
+describe("late verification completion", () => {
+  it.each(["internal", "external"])("uses the guarded claim transition for %s verification", async (kind) => {
+    const record = makeVerification();
+    repo.findByToken.mockResolvedValue(record);
+    repo.findByClaimAndOsw.mockResolvedValue(record);
+    repo.findAllByExpenseClaimId.mockResolvedValue([{ ...record, verifiedAt: new Date() }]);
+    vi.mocked(leaderVerificationRepository.markReadyForCollection).mockResolvedValue(false);
+    if (kind === "external") await leaderVerificationService.verifyByToken("token-abc");
+    else await leaderVerificationService.verifyAsInternalLeader("claim1", "osw1", "leader1");
+    expect(leaderVerificationRepository.markReadyForCollection).toHaveBeenCalledWith("claim1");
+    expect(mockPrisma.expenseClaim.update).not.toHaveBeenCalled();
+  });
+});

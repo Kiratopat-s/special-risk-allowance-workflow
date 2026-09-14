@@ -79,6 +79,7 @@ export const dashboardRepository = {
           approvalSteps: {
             select: {
               stage: true,
+              reviewerNameAtApproval: true,
               status: true,
               reviewedAt: true,
               reviewer: { select: { firstName: true, lastName: true } },

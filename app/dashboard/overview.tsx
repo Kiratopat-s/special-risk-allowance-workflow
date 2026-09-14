@@ -257,7 +257,7 @@ export async function Overview({
                       <StatusBadge status={collection.status} />
                     </div>
                     <ol className="approval-timeline">
-                      {["HPA_CHECK", "RK_CHECK", "OK_APPROVE"].map(
+                      {["HPA_CHECK"].map(
                         (stage, index) => {
                           const step = collection.steps.find(
                             (item) => item.stage === stage,
@@ -280,9 +280,7 @@ export async function Overview({
                                 <p className="text-xs font-semibold">
                                   {
                                     [
-                                      "ตรวจสอบ หผ.",
-                                      "ตรวจสอบ รก.",
-                                      "อนุมัติ อก.",
+                                      "หผ. อนุมัติ",
                                     ][index]
                                   }
                                 </p>

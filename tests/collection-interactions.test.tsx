@@ -60,7 +60,7 @@ it.each(["DRAFT", "APPROVED"] as const)("keeps the packet preview separate from 
     updatedAt: null, cancelledAt: null, expenseClaims: [], approvalSteps: [],
     collector: { id: "me", firstName: "ผู้", lastName: "ทดสอบ", employeeId: "000001" },
   };
-  render(<ThemeProvider theme={workflowTheme}><MrcClient initialItems={[collection]} initialPagination={null} canManage canHpa={false} canRk={false} canDrt={false} /></ThemeProvider>);
+  render(<ThemeProvider theme={workflowTheme}><MrcClient initialItems={[collection]} initialPagination={null} canManage canHpa={false} /></ThemeProvider>);
   fireEvent.click(screen.getByRole("button", { name: "ดูรายละเอียด mrc-1" }));
   const link = await screen.findByRole("link", { name: "ดูตัวอย่างใบคำขอทั้งชุด" });
   expect(link.getAttribute("href")).toBe("/monthly-request-collection/mrc-1/claims/print");
@@ -72,7 +72,7 @@ it.each(["DRAFT", "APPROVED"] as const)("keeps the packet preview separate from 
   }
 });
 it("toggles a collection row checkbox once per click or Space without also toggling its row", async () => {
-  render(<ThemeProvider theme={workflowTheme}><MrcClient initialItems={[]} initialPagination={null} canManage canHpa={false} canRk={false} canDrt={false} /></ThemeProvider>);
+  render(<ThemeProvider theme={workflowTheme}><MrcClient initialItems={[]} initialPagination={null} canManage canHpa={false} /></ThemeProvider>);
   await userEvent.click(screen.getByRole("button", { name: "สร้างรายการ" }));
   const checkbox = await screen.findByRole("checkbox", { name: "เลือกเอกสารเบิก claim-1" });
   await userEvent.click(checkbox);
@@ -92,8 +92,6 @@ it("keeps all service-eligible statuses selectable, including pending leader ver
         initialPagination={null}
         canManage
         canHpa={false}
-        canRk={false}
-        canDrt={false}
       />
     </ThemeProvider>,
   );

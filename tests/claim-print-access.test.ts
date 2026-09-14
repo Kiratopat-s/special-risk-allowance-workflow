@@ -49,13 +49,14 @@ describe("print authorization before signatures are fetched", () => {
     expect(await monthlyRequestCollectionService.getClaimsPrintData("mrc", "manager")).toMatchObject({ success: true });
   });
   it.each([
-    ["REVIEW_RK", [], false], ["REVIEW_RK", ["HPA_CHECK"], true],
-    ["REVIEW_OK", ["HPA_CHECK"], false], ["REVIEW_OK", ["HPA_CHECK", "RK_CHECK"], true],
-  ])("respects %s review visibility after %j", async (role, stages, allowed) => {
+    ["REVIEW_HPA", "PENDING", true], ["REVIEW_RK", "PENDING", false],
+    ["REVIEW_OK", "PENDING", false], ["REVIEW_RK", "APPROVED", true],
+    ["REVIEW_OK", "APPROVED", true], ["READ", "REJECTED", false],
+  ])("respects %s visibility for %s", async (role, status, allowed) => {
     mock.can.mockImplementation(async (_id, _resource, action) => action === "LIST");
     mock.exact.mockImplementation(async (_id, _resource, action) => action === role);
-    mock.collection.mockResolvedValue({ collectorId: "collector", status: "PENDING", approvalSteps: stages.map((stage) => ({ stage, status: "APPROVED" })) });
-    expect((await monthlyRequestCollectionService.getClaimsPrintData("mrc", "reviewer")).success).toBe(allowed);
+    mock.collection.mockResolvedValue({ collectorId: "collector", status, approvalSteps: [] });
+    expect((await monthlyRequestCollectionService.getClaimsPrintData("mrc", "reader")).success).toBe(allowed);
     expect(mock.collectionPrint).toHaveBeenCalledTimes(allowed ? 1 : 0);
   });
 });

@@ -32,7 +32,7 @@ function Preview() {
       {scene === "Users" && <UsersClient initialUsers={alignmentUsers} allRoles={alignmentRoles} allDepartments={alignmentDepartments} />}
       {scene === "Departments" && <DepartmentsClient initialDepartments={alignmentDepartments} />}
       {scene === "Permissions" && <PermissionsClient permissions={alignmentPermissions} />}
-      {scene === "Collections" && <MrcClient initialItems={[]} initialPagination={null} canManage canHpa={false} canRk={false} canDrt={false} />}
+      {scene === "Collections" && <MrcClient initialItems={[]} initialPagination={null} canManage canHpa={false} />}
       {scene === "Off-site work" && <OffSiteWorkClient initialItems={[]} initialPagination={null} />}
     </main>
     <Dialog open={dialog} onClose={() => setDialog(false)}>

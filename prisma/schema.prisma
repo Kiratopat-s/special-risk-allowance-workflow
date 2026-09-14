@@ -319,11 +319,11 @@ model ExpenseClaimOffSiteWork {
   @@index([offSiteWorkId])
 }
 
-/// Stage in the multi-level approval chain for MonthlyRequestCollection
+/// Monthly approval stage. Only HPA_CHECK is used by the application.
 enum MrcApprovalStage {
-  HPA_CHECK   // หผ. verification
-  RK_CHECK    // รก. verification
-  OK_APPROVE  // อก. final approval
+  HPA_CHECK   // หผ. final approval in this system
+  RK_CHECK    // Deprecated; retained for migration history
+  OK_APPROVE  // Deprecated; signing takes place in the organization document system
 }
 
 /// Status of an individual approval step
@@ -368,6 +368,9 @@ model MrcApprovalStep {
   
   reviewerId  String?   @map("reviewer_id")
   reviewer    User?     @relation(fields: [reviewerId], references: [id], onDelete: SetNull)
+  signatureData Bytes? @map("signature_data")
+  reviewerNameAtApproval String? @map("reviewer_name_at_approval")
+  reviewerPositionAtApproval String? @map("reviewer_position_at_approval")
   reviewedAt  DateTime? @map("reviewed_at")
   remark      String?   @map("remark")
   

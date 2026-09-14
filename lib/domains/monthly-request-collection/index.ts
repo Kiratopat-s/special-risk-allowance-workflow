@@ -7,6 +7,7 @@
 export type {
     MonthlyRequestCollectionEntity,
     MonthlyRequestCollectionWithRelations,
+    MrcSummaryPrintData,
     MrcApprovalStepEntity,
     MrcApprovalStepWithReviewer,
     MrcExpenseClaimSummary,

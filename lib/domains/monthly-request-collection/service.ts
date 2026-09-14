@@ -3,19 +3,15 @@
  *
  * Business logic and state-machine for the full MRC approval lifecycle.
  *
- * Status flow:
- *   DRAFT  ──(submit)──► PENDING  ──(HPA approve)──► PENDING
- *          ──(HPA reject)──► REJECTED
- *          ──(RK approve)──► PENDING
- *          ──(RK reject)──► REJECTED
- *          ──(OK approve)──► APPROVED  (expense claims set to APPROVED)
- *          ──(OK reject)──► REJECTED
- *   DRAFT/PENDING (no APPROVED steps) ──(cancel)──► CANCELLED
+ * DRAFT → PENDING → APPROVED (HPA signs once; linked claims become APPROVED).
+ * Rejection/cancellation releases linked claims for collection again.
+ * RK/OK signing takes place in the organization's document system.
  *
  * @module lib/domains/monthly-request-collection/service
  */
 
 import { monthlyRequestCollectionRepository as repo } from "./repository";
+import { canExact, hasRole } from "@/lib/auth/permissions";
 import { resolveCollectionReadAccess } from "./read-access";
 import { canSeeCollection } from "./read-policy";
 import { toClaimPrintDocument } from "@/lib/domains/expense-claim-document/print-data";
@@ -29,6 +25,7 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 import type { PaginatedResult } from "@/lib/shared/types";
 import type {
     MonthlyRequestCollectionEntity,
+    MrcSummaryPrintData,
     MonthlyRequestCollectionWithRelations,
     CreateMrcInput,
     UpdateMrcInput,
@@ -38,11 +35,6 @@ import type {
 } from "./types";
 
 type JsonValue = Prisma.JsonValue;
-
-// Linear sequence of approval stages used by the reviewStep logic to determine
-// the current position in the multi-level workflow and which role should act next.
-// Changing this order will directly affect the progression of approvals.
-const STAGE_ORDER = ["HPA_CHECK", "RK_CHECK", "OK_APPROVE"] as const;
 
 function normalizeMonth(value: Date | string): Date {
     const d = new Date(value);
@@ -66,17 +58,31 @@ export const monthlyRequestCollectionService = {
     // Queries
     // -----------------------------------------------------------------------
 
-    async getById(id: string): Promise<Result<MonthlyRequestCollectionWithRelations>> {
+    async getById(id: string, actorId: string): Promise<Result<MonthlyRequestCollectionWithRelations>> {
+        const access = await resolveCollectionReadAccess(actorId);
+        if (!access.success) return access;
         const mrc = await repo.findWithRelations(id);
-        if (!mrc) return error("Monthly request collection not found", "MRC_NOT_FOUND");
+        if (!mrc) return error("ไม่พบรายการรวบรวม", "MRC_NOT_FOUND");
+        if (!canSeeCollection(mrc, access.data)) return error("ไม่มีสิทธิ์อ่านรายการนี้", "PERMISSION_DENIED");
         return success(mrc);
     },
 
+    async getSummaryPrintData(id: string, actorId: string): Promise<Result<MrcSummaryPrintData>> {
+        const access = await resolveCollectionReadAccess(actorId);
+        if (!access.success) return access;
+        const mrc = await repo.findPrintAccess(id);
+        if (!mrc) return error("ไม่พบรายการรวบรวม", "MRC_NOT_FOUND");
+        if (!canSeeCollection(mrc, access.data)) return error("ไม่มีสิทธิ์อ่านรายการนี้", "PERMISSION_DENIED");
+        const data = await repo.findSummaryForPrint(id, access.data);
+        return data ? success(data) : error("ไม่พบรายการรวบรวมที่อ่านได้", "MRC_NOT_FOUND");
+    },
+
     async list(
-        criteria: MrcFilterCriteria
+        criteria: MrcFilterCriteria, actorId: string,
     ): Promise<Result<PaginatedResult<MonthlyRequestCollectionWithRelations>>> {
-        const result = await repo.findMany(criteria);
-        return success(result);
+        const access = await resolveCollectionReadAccess(actorId);
+        if (!access.success) return access;
+        return success(await repo.findMany(criteria, access.data));
     },
 
     async listEligibleExpenseClaims(
@@ -115,7 +121,8 @@ export const monthlyRequestCollectionService = {
         }
 
         const mrc = await repo.create({ collectForMonth: month, expenseClaimIds: data.expenseClaimIds }, actorId);
-        await repo.setExpenseClaims(mrc.id, data.expenseClaimIds);
+        const linked = await repo.setExpenseClaims(mrc.id, data.expenseClaimIds);
+        if (!linked.success) return linked;
 
         await actionLogService.log({
             userId: actorId,
@@ -126,7 +133,7 @@ export const monthlyRequestCollectionService = {
             newData: { month: month.toISOString(), claimsCount: data.expenseClaimIds.length } as JsonValue,
         });
 
-        return success(mrc, "Monthly request collection created");
+        return success(linked.data, "Monthly request collection created");
     },
 
     /**
@@ -148,7 +155,8 @@ export const monthlyRequestCollectionService = {
             if (data.expenseClaimIds.length === 0) {
                 return error("Please select at least one expense claim", "NO_CLAIMS_SELECTED");
             }
-            await repo.setExpenseClaims(id, data.expenseClaimIds);
+            const linked = await repo.setExpenseClaims(id, data.expenseClaimIds);
+            if (!linked.success) return linked;
         }
 
         const updated = await repo.findById(id);
@@ -165,235 +173,89 @@ export const monthlyRequestCollectionService = {
         return success(updated!, "Monthly request collection updated");
     },
 
-    /**
-     * Admin submits a DRAFT collection — creates the first approval step (HPA_CHECK).
-     */
+    /** Submit once, creating the single HPA step atomically. */
     async submit(id: string, actorId: string): Promise<Result<MonthlyRequestCollectionEntity>> {
-        const mrc = await repo.findById(id);
-        if (!mrc) return error("Monthly request collection not found", "MRC_NOT_FOUND");
-
-        if (mrc.status !== "DRAFT") {
-            return error("Only a DRAFT collection can be submitted", "MRC_NOT_DRAFT");
+        let result: Result<MonthlyRequestCollectionEntity>;
+        try {
+            result = await repo.submitForReview(id);
+        } catch {
+            return error("ไม่สามารถส่งรายการได้ กรุณาลองใหม่", "MRC_UPDATE_FAILED");
         }
-
-        await repo.updateStatus(id, "PENDING");
-        await repo.createApprovalStep(id, "HPA_CHECK");
-
+        if (!result.success) return result;
         await actionLogService.log({
-            userId: actorId,
-            actionType: ActionType.OTHER,
-            actionDescription: `Monthly request collection "${id}" submitted for HPA review`,
-            targetEntityType: "MonthlyRequestCollection",
-            targetEntityId: id,
-            previousData: { status: "DRAFT" } as JsonValue,
-            newData: { status: "PENDING" } as JsonValue,
+            userId: actorId, actionType: ActionType.OTHER,
+            actionDescription: `Monthly request collection "${id}" submitted for HPA approval`,
+            targetEntityType: "MonthlyRequestCollection", targetEntityId: id,
+            previousData: { status: "DRAFT" }, newData: { status: "PENDING" },
         });
-
-        const updated = await repo.findById(id);
-
-        // Notify HPA reviewers + collector + claimants
-        const mrcWithRelations = await repo.findWithRelations(id);
-        const claimantIds = mrcWithRelations
-            ? [...new Set(mrcWithRelations.expenseClaims.map((c) => c.userId))]
-            : [];
-        void permissionRepository.findUserIdsByPermissionCode("monthly-request:review:hpa").then(
-            (hpaIds) => {
-                notificationService.sendToMany(
-                    [...new Set([actorId, ...claimantIds, ...hpaIds])],
-                    "MRC_SUBMITTED",
-                    "มีรายการรวบรวมคำขอรายเดือนรอการตรวจสอบ",
-                    "มีรายการรวบรวมคำขอรายเดือนใหม่รอการตรวจสอบในขั้นตอน HPA",
-                    "/dashboard?tab=monthly-requests"
-                );
-            }
-        );
-
-        return success(updated!, "Submitted for review");
-    },
-
-    /**
-     * A reviewer (หผ/รก/อก) reviews the current pending approval step.
-     *
-     * - Approved + not last stage → advance to next stage (create next PENDING step)
-     * - Approved + last stage (OK_APPROVE) → set MRC to APPROVED, update linked expense claims to APPROVED
-     * - Rejected → set MRC to REJECTED, revert linked expense claims to PENDING
-     */
-    async reviewStep(
-        id: string,
-        input: ReviewMrcStepInput,
-        actorId: string
-    ): Promise<Result<MonthlyRequestCollectionEntity>> {
         const mrc = await repo.findWithRelations(id);
-        if (!mrc) return error("Monthly request collection not found", "MRC_NOT_FOUND");
-
-        if (mrc.status !== "PENDING") {
-            return error("Only a PENDING collection can be reviewed", "MRC_NOT_PENDING");
-        }
-
-        // Verify the step exists and is PENDING
-        const step = await repo.findApprovalStep(id, input.stage);
-        if (!step || step.status !== "PENDING") {
-            return error(
-                "This review step is not currently open for action",
-                "STEP_NOT_PENDING"
-            );
-        }
-
-        // Explicit ordering guard — all prior stages must be APPROVED
-        const currentIndex = STAGE_ORDER.indexOf(input.stage as typeof STAGE_ORDER[number]);
-        for (let i = 0; i < currentIndex; i++) {
-            const priorStep = await repo.findApprovalStep(id, STAGE_ORDER[i]);
-            if (!priorStep || priorStep.status !== "APPROVED") {
-                return error(
-                    "ขั้นตอนก่อนหน้ายังไม่ได้รับการอนุมัติ",
-                    "STEP_SEQUENCE_VIOLATED"
-                );
-            }
-        }
-
-        const newStepStatus = input.approved ? "APPROVED" : "REJECTED";
-        await repo.reviewApprovalStep(id, input.stage, newStepStatus, actorId, input.remark);
-
-        if (!input.approved) {
-            // Rejection → MRC REJECTED, roll back ECDs to WAIT_FOR_COLLECTION + unlink
-            await repo.updateStatus(id, "REJECTED");
-            await repo.rollbackLinkedClaims(id);
-
-            await actionLogService.log({
-                userId: actorId,
-                actionType: ActionType.OTHER,
-                actionDescription: `Monthly request collection "${id}" rejected at stage ${input.stage}`,
-                targetEntityType: "MonthlyRequestCollection",
-                targetEntityId: id,
-                newData: { stage: input.stage, status: "REJECTED", remark: input.remark } as JsonValue,
-            });
-
-            // Notify collector + all claimants + previous approvers of rejection
-            const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
-            const priorApproverIds = mrc.approvalSteps
-                .filter((s) => s.status === "APPROVED" && s.reviewerId)
-                .map((s) => s.reviewerId!);
-            void notificationService.sendToMany(
-                [...new Set([mrc.collectorId, ...claimantIds, ...priorApproverIds])],
-                "MRC_REJECTED",
-                "คำขอรายเดือนถูกปฏิเสธ",
-                `รายการรวบรวมคำขอรายเดือนถูกปฏิเสธในขั้นตอน ${input.stage}`,
-                "/dashboard?tab=monthly-requests"
-            );
-
-            const updated = await repo.findById(id);
-            return success(updated!, "Rejected successfully");
-        }
-
-        // Approved — advance or finalise
-        const advanceIndex = STAGE_ORDER.indexOf(input.stage as typeof STAGE_ORDER[number]);
-        const isLastStage = advanceIndex === STAGE_ORDER.length - 1;
-
-        if (isLastStage) {
-            // Final approval
-            await repo.updateStatus(id, "APPROVED");
-            await repo.bulkUpdateLinkedClaimsStatus(id, "APPROVED");
-
-            await actionLogService.log({
-                userId: actorId,
-                actionType: ActionType.OTHER,
-                actionDescription: `Monthly request collection "${id}" fully approved`,
-                targetEntityType: "MonthlyRequestCollection",
-                targetEntityId: id,
-                newData: { stage: input.stage, status: "APPROVED" } as JsonValue,
-            });
-
-            // Notify collector + all claimants + previous approvers of final approval
-            const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
-            const priorApproverIds = mrc.approvalSteps
-                .filter((s) => s.status === "APPROVED" && s.reviewerId)
-                .map((s) => s.reviewerId!);
-            void notificationService.sendToMany(
-                [...new Set([mrc.collectorId, ...claimantIds, ...priorApproverIds])],
-                "MRC_APPROVED",
-                "คำขอรายเดือนได้รับการอนุมัติแล้ว",
-                "รายการรวบรวมคำขอรายเดือนได้รับการอนุมัติครบทุกขั้นตอนแล้ว",
-                "/dashboard?tab=monthly-requests"
-            );
-        } else {
-            // Advance to next stage — notify the next-stage reviewers
-            const nextStage = STAGE_ORDER[advanceIndex + 1];
-            await repo.createApprovalStep(id, nextStage);
-
-            await actionLogService.log({
-                userId: actorId,
-                actionType: ActionType.OTHER,
-                actionDescription: `Monthly request collection "${id}" approved at ${input.stage}, advancing to ${nextStage}`,
-                targetEntityType: "MonthlyRequestCollection",
-                targetEntityId: id,
-                newData: { stage: input.stage, nextStage } as JsonValue,
-            });
-
-            const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
-            const stagePermCode =
-                nextStage === "RK_CHECK" ? "monthly-request:review:rk" : "monthly-request:review:ok";
-            void permissionRepository.findUserIdsByPermissionCode(stagePermCode).then(
-                (nextReviewerIds) => notificationService.sendToMany(
-                    [...new Set([mrc.collectorId, ...claimantIds, ...nextReviewerIds])],
-                    "MRC_STEP_APPROVED",
-                    "ขั้นตอนการอนุมัติผ่านแล้ว — รอดำเนินการขั้นถัดไป",
-                    `คำขอรายเดือนผ่านขั้น ${input.stage} แล้ว กรุณาดำเนินการในขั้นตอน ${nextStage}`,
-                    "/dashboard?tab=monthly-requests"
-                )
-            );
-        }
-
-        const updated = await repo.findById(id);
-        return success(updated!, isLastStage ? "Fully approved" : "Step approved, advanced to next stage");
+        void permissionRepository.findUserIdsByPermissionCode("monthly-request:review:hpa").then((hpaIds) => notificationService.sendToMany(
+            [...new Set([result.data.collectorId, ...(mrc?.expenseClaims.map((c) => c.userId) ?? []), ...hpaIds])],
+            "MRC_SUBMITTED", "มีรายการรวบรวมรายเดือนรอ หผ. อนุมัติ",
+            "กรุณาตรวจสอบและลงนามรายงานรวบรวมรายเดือน", "/dashboard?tab=monthly-requests",
+        )).catch(() => undefined);
+        return result;
     },
 
-    /**
-     * Admin cancels a collection.
-     * Allowed only when status=DRAFT or status=PENDING with no APPROVED steps.
-     * Reverts linked expense claims to WAIT_FOR_COLLECTION and unlinks them
-     * from the MRC so admin can collect them again in a future MRC.
-     */
+    async reviewStep(
+        id: string, input: ReviewMrcStepInput, actorId: string,
+    ): Promise<Result<MonthlyRequestCollectionEntity>> {
+        if (!input || input.stage !== "HPA_CHECK") return error("รองรับเฉพาะการอนุมัติของ หผ.", "INVALID_APPROVAL_STAGE");
+        if (typeof input.approved !== "boolean" || (input.remark !== undefined && typeof input.remark !== "string")) {
+            return error("ข้อมูลการอนุมัติไม่ถูกต้อง", "INVALID_REVIEW_INPUT");
+        }
+        if (!(await hasRole(actorId, "super-admin")) && !(await canExact(actorId, "MONTHLY_REQUEST", "REVIEW_HPA"))) {
+            return error("ไม่มีสิทธิ์ในขั้นตอนนี้", "PERMISSION_DENIED");
+        }
+        const mrc = await repo.findWithRelations(id);
+        if (!mrc) return error("ไม่พบรายการรวบรวม", "MRC_NOT_FOUND");
+        let result: Result<MonthlyRequestCollectionEntity>;
+        try {
+            result = await repo.reviewCollection(id, input, actorId);
+        } catch {
+            return error("ไม่สามารถบันทึกการอนุมัติได้ กรุณาลองใหม่", "MRC_UPDATE_FAILED");
+        }
+        if (!result.success) return result;
+        await actionLogService.log({
+            userId: actorId, actionType: ActionType.OTHER,
+            actionDescription: `Monthly request collection "${id}" ${input.approved ? "approved and signed by HPA" : "rejected by HPA"}`,
+            targetEntityType: "MonthlyRequestCollection", targetEntityId: id,
+            previousData: { status: "PENDING" },
+            newData: { stage: "HPA_CHECK", status: result.data.status, remark: input.remark ?? null },
+        });
+        void notificationService.sendToMany(
+            [...new Set([mrc.collectorId, ...mrc.expenseClaims.map((c) => c.userId)])],
+            input.approved ? "MRC_APPROVED" : "MRC_REJECTED",
+            input.approved ? "รายงานรวบรวมรายเดือนได้รับการอนุมัติแล้ว" : "รายงานรวบรวมรายเดือนถูกปฏิเสธ",
+            input.approved ? "หผ. ลงนามแล้ว ผู้รวบรวมสามารถพิมพ์/PDF เพื่อนำส่งในระบบเอกสารขององค์กร"
+                : "หผ. ปฏิเสธรายงาน เอกสารเบิกที่เกี่ยวข้องกลับสู่สถานะรอรวบรวม",
+            "/dashboard?tab=monthly-requests",
+        ).catch(() => undefined);
+        return result;
+    },
+
+    /** Parent-row lock serializes cancellation with submission and signing. */
     async cancel(id: string, actorId: string): Promise<Result<void>> {
         const mrc = await repo.findWithRelations(id);
-        if (!mrc) return error("Monthly request collection not found", "MRC_NOT_FOUND");
-
-        if (mrc.status === "CANCELLED") return error("Already cancelled", "MRC_ALREADY_CANCELLED");
-        if (mrc.status === "APPROVED") return error("An approved collection cannot be cancelled", "MRC_APPROVED");
-
-        const hasApprovedStep = mrc.approvalSteps.some((s) => s.status === "APPROVED");
-        if (hasApprovedStep) {
-            return error(
-                "Cannot cancel: a reviewer has already approved this collection",
-                "MRC_STEP_ALREADY_APPROVED"
-            );
+        if (!mrc) return error("ไม่พบรายการรวบรวม", "MRC_NOT_FOUND");
+        let result: Result<MonthlyRequestCollectionEntity>;
+        try {
+            result = await repo.cancelCollection(id);
+        } catch {
+            return error("ไม่สามารถยกเลิกรายการได้ กรุณาลองใหม่", "MRC_UPDATE_FAILED");
         }
-
-        await repo.updateStatus(id, "CANCELLED", new Date());
-        await repo.rollbackLinkedClaims(id);
-
+        if (!result.success) return result;
         await actionLogService.log({
-            userId: actorId,
-            actionType: ActionType.OTHER,
+            userId: actorId, actionType: ActionType.OTHER,
             actionDescription: `Monthly request collection "${id}" cancelled`,
-            targetEntityType: "MonthlyRequestCollection",
-            targetEntityId: id,
-            previousData: { status: mrc.status } as JsonValue,
-            newData: { status: "CANCELLED" } as JsonValue,
+            targetEntityType: "MonthlyRequestCollection", targetEntityId: id,
+            previousData: { status: mrc.status }, newData: { status: "CANCELLED" },
         });
-
-        // Notify collector + all claimants + any approvers
-        const claimantIds = [...new Set(mrc.expenseClaims.map((c) => c.userId))];
-        const approverIds = mrc.approvalSteps
-            .filter((s) => s.reviewerId)
-            .map((s) => s.reviewerId!);
         void notificationService.sendToMany(
-            [...new Set([mrc.collectorId, ...claimantIds, ...approverIds])],
-            "MRC_CANCELLED",
-            "รายการรวบรวมคำขอรายเดือนถูกยกเลิก",
-            "รายการรวบรวมคำขอรายเดือนถูกยกเลิกแล้ว เอกสารเบิกจ่ายที่เกี่ยวข้องกลับสู่สถานะรอรวบรวม",
-            "/dashboard?tab=monthly-requests"
-        );
-
-        return success(undefined, "Monthly request collection cancelled");
+            [...new Set([mrc.collectorId, ...mrc.expenseClaims.map((c) => c.userId)])],
+            "MRC_CANCELLED", "รายการรวบรวมรายเดือนถูกยกเลิก",
+            "เอกสารเบิกที่เกี่ยวข้องกลับสู่สถานะรอรวบรวม", "/dashboard?tab=monthly-requests",
+        ).catch(() => undefined);
+        return success(undefined, "ยกเลิกรายการรวบรวมแล้ว");
     },
 };

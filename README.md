@@ -9,7 +9,7 @@ Special Risk Allowance Workflow is a Next.js application for managing PEA specia
 - Creates and tracks individual expense claim documents for selected work dates.
 - Requests leader verification from internal leaders or external leaders through one-time links.
 - Collects eligible expense claims into monthly request collections.
-- Runs monthly collections through a three-stage approval flow: `HPA_CHECK`, `RK_CHECK`, then `OK_APPROVE`.
+- Completes monthly collections with one `HPA_CHECK` approval and a saved signing snapshot. RK/OK sign later in the organization’s document system.
 - Stores active user signatures and prints them into approval documents.
 - Provides role-based access control, audit logging, in-app notifications, web push, and SMTP email for verification links.
 
@@ -85,8 +85,8 @@ The seed script creates these system roles:
 | `employee` | Creates own off-site work, expense claims, and signatures. |
 | `collector` | Collects claims into monthly request collections and manages MRC records. |
 | `hpa` | Reviews monthly request collections at the `HPA_CHECK` stage. |
-| `rk` | Reviews monthly request collections at the `RK_CHECK` stage. |
-| `drt` | Performs final approval at the `OK_APPROVE` stage. |
+| `rk` | Reads and prints approved monthly collections; signs in the organization document system. |
+| `drt` | Reads and prints approved monthly collections; signs in the organization document system. |
 | `super-admin` | Full system administration. |
 
 ## Requirements
@@ -230,7 +230,7 @@ bun run test:migrations
 3. Submitted claims create leader verification records when linked off-site work has leaders.
 4. Internal leaders verify through their queue; external leaders verify through a public one-time token link.
 5. Verified or pending claims become eligible for collector-managed monthly request collections.
-6. Monthly collections move through `HPA_CHECK`, `RK_CHECK`, and `OK_APPROVE` approval steps.
+6. HPA (or super-admin) approves and signs at `HPA_CHECK`, atomically setting the collection and linked claims to `APPROVED`. The collector prints/saves the PDF and submits it to the organization document system for RK/OK signing.
 7. Approved documents can be printed with stored signatures and audit context.
 
 ## Database Notes
@@ -366,3 +366,11 @@ app`; do not attempt to roll back production Prisma migrations automatically.
 - Email links are not sent: check `EMAIL_HOST`, `EMAIL_USER`, `EMAIL_PASS`, `EMAIL_FROM`, and `NEXTAUTH_URL`.
 - Push notifications do not arrive: check VAPID keys, service worker registration, browser permission, and stored push subscriptions.
 - Missing database columns despite an up-to-date migration status: run `bun run check:schema` and follow the [migration and schema-verification guide](docs/database-migrations.md). CI also runs `bun run test:migrations` against disposable PostgreSQL.
+
+### Single-HPA approval cutover
+
+The single-stage workflow stores signature bytes, signer name and position at approval time. Reprinting uses that snapshot, even after profile/signature changes. RK/DRT keep read/list permissions but can only see approved collections; management and HPA permissions retain their broader access. `MANAGE` alone does not grant signing rights.
+
+Deploy migration `20260914140000_single_hpa_approval` before starting the updated app, then run `bunx prisma generate`. The migration checks for legacy RK/OK steps or already approved steps and aborts without changing documents if any exist. Review such data before deployment; do not reset the database or mark the migration applied manually. No legacy approval conversion is provided because this release assumes no real signed documents exist. Use `bun run test:migrations` for disposable PostgreSQL upgrade/fresh-install checks; it never uses the application database.
+
+The migration withdraws retired review grants and RK/DRT submit/approve grants. Updated permission seeds do not recreate them. Deprecated enum values remain only for migration compatibility. No external document API or delivery tracking is added.

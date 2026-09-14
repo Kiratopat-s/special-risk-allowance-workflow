@@ -7,8 +7,7 @@
 
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { canAny } from "@/lib/auth/permissions";
-import { monthlyRequestCollectionRepository } from "@/lib/domains/monthly-request-collection";
+import { monthlyRequestCollectionService } from "@/lib/domains/monthly-request-collection";
 import { PrintPageControls } from "../print-client";
 import { longDateDisplay, monthDisplay } from "@/lib/shared/format";
 
@@ -29,22 +28,6 @@ function decimalToNumber(v: unknown): number {
 function decimalText(v: unknown): string {
   const num = decimalToNumber(v);
   return num === 0 ? "-" : num.toString();
-}
-
-/** Convert a reviewer's active signature bytes to a data URL, or null if unavailable. */
-function reviewerSigUrl(
-  reviewer:
-    | { signatures?: Array<{ signatureData: Buffer | Uint8Array }> }
-    | null
-    | undefined,
-): string | null {
-  const data = reviewer?.signatures?.[0]?.signatureData;
-  if (!data) return null;
-  try {
-    return `data:image/png;base64,${Buffer.from(data).toString("base64")}`;
-  } catch {
-    return null;
-  }
 }
 
 function paginateClaimsForPrint<T>(
@@ -104,16 +87,12 @@ export default async function MrcPrintPage({ params }: PrintPageProps) {
   const session = await auth();
   if (!session?.user?.dbUserId) redirect("/api/auth/signin");
 
-  const hasAccess = await canAny(session.user.dbUserId, [
-    { resource: "MONTHLY_REQUEST", action: "READ" },
-    { resource: "MONTHLY_REQUEST", action: "LIST" },
-    { resource: "MONTHLY_REQUEST", action: "MANAGE" },
-    { resource: "MONTHLY_REQUEST", action: "APPROVE" },
-  ]);
-  if (!hasAccess) redirect("/");
-
-  const mrc = await monthlyRequestCollectionRepository.findWithRelations(id);
-  if (!mrc) notFound();
+  const result = await monthlyRequestCollectionService.getSummaryPrintData(id, session.user.dbUserId);
+  if (!result.success) {
+    if (result.code === "MRC_NOT_FOUND") notFound();
+    redirect("/");
+  }
+  const mrc = result.data;
 
   const printedDate = longDateDisplay(new Date(), "", { timeZone: "Asia/Bangkok" });
   const forMonth = monthDisplay(mrc.collectForMonth);
@@ -132,8 +111,9 @@ export default async function MrcPrintPage({ params }: PrintPageProps) {
   );
 
   const hpaStep = mrc.approvalSteps.find((s) => s.stage === "HPA_CHECK");
-  const rkStep = mrc.approvalSteps.find((s) => s.stage === "RK_CHECK");
-  const okStep = mrc.approvalSteps.find((s) => s.stage === "OK_APPROVE");
+  const hpaSignatureUrl = hpaStep?.status === "APPROVED" && hpaStep.signatureData
+    ? `data:image/png;base64,${Buffer.from(hpaStep.signatureData).toString("base64")}`
+    : null;
 
   const regularPageRows = 22;
   const lastPageRows = 12;
@@ -286,7 +266,8 @@ tr { break-inside: avoid; page-break-inside: avoid; }
 
 .signatures {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: minmax(220px, 280px);
+  justify-content: center;
   gap: 16px;
   margin-top: 40px;
   break-inside: avoid;
@@ -461,70 +442,39 @@ button.primary {
               </table>
 
               {claimPage.isLastPage && (
-                <>
-                  <div className="signatures">
-                    {[hpaStep, rkStep, okStep].map((step, i) => {
-                      const labels = [
-                        "หผ. ตรวจสอบ",
-                        "รก. ตรวจสอบ",
-                        "อก. อนุมัติ",
-                      ];
-                      const sigUrl =
-                        step?.status === "APPROVED"
-                          ? reviewerSigUrl(step?.reviewer)
-                          : null;
-                      return (
-                        <div key={i} className="sig-block">
-                          {sigUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={sigUrl}
-                              alt="ลายเซ็น"
-                              className="sig-image"
-                            />
-                          ) : (
-                            <div className="sig-placeholder" />
-                          )}
-                          <div className="sig-line" />
-                          <p className="sig-label">{labels[i]}</p>
-                          {step?.reviewer ? (
-                            <>
-                              <p className="sig-name">
-                                ({step.reviewer.firstName}{" "}
-                                {step.reviewer.lastName})
-                              </p>
-                              <p className="sig-role">
-                                {step.reviewer.positionShort ?? ""}
-                                {step.reviewer.positionLevel
-                                  ? ` ${step.reviewer.positionLevel}`
-                                  : ""}
-                              </p>
-                              <p className="sig-date">
-                                {step.reviewedAt
-                                  ? longDateDisplay(step.reviewedAt, "", { timeZone: "Asia/Bangkok" })
-                                  : ""}
-                              </p>
-                            </>
-                          ) : (
-                            <>
-                              <p className="sig-name">(……………………………)</p>
-                              <p className="sig-role">&nbsp;</p>
-                              <p className="sig-date">&nbsp;</p>
-                            </>
-                          )}
-                          {step?.status === "REJECTED" && step.remark && (
-                            <p className="sig-remark">ปฏิเสธ: {step.remark}</p>
-                          )}
-                          {step?.status === "APPROVED" && (
-                            <p className="sig-status sig-status-approved">
-                              ✓ อนุมัติ
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
+                <div className="signatures">
+                  <div className="sig-block">
+                    {hpaSignatureUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={hpaSignatureUrl} alt="ลายเซ็น" className="sig-image" />
+                    ) : (
+                      <div className="sig-placeholder" />
+                    )}
+                    <div className="sig-line" />
+                    <p className="sig-label">หผ. อนุมัติ</p>
+                    {hpaStep?.reviewerNameAtApproval ? (
+                      <>
+                        <p className="sig-name">({hpaStep.reviewerNameAtApproval})</p>
+                        <p className="sig-role">{hpaStep.reviewerPositionAtApproval ?? ""}</p>
+                        <p className="sig-date">
+                          {hpaStep.reviewedAt ? longDateDisplay(hpaStep.reviewedAt, "", { timeZone: "Asia/Bangkok" }) : ""}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="sig-name">(……………………………)</p>
+                        <p className="sig-role">&nbsp;</p>
+                        <p className="sig-date">&nbsp;</p>
+                      </>
+                    )}
+                    {hpaStep?.status === "REJECTED" && hpaStep.remark && (
+                      <p className="sig-remark">ปฏิเสธ: {hpaStep.remark}</p>
+                    )}
+                    {hpaStep?.status === "APPROVED" && (
+                      <p className="sig-status sig-status-approved">✓ อนุมัติ</p>
+                    )}
                   </div>
-                </>
+                </div>
               )}
 
               <div className="sheet-footer">

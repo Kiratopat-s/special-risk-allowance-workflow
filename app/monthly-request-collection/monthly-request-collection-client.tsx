@@ -84,8 +84,6 @@ interface MrcClientProps {
   initialPagination: Pagination | null;
   canManage: boolean;
   canHpa: boolean;
-  canRk: boolean;
-  canDrt: boolean;
 }
 
 type Mode =
@@ -94,8 +92,6 @@ type Mode =
   | "view"
   | "cancel"
   | "review_hpa"
-  | "review_rk"
-  | "review_ok"
   | null;
 
 const PAGE_SIZE = 20;
@@ -109,8 +105,6 @@ export function MrcClient({
   initialPagination,
   canManage,
   canHpa,
-  canRk,
-  canDrt,
 }: MrcClientProps) {
   const { userId } = useScopedPermission("MONTHLY_REQUEST");
   const router = useRouter();
@@ -235,16 +229,12 @@ export function MrcClient({
     setReviewRemark("");
     const stageToMode: Record<MrcApprovalStage, Mode> = {
       HPA_CHECK: "review_hpa",
-      RK_CHECK: "review_rk",
-      OK_APPROVE: "review_ok",
     };
     setMode(stageToMode[stage]);
   };
 
   const currentReviewStage = useMemo((): MrcApprovalStage | null => {
     if (mode === "review_hpa") return "HPA_CHECK";
-    if (mode === "review_rk") return "RK_CHECK";
-    if (mode === "review_ok") return "OK_APPROVE";
     return null;
   }, [mode]);
 
@@ -355,9 +345,9 @@ export function MrcClient({
   /** Which review stage can the current user act on for a given MRC? */
   const getActionableStage = useCallback(
     (mrc: MonthlyRequestCollectionWithRelations): MrcApprovalStage | null => {
-      return collectionActionStage(mrc, { hpa: canHpa, rk: canRk, ok: canDrt });
+      return collectionActionStage(mrc, { hpa: canHpa });
     },
-    [canHpa, canRk, canDrt],
+    [canHpa],
   );
 
   const canCancelMrc = useCallback(
@@ -1038,7 +1028,7 @@ export function MrcClient({
       {/* ─── Review dialog ────────────────────────────────────────── */}
       <Dialog
         busy={isPending}
-        open={["review_hpa", "review_rk", "review_ok"].includes(mode ?? "")}
+        open={mode === "review_hpa"}
         onClose={() => setMode(null)}
       >
         <DialogClose onClose={() => setMode(null)} />

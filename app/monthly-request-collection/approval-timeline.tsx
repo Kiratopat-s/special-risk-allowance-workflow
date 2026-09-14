@@ -23,9 +23,7 @@ import type {
 
 export function stageLabel(stage: MrcApprovalStage): string {
   const map: Record<MrcApprovalStage, string> = {
-    HPA_CHECK: "หผ. ตรวจสอบ",
-    RK_CHECK: "รก. ตรวจสอบ",
-    OK_APPROVE: "อก. อนุมัติ",
+    HPA_CHECK: "หผ. อนุมัติ",
   };
   return map[stage] ?? stage;
 }
@@ -82,13 +80,13 @@ export function MrcStatusBadge({ status }: { status: ClaimDocumentStatus }) {
   );
 }
 
-/** Three-stage approval timeline showing HPA → RK → OK steps. */
+/** Single HPA approval and signing timeline. */
 export function ApprovalTimeline({
   mrc,
 }: {
   mrc: MonthlyRequestCollectionWithRelations;
 }) {
-  const stages: MrcApprovalStage[] = ["HPA_CHECK", "RK_CHECK", "OK_APPROVE"];
+  const stages: MrcApprovalStage[] = ["HPA_CHECK"];
 
   return (
     <div className="space-y-2">
@@ -125,9 +123,9 @@ export function ApprovalTimeline({
                   </Badge>
                 )}
               </div>
-              {step?.reviewer && (
+              {(step?.reviewerNameAtApproval || step?.reviewer) && (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {step.reviewer.firstName} {step.reviewer.lastName}
+                  {step.reviewerNameAtApproval ?? `${step.reviewer?.firstName ?? ""} ${step.reviewer?.lastName ?? ""}`}
                   {step.reviewedAt && ` · ${dateTimeDisplay(step.reviewedAt)}`}
                 </p>
               )}

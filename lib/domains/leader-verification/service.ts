@@ -154,15 +154,9 @@ export const leaderVerificationService = {
         await leaderVerificationRepository.verify(record.id, signatureData ?? null);
 
         const allDone = await checkAllDone(record.expenseClaimId);
-        if (allDone) {
-            await prisma.expenseClaim.update({
-                where: { id: record.expenseClaimId },
-                data: { status: "WAIT_FOR_COLLECTION" },
-            });
-        }
-
-        // Notify claimant — fire-and-forget
-        notifyClaimant(record.expenseClaimId, allDone).catch(() => undefined);
+        const becameReady = allDone && await leaderVerificationRepository.markReadyForCollection(record.expenseClaimId);
+        // Do not announce that a collected/approved claim is ready for collection again.
+        if (!allDone || becameReady) notifyClaimant(record.expenseClaimId, allDone).catch(() => undefined);
 
         return success({ verified: true, allDone, expenseClaimId: record.expenseClaimId });
     },
@@ -203,15 +197,8 @@ export const leaderVerificationService = {
         await leaderVerificationRepository.verify(record.id, signatureData ?? null);
 
         const allDone = await checkAllDone(expenseClaimId);
-        if (allDone) {
-            await prisma.expenseClaim.update({
-                where: { id: expenseClaimId },
-                data: { status: "WAIT_FOR_COLLECTION" },
-            });
-        }
-
-        // Notify claimant — fire-and-forget
-        notifyClaimant(expenseClaimId, allDone).catch(() => undefined);
+        const becameReady = allDone && await leaderVerificationRepository.markReadyForCollection(expenseClaimId);
+        if (!allDone || becameReady) notifyClaimant(expenseClaimId, allDone).catch(() => undefined);
 
         return success({ verified: true, allDone, expenseClaimId });
     },

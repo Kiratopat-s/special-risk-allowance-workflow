@@ -48,6 +48,18 @@ const leaderUserSelect = {
 } as const;
 
 export const leaderVerificationRepository = {
+    /** A late verification must never reopen a collected or approved claim. */
+    async markReadyForCollection(expenseClaimId: string): Promise<boolean> {
+        const updated = await prisma.expenseClaim.updateMany({
+            where: {
+                id: expenseClaimId, cancelledAt: null, monthlyRequestCollectionId: null,
+                status: { in: ["PENDING", "PENDING_LEADER_VERIFY"] },
+            },
+            data: { status: "WAIT_FOR_COLLECTION" },
+        });
+        return updated.count > 0;
+    },
+
     async create(data: CreateLeaderVerificationInput): Promise<LeaderVerificationEntity> {
         return prisma.leaderVerification.create({
             data: {

@@ -7,13 +7,11 @@
  *   MONTHLY_REQUEST:MANAGE  — admin operations (create, update, submit, cancel)
  *   MONTHLY_REQUEST:LIST    — list all collections
  *   MONTHLY_REQUEST:READ    — view single collection
- *   MONTHLY_REQUEST:SUBMIT  — HPA_CHECK and RK_CHECK review steps
- *   MONTHLY_REQUEST:APPROVE — OK_APPROVE review step
+ *   MONTHLY_REQUEST:REVIEW_HPA — final review and signing in this system
  *
  * @module app/actions/monthly-request-collection
  */
 
-import { canSeeCollection } from "@/lib/domains/monthly-request-collection/read-policy";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { can, canExact, hasRole } from "@/lib/auth/permissions";
@@ -88,63 +86,9 @@ export async function listMonthlyRequestCollections(
         return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
     }
 
-    const canList = await can(session.user.dbUserId, "MONTHLY_REQUEST", "LIST");
-    if (!canList) {
-        // Fall back to own collections only
-        const canRead = await can(session.user.dbUserId, "MONTHLY_REQUEST", "READ");
-        if (!canRead) {
-            return { success: false, error: "Permission denied", code: "PERMISSION_DENIED" };
-        }
-        const fallbackResult = await monthlyRequestCollectionService.list({
-            ...(filters ?? {}),
-            collectorId: session.user.dbUserId,
-        });
-        if (!fallbackResult.success) return fallbackResult;
-        return {
-            ...fallbackResult,
-            data: {
-                ...fallbackResult.data,
-                data: fallbackResult.data.data.map(serializeMrc),
-            },
-        };
-    }
-
-    // MANAGE holders see everything
-    const userId = session.user.dbUserId;
-    const canManageList = await can(userId, "MONTHLY_REQUEST", "MANAGE");
-    const result = await monthlyRequestCollectionService.list(filters ?? {});
+    const result = await monthlyRequestCollectionService.list(filters ?? {}, session.user.dbUserId);
     if (!result.success) return result;
-
-    if (canManageList) {
-        return {
-            ...result,
-            data: {
-                ...result.data,
-                data: result.data.data.map(serializeMrc),
-            },
-        };
-    }
-
-    // Non-MANAGE: determine user's review capabilities for PENDING filtering
-    const [isSuperAdmin, exactHpa, exactRk, exactOk] = await Promise.all([
-        hasRole(userId, "super-admin"),
-        canExact(userId, "MONTHLY_REQUEST", "REVIEW_HPA"),
-        canExact(userId, "MONTHLY_REQUEST", "REVIEW_RK"),
-        canExact(userId, "MONTHLY_REQUEST", "REVIEW_OK"),
-    ]);
-
-    const visibleData = result.data.data.filter(mrc => canSeeCollection(mrc, {
-        userId, ownOnly: false, manage: false, superAdmin: isSuperAdmin,
-        hpa: exactHpa, rk: exactRk, ok: exactOk,
-    }));
-
-    return {
-        ...result,
-        data: {
-            ...result.data,
-            data: visibleData.map(serializeMrc),
-        },
-    };
+    return { ...result, data: { ...result.data, data: result.data.data.map(serializeMrc) } };
 }
 
 /**
@@ -158,29 +102,7 @@ export async function getMonthlyRequestCollection(
         return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
     }
 
-    const mrc = await monthlyRequestCollectionRepository.findById(id);
-    if (!mrc) {
-        return { success: false, error: "Collection not found", code: "MRC_NOT_FOUND" };
-    }
-
-    // Collector can always read their own, or user needs READ/LIST/MANAGE permission
-    const isOwn = mrc.collectorId === session.user.dbUserId;
-    if (!isOwn) {
-        const canRead = await can(session.user.dbUserId, "MONTHLY_REQUEST", "READ");
-        if (!canRead) {
-            return { success: false, error: "Permission denied", code: "PERMISSION_DENIED" };
-        }
-    }
-
-    // DRAFT MRCs are only visible to collector + MANAGE holders
-    if (mrc.status === "DRAFT" && !isOwn) {
-        const canManageDraft = await can(session.user.dbUserId, "MONTHLY_REQUEST", "MANAGE");
-        if (!canManageDraft) {
-            return { success: false, error: "Permission denied", code: "PERMISSION_DENIED" };
-        }
-    }
-
-    const result = await monthlyRequestCollectionService.getById(id);
+    const result = await monthlyRequestCollectionService.getById(id, session.user.dbUserId);
     if (!result.success) return result;
     return { ...result, data: serializeMrc(result.data) };
 }
@@ -301,8 +223,7 @@ export async function submitMonthlyRequestCollection(
 
 /**
  * Review a step in the approval chain.
- * MANAGE permission bypasses stage checks (admin).
- * HPA_CHECK requires REVIEW_HPA, RK_CHECK requires REVIEW_RK, OK_APPROVE requires REVIEW_OK.
+ * Only REVIEW_HPA or the super-admin role can review the single HPA_CHECK step.
  * Approver must have an active signature before any review action.
  */
 export async function reviewMonthlyRequestCollectionStep(
@@ -316,20 +237,11 @@ export async function reviewMonthlyRequestCollectionStep(
 
     const userId = session.user.dbUserId;
 
-    // Only super-admin role can bypass per-stage permission checks
-    const isSuperAdmin = await hasRole(userId, "super-admin");
-
-    // Per-stage permission check (exact match — no MANAGE escalation)
-    let hasStageAccess = false;
-    if (input.stage === "HPA_CHECK") {
-        hasStageAccess = isSuperAdmin || await canExact(userId, "MONTHLY_REQUEST", "REVIEW_HPA");
-    } else if (input.stage === "RK_CHECK") {
-        hasStageAccess = isSuperAdmin || await canExact(userId, "MONTHLY_REQUEST", "REVIEW_RK");
-    } else if (input.stage === "OK_APPROVE") {
-        hasStageAccess = isSuperAdmin || await canExact(userId, "MONTHLY_REQUEST", "REVIEW_OK");
+    if (!input || input.stage !== "HPA_CHECK") {
+        return { success: false, error: "รองรับเฉพาะการอนุมัติของ หผ.", code: "INVALID_APPROVAL_STAGE" };
     }
-
-    if (!hasStageAccess) {
+    const isSuperAdmin = await hasRole(userId, "super-admin");
+    if (!isSuperAdmin && !(await canExact(userId, "MONTHLY_REQUEST", "REVIEW_HPA"))) {
         return { success: false, error: "ไม่มีสิทธิ์ในขั้นตอนนี้", code: "PERMISSION_DENIED" };
     }
 
@@ -341,29 +253,6 @@ export async function reviewMonthlyRequestCollectionStep(
             error: "กรุณาลงลายมือชื่อก่อนอนุมัติเอกสาร",
             code: "SIGNATURE_REQUIRED",
         };
-    }
-
-    // Pre-flight ordering check — all prior stages in HPA→RK→OK must be APPROVED
-    const STAGE_ORDER: readonly string[] = ["HPA_CHECK", "RK_CHECK", "OK_APPROVE"];
-    const stageIdx = STAGE_ORDER.indexOf(input.stage);
-    if (stageIdx > 0) {
-        const mrc = await monthlyRequestCollectionRepository.findById(id);
-        if (!mrc || mrc.status !== "PENDING") {
-            return { success: false, error: "ไม่พบรายการหรือสถานะไม่ถูกต้อง", code: "MRC_NOT_PENDING" };
-        }
-        for (let i = 0; i < stageIdx; i++) {
-            const priorStep = await monthlyRequestCollectionRepository.findApprovalStep(
-                id,
-                STAGE_ORDER[i] as "HPA_CHECK" | "RK_CHECK" | "OK_APPROVE"
-            );
-            if (!priorStep || priorStep.status !== "APPROVED") {
-                return {
-                    success: false,
-                    error: "ขั้นตอนก่อนหน้ายังไม่ได้รับการอนุมัติ",
-                    code: "STEP_SEQUENCE_VIOLATED",
-                };
-            }
-        }
     }
 
     const result = await monthlyRequestCollectionService.reviewStep(id, input, userId);
