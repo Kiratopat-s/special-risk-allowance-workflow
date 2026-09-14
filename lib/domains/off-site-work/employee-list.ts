@@ -4,8 +4,8 @@ import type { EmployeeListItem } from "./types";
 const reviewedText = z.string().max(1000).refine((value) => !/[\u0000\uFFFD]/.test(value), "กรุณาแก้ไขอักษรที่อ่านไม่ครบ (�)");
 export const employeeListSchema = z.array(z.object({
   userId: z.string().min(1).max(100).nullable(),
-  employeeId: reviewedText.nullable(),
-  firstName: reviewedText.trim().min(1),
+  employeeId: reviewedText.trim().nullable(),
+  firstName: reviewedText.trim(),
   lastName: reviewedText,
   position: reviewedText.nullable(),
   departmentId: z.string().max(100).nullable(),
@@ -13,9 +13,6 @@ export const employeeListSchema = z.array(z.object({
 }).superRefine((employee, context) => {
   if (!employee.userId && (!employee.employeeId || !/^\d{6}$/.test(employee.employeeId))) {
     context.addIssue({ code: "custom", path: ["employeeId"], message: "รายชื่อที่ยังไม่เชื่อมบัญชีต้องมีรหัสพนักงาน 6 หลัก" });
-  }
-  if (!employee.userId && !employee.lastName.trim()) {
-    context.addIssue({ code: "custom", path: ["lastName"], message: "กรุณาระบุนามสกุลผู้เดินทาง" });
   }
 })).max(500).superRefine((employees, context) => {
   const users = new Set<string>();

@@ -220,6 +220,10 @@ export function OffSiteWorkClient({
   const [empSearch, setEmpSearch] = useState("");
   const [empResults, setEmpResults] = useState<LeaderUser[]>([]);
   const [empSearchPending, startEmpSearch] = useTransition();
+  const employeeIdToAdd = empSearch.trim();
+  const employeeIdAlreadyAdded = form.employeeList.some(
+    (employee) => employee.employeeId?.trim() === employeeIdToAdd,
+  );
 
   const validForm = useMemo(() => {
     if (!form.id.trim()) return false;
@@ -354,6 +358,25 @@ export function OffSiteWorkClient({
       ...prev,
       employeeList: prev.employeeList.filter((_, row) => row !== index),
     }));
+  };
+
+  const addEmployeeById = () => {
+    if (!/^\d{6}$/.test(employeeIdToAdd) || employeeIdAlreadyAdded) return;
+    const employee: EmployeeListItem = {
+      userId: null,
+      employeeId: employeeIdToAdd,
+      firstName: "",
+      lastName: "",
+      position: null,
+      departmentId: null,
+      departmentName: null,
+    };
+    setForm((previous) => ({
+      ...previous,
+      employeeList: mergeEmployees(previous.employeeList, [employee]),
+    }));
+    setEmpSearch("");
+    setEmpResults([]);
   };
 
   const selectInternalLeader = (u: LeaderUser) => {
@@ -799,6 +822,25 @@ export function OffSiteWorkClient({
                 </Button>
               </div>
 
+              {/* Add an employee before their account is registered */}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={addEmployeeById}
+                  disabled={!/^\d{6}$/.test(employeeIdToAdd) || employeeIdAlreadyAdded || empSearchPending}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  เพิ่มด้วยรหัสพนักงาน
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  กรอกรหัสพนักงาน 6 หลักในช่องค้นหาเพื่อเพิ่มได้เลย แม้ยังไม่ได้ลงทะเบียน
+                </p>
+              </div>
+              {/^\d{6}$/.test(employeeIdToAdd) && employeeIdAlreadyAdded && (
+                <p role="status" className="text-xs text-muted-foreground">มีรหัสพนักงานนี้ในรายการแล้ว</p>
+              )}
+
               {/* Search results */}
               {empSearchPending ? (
                 <ul
@@ -862,9 +904,10 @@ export function OffSiteWorkClient({
                       <div className="min-w-0 flex-1">
                         {!emp.userId ? <div className="space-y-2 pr-2">
                           <p className="text-xs font-medium text-amber-800 dark:text-amber-300">ยังไม่เชื่อมบัญชี · จะเชื่อมตามรหัสพนักงานอัตโนมัติ</p>
+                          <p className="text-xs text-muted-foreground">กรอกเฉพาะรหัสพนักงานได้ ชื่อ–นามสกุลที่เว้นว่างจะเติมให้เมื่อพบบัญชีตอนบันทึกหรือเมื่อลงทะเบียน</p>
                           <div className="grid gap-2 sm:grid-cols-2">
                             {([ ["employeeId", "รหัสพนักงาน"], ["firstName", "ชื่อ"], ["lastName", "นามสกุล"], ["position", "ตำแหน่ง"], ["departmentName", "สังกัด"] ] as const).map(([field, label]) => <label key={field} className="space-y-1 text-xs">
-                              <span>{label}</span><Input aria-label={`${label} ผู้เดินทาง ${index + 1}`} value={emp[field] || ""}
+                              <span>{label}{field !== "employeeId" ? " (ไม่บังคับ)" : " (6 หลัก)"}</span><Input aria-label={`${label} ผู้เดินทาง ${index + 1}`} value={emp[field] || ""}
                                 onChange={(event) => setForm((previous) => ({ ...previous, employeeList: previous.employeeList.map((entry, row) => row === index ? { ...entry, [field]: event.target.value } : entry) }))} />
                             </label>)}
                           </div>
@@ -888,7 +931,7 @@ export function OffSiteWorkClient({
                         size="icon"
                         className="text-destructive hover:text-destructive"
                         onClick={() => removeEmployee(index)}
-                        aria-label={`ลบ ${emp.firstName} ${emp.lastName} ออกจากรายการ`}
+                        aria-label={`ลบ ${[emp.firstName, emp.lastName].filter(Boolean).join(" ") || emp.employeeId} ออกจากรายการ`}
                       >
                         <X className="h-3.5 w-3.5" />
                       </Button>
@@ -1228,7 +1271,7 @@ export function OffSiteWorkClient({
                         className="rounded-lg border bg-muted/40 px-3 py-2 text-sm"
                       >
                         <span className="font-medium">
-                          {emp.firstName} {emp.lastName}
+                          {[emp.firstName, emp.lastName].filter(Boolean).join(" ") || "ยังไม่มีข้อมูลชื่อ"}
                         </span>
                         {!emp.userId && <span className="ml-2 text-xs text-muted-foreground">ยังไม่เชื่อมบัญชี</span>}
                         {emp.employeeId ? (

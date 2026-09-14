@@ -20,7 +20,13 @@ export const offSiteWorkEmployeeRepository = {
       SET employee_list = (
         SELECT jsonb_agg(
           CASE WHEN NULLIF(emp->>'userId', '') IS NULL AND emp->>'employeeId' = u.employee_id
-            THEN jsonb_set(emp, '{userId}', to_jsonb(u.id)) ELSE emp END ORDER BY ordinal
+            THEN emp || jsonb_build_object(
+              'userId', u.id,
+              'firstName', CASE WHEN NULLIF(btrim(emp->>'firstName'), '') IS NULL
+                THEN u.first_name ELSE emp->>'firstName' END,
+              'lastName', CASE WHEN NULLIF(btrim(emp->>'lastName'), '') IS NULL
+                THEN u.last_name ELSE emp->>'lastName' END
+            ) ELSE emp END ORDER BY ordinal
         ) FROM jsonb_array_elements(osw.employee_list) WITH ORDINALITY AS entries(emp, ordinal)
       ), updated_at = CURRENT_TIMESTAMP
       FROM users AS u

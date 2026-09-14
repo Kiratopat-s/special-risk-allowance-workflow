@@ -8,6 +8,30 @@ import type { EmployeeListItem } from "./types";
 const person: EmployeeListItem = { userId: null, employeeId: "100001", firstName: "สมชาย", lastName: "ตัวอย่าง", position: "ช่าง", departmentId: null, departmentName: "ฝ่ายเดิม" };
 beforeEach(() => { vi.resetAllMocks(); });
 describe("employee import and matching", () => {
+  const idOnly: EmployeeListItem = { userId: null, employeeId: "000001", firstName: "", lastName: "", position: null, departmentId: null, departmentName: null };
+  it("accepts just a six-digit employee number and preserves leading zeros", async () => {
+    vi.mocked(repository.findActive).mockResolvedValue([]);
+    expect(await service.prepare([{ ...idOnly, employeeId: " 000001 " }]))
+      .toEqual({ success: true, data: [idOnly] });
+    expect(repository.findActive).toHaveBeenCalledWith(["000001"], []);
+  });
+  it("fills missing names on an exact account match without replacing recorded details", async () => {
+    const account = { ...person, employeeId: "000001", userId: "user-1" };
+    vi.mocked(repository.findActive).mockResolvedValue([account]);
+    expect(await service.prepare([idOnly])).toEqual({ success: true, data: [
+      { ...idOnly, userId: "user-1", firstName: account.firstName, lastName: account.lastName },
+    ] });
+    expect(await service.prepare([{ ...idOnly, firstName: "ชื่อในเอกสาร" }])).toEqual({ success: true, data: [
+      { ...idOnly, userId: "user-1", firstName: "ชื่อในเอกสาร", lastName: account.lastName },
+    ] });
+  });
+  it("rejects invalid and duplicate employee numbers even without names", async () => {
+    for (const employeeId of [null, "", "00001", "0000001", "00000x"]) {
+      expect((await service.prepare([{ ...idOnly, employeeId }])).success).toBe(false);
+    }
+    expect((await service.prepare([idOnly, { ...idOnly, employeeId: " 000001 " }])).success).toBe(false);
+    expect(repository.findActive).not.toHaveBeenCalled();
+  });
   it("keeps unmatched travelers, links exact codes, and preserves the document snapshot", async () => {
     vi.mocked(repository.findActive).mockResolvedValue([{ ...person, userId: "user-1", departmentName: "ฝ่ายใหม่" }]);
     const result = await service.prepare([person, { ...person, employeeId: "100002" }]);

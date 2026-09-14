@@ -12,6 +12,7 @@
 export interface EmployeeListItem {
   userId: string | null;
   employeeId: string | null;
+  // Names may be empty until an employee-number-only entry is linked.
   firstName: string;
   lastName: string;
   position: string | null;

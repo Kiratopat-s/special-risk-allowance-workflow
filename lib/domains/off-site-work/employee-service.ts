@@ -32,8 +32,14 @@ export const offSiteWorkEmployeeService = {
         if (employee.userId && (!user || (employee.employeeId && user.employeeId !== employee.employeeId))) {
           return error("บัญชีหรือรหัสพนักงานเปลี่ยนแปลง กรุณาเลือกพนักงานใหม่", "EMPLOYEE_MISMATCH");
         }
-        // Imported details are a document snapshot. Later linking only adds an ID.
-        result.push({ ...employee, userId: user?.userId || null });
+        // Preserve recorded details; an ID-only entry gets its missing names
+        // from the account when one becomes available.
+        result.push({
+          ...employee,
+          userId: user?.userId || null,
+          firstName: employee.firstName.trim() ? employee.firstName : user?.firstName ?? "",
+          lastName: employee.lastName.trim() ? employee.lastName : user?.lastName ?? "",
+        });
       }
       const checked = employeeListSchema.safeParse(result);
       return checked.success ? success(checked.data) : error(checked.error.issues[0].message, "INVALID_EMPLOYEES");

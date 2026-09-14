@@ -26,6 +26,46 @@ beforeAll(async () => {
 afterAll(async () => { await prisma.$disconnect(); });
 
 describe.sequential("PDF traveler account lifecycle", () => {
+  it("saves ID-only travelers and fills missing names across documents on registration", async () => {
+    const idOnly: EmployeeListItem = { userId: null, employeeId: "000001", firstName: "", lastName: "", position: null, departmentId: null, departmentName: null };
+    const recorded = { ...idOnly, firstName: "ชื่อที่บันทึกไว้", position: "ตำแหน่งในเอกสาร", departmentName: "สังกัดในเอกสาร" };
+    const unmatched = { ...idOnly, employeeId: "000002" };
+    expect((await offSiteWorkService.create({ id: "id-only", ...base, employeeList: [idOnly, unmatched] }, "author")).success).toBe(true);
+    expect((await offSiteWorkService.create({ id: "id-only-edited", ...base }, "author")).success).toBe(true);
+    expect((await offSiteWorkService.update("id-only-edited", { employeeList: [recorded] }, "author")).success).toBe(true);
+    const before = await offSiteWorkService.getById("id-only");
+    if (!before.success) throw Error(before.error);
+    expect(before.data.employeeList).toEqual([idOnly, unmatched]);
+
+    const signup = await userService.syncFromKeycloak({ id: "id-only-account", keycloakId: "id-only-account", email: "id-only@example.test", firstName: "ชื่อจากบัญชี", lastName: "นามสกุลจากบัญชี", employeeId: "000001" });
+    if (!signup.success) throw Error(signup.error);
+    const linked = { ...idOnly, userId: signup.data.id, firstName: signup.data.firstName, lastName: signup.data.lastName };
+    expect((await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "id-only" } })).employeeList).toEqual([linked, unmatched]);
+    expect((await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "id-only-edited" } })).employeeList).toEqual([
+      { ...recorded, userId: signup.data.id, lastName: signup.data.lastName },
+    ]);
+    expect(await offSiteWorkEmployeeService.linkForUser(signup.data.id)).toMatchObject({ success: true, data: 0 });
+    const eligible = await expenseClaimDocumentService.listEligibleOffSiteWorksForUser(signup.data.id, new Date("2026-09-01"));
+    if (!eligible.success) throw Error(eligible.error);
+    expect(eligible.data.map((item) => item.id)).toEqual(expect.arrayContaining(["id-only", "id-only-edited"]));
+
+    const saved = await offSiteWorkService.create({ id: "id-only-existing-account", ...base, employeeList: [idOnly] }, "author");
+    if (!saved.success) throw Error(saved.error);
+    expect(saved.data.employeeList).toEqual([linked]);
+  });
+
+  it("links when an existing account receives its employee number during profile sync", async () => {
+    const profile = { id: "late-number", keycloakId: "late-number", email: "late-number@example.test", firstName: "ชื่อภายหลัง", lastName: "ทดสอบ" };
+    const signup = await userService.syncFromKeycloak(profile);
+    if (!signup.success) throw Error(signup.error);
+    const idOnly = { ...person, employeeId: "000003", firstName: "", lastName: "" };
+    expect((await offSiteWorkService.create({ id: "late-number", ...base, employeeList: [idOnly] }, "author")).success).toBe(true);
+    expect((await userService.syncFromKeycloak({ ...profile, employeeId: "000003" })).success).toBe(true);
+    expect((await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "late-number" } })).employeeList).toEqual([
+      { ...idOnly, userId: signup.data.id, firstName: profile.firstName, lastName: profile.lastName },
+    ]);
+  });
+
   it("stores all travelers, links on signup, and makes the work eligible for claims", async () => {
     const created = await offSiteWorkService.create({ id: "TZ26010001", ...base, employeeList: [person, { ...person, employeeId: "100002" }] }, "author");
     expect(created.success).toBe(true);
