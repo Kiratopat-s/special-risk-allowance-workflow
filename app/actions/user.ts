@@ -288,6 +288,22 @@ export async function updateKeycloakProfile(
 
         console.log("Profile updated for user:", session.user.keycloakId);
 
+        // Use the accepted payload for both local data and the session. Empty strings
+        // explicitly clear optional fields instead of leaving their previous values.
+        const updatedUser: UpdatedUserData = {
+            firstName,
+            lastName,
+            email,
+            peaEmail: updatePayload.attributes.pea_email[0] ?? "",
+            employeeId: updatePayload.attributes.employee_id[0] ?? "",
+            phoneNumber,
+            position,
+            positionShort,
+            positionLevel,
+            department,
+            departmentShort,
+        };
+
         // Get request context for logging
         const headersList = await headers();
         const requestContext = {
@@ -324,17 +340,7 @@ export async function updateKeycloakProfile(
             {
                 id: session.user.keycloakId,
                 keycloakId: session.user.keycloakId,
-                email,
-                firstName,
-                lastName,
-                peaEmail: peaEmail || undefined,
-                employeeId: employeeId || undefined,
-                phoneNumber: phoneNumber || undefined,
-                position: position || undefined,
-                positionShort: positionShort || undefined,
-                positionLevel: positionLevel || undefined,
-                department: department || undefined,
-                departmentShort: departmentShort || undefined,
+                ...updatedUser,
             },
             requestContext
         );
@@ -350,18 +356,7 @@ export async function updateKeycloakProfile(
                 actionType: ActionType.PROFILE_UPDATED,
                 actionDescription: "User updated their profile",
                 previousData: previousData as unknown as Prisma.JsonValue,
-                newData: {
-                    email,
-                    firstName,
-                    lastName,
-                    peaEmail: peaEmail || null,
-                    employeeId: employeeId || null,
-                    phoneNumber: phoneNumber || null,
-                    position: position || null,
-                    positionShort: positionShort || null,
-                    positionLevel: positionLevel || null,
-                    department: department || null,
-                } as unknown as Prisma.JsonValue,
+                newData: updatedUser as unknown as Prisma.JsonValue,
                 ipAddress: requestContext.ipAddress,
                 userAgent: requestContext.userAgent,
             });
@@ -375,19 +370,7 @@ export async function updateKeycloakProfile(
         return {
             success: true,
             message: "Profile updated successfully!",
-            updatedUser: {
-                firstName,
-                lastName,
-                email,
-                peaEmail: peaEmail || undefined,
-                employeeId: employeeId || undefined,
-                phoneNumber: phoneNumber || undefined,
-                position: position || undefined,
-                positionShort: positionShort || undefined,
-                positionLevel: positionLevel || undefined,
-                department: department || undefined,
-                departmentShort: departmentShort || undefined,
-            },
+            updatedUser,
         };
     } catch (error) {
         console.error("Error updating profile:", error);
@@ -498,4 +481,3 @@ export async function searchUsersForLeader(search: string) {
         };
     }
 }
-

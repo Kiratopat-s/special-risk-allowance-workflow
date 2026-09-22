@@ -170,6 +170,8 @@ export default function EditProfilePage() {
           await updateSession({ user: result.updatedUser });
         }
         router.push("/profile");
+        // Refresh server-rendered profile data after the new session cookie is saved.
+        router.refresh();
       } else {
         toast.error(result.message);
 

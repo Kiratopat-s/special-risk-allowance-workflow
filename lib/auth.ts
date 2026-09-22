@@ -227,6 +227,8 @@ const config: NextAuthConfig = {
                 ...session,
                 user: {
                     ...session.user,
+                    // Profile edits update the name parts; the original OIDC name may be stale.
+                    name: [token.firstName, token.lastName].filter(Boolean).join(" ").trim() || token.name,
                     id: token.sub!,
                     keycloakId: token.keycloakId,
                     dbUserId: token.dbUserId,

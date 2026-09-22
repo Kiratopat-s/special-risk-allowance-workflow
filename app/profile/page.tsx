@@ -45,7 +45,7 @@ function InfoRow({
         <p
           className={`font-medium ${mono ? "font-mono text-sm break-all" : ""}`}
         >
-          {value ?? "Not provided"}
+          {value || "Not provided"}
         </p>
       </div>
     </div>
