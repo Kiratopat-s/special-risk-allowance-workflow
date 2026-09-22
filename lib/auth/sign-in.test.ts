@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { NextAuthConfig } from "next-auth";
+import { EMPLOYEE_ID_ALREADY_LINKED } from "@/lib/domains/user/errors";
 
 const captured = vi.hoisted(() => ({ config: null as NextAuthConfig | null, sync: vi.fn() }));
 vi.mock("next-auth", () => ({ default: (config: NextAuthConfig) => {
@@ -15,7 +16,7 @@ const account = { provider: "keycloak", access_token: "test-only", expires_at: M
 beforeEach(() => { captured.sync.mockReset(); });
 
 it("syncs once before issuing a JWT and passes the database identity through", async () => {
-  captured.sync.mockResolvedValue({ userId: "db-1" });
+  captured.sync.mockResolvedValue({ success: true, data: { userId: "db-1" } });
   const user = { id: "kc-1" };
   expect(await callbacks.signIn!({ user, account, profile } as never)).toBe(true);
   const token = await callbacks.jwt!({ user, account, profile, token: { sub: "kc-1" } } as never);
@@ -26,10 +27,24 @@ it("syncs once before issuing a JWT and passes the database identity through", a
 });
 
 it("denies sign-in when database synchronization failed", async () => {
-  captured.sync.mockResolvedValue(null);
+  captured.sync.mockResolvedValue({ success: false, error: "Storage unavailable", code: "USER_SYNC_FAILED" });
   expect(await callbacks.signIn!({ user: {}, account, profile } as never)).toBe(false);
   expect(await callbacks.jwt!({ user: {}, account, profile, token: { dbUserId: "stale-id" } } as never)).toBeNull();
   expect(captured.config!.pages).toMatchObject({ error: "/auth/signin" });
+});
+
+it("redirects an employee ID conflict to its warning without issuing a database identity or JWT", async () => {
+  captured.sync.mockResolvedValue({ success: false, error: "Already linked", code: EMPLOYEE_ID_ALREADY_LINKED });
+  const user = { id: "kc-2" };
+  expect(await callbacks.signIn!({ user, account, profile } as never))
+    .toBe(`/auth/signin?error=${EMPLOYEE_ID_ALREADY_LINKED}`);
+  expect(user).not.toHaveProperty("dbUserId");
+  expect(await callbacks.jwt!({ user, account, profile, token: {} } as never)).toBeNull();
+});
+
+it("denies unexpected synchronization errors", async () => {
+  captured.sync.mockRejectedValue(new Error("Storage unavailable"));
+  expect(await callbacks.signIn!({ user: {}, account, profile } as never)).toBe(false);
 });
 
 it("denies missing profiles without invoking synchronization", async () => {

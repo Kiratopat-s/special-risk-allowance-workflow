@@ -3,6 +3,7 @@ import Keycloak from "next-auth/providers/keycloak";
 import type { NextAuthConfig } from "next-auth";
 import type {} from "next-auth/jwt";
 import { authEvents } from "@/lib/auth/events";
+import { EMPLOYEE_ID_ALREADY_LINKED } from "@/lib/domains/user/errors";
 
 declare module "next-auth/jwt" {
     interface JWT {
@@ -73,8 +74,14 @@ const config: NextAuthConfig = {
                 const result = await authEvents.onSignIn(
                     profile as Parameters<typeof authEvents.onSignIn>[0]
                 );
-                if (!result?.userId) return false;
-                user.dbUserId = result.userId;
+                if (!result.success) {
+                    if (result.code === EMPLOYEE_ID_ALREADY_LINKED) {
+                        return `/auth/signin?error=${EMPLOYEE_ID_ALREADY_LINKED}`;
+                    }
+                    return false;
+                }
+                if (!result.data.userId) return false;
+                user.dbUserId = result.data.userId;
                 return true;
             } catch {
                 console.error("[auth] Unable to synchronize account at sign-in");

@@ -8,6 +8,7 @@
  */
 
 import { userRepository } from "./repository";
+import { EMPLOYEE_ID_ALREADY_LINKED, EMPLOYEE_ID_ALREADY_LINKED_MESSAGE } from "./errors";
 import { offSiteWorkEmployeeService } from "@/lib/domains/off-site-work/employee-service";
 import { actionLogService } from "@/lib/domains/action-log/service";
 import { departmentService } from "@/lib/domains/department/service";
@@ -88,6 +89,15 @@ export const userService = {
         context?: RequestContext
     ): Promise<Result<UserEntity>> {
         const existingUser = await userRepository.findByKeycloakId(profile.keycloakId);
+        const employeeId = profile.employeeId?.trim() || undefined;
+        const employeeOwner = employeeId
+            ? await userRepository.findByEmployeeId(employeeId)
+            : null;
+
+        // Keycloak identity owns the binding, so changing email on the same account is allowed.
+        if (employeeOwner && employeeOwner.keycloakId !== profile.keycloakId) {
+            return error(EMPLOYEE_ID_ALREADY_LINKED_MESSAGE, EMPLOYEE_ID_ALREADY_LINKED);
+        }
 
         const departmentResult = await departmentService.resolveFromKeycloak({
             name: profile.department,
@@ -97,40 +107,42 @@ export const userService = {
         // Undefined preserves membership on update and leaves new users unassigned.
         const departmentId = departmentResult.data?.id;
 
-        if (existingUser) {
-            // Update existing user
-            const updatedUser = await userRepository.update(existingUser.id, {
-                email: profile.email,
-                firstName: profile.firstName,
-                lastName: profile.lastName,
-                peaEmail: profile.peaEmail,
-                employeeId: profile.employeeId,
-                phoneNumber: profile.phoneNumber,
-                position: profile.position,
-                positionShort: profile.positionShort,
-                positionLevel: profile.positionLevel,
-                departmentId,
-            });
-
-            const linked = await offSiteWorkEmployeeService.linkForUser(updatedUser.id);
-            if (!linked.success) console.warn("Deferred off-site work employee linking", updatedUser.id);
-            return success(updatedUser, "User profile synced successfully");
-        }
-
-        // Create new user
-        const newUser = await userRepository.create({
-            keycloakId: profile.keycloakId,
+        const profileData = {
             email: profile.email,
             firstName: profile.firstName,
             lastName: profile.lastName,
             peaEmail: profile.peaEmail,
-            employeeId: profile.employeeId,
+            employeeId,
             phoneNumber: profile.phoneNumber,
             position: profile.position,
             positionShort: profile.positionShort,
             positionLevel: profile.positionLevel,
             departmentId,
-        });
+        };
+        let syncedUser: UserEntity;
+        try {
+            syncedUser = existingUser
+                ? await userRepository.update(existingUser.id, profileData)
+                : await userRepository.create({ keycloakId: profile.keycloakId, ...profileData });
+        } catch (cause) {
+            // The unique index also protects concurrent sign-ins after the ownership check.
+            // Re-read the owner so unrelated unique failures keep their original cause.
+            if (employeeId && cause && typeof cause === "object" && "code" in cause && cause.code === "P2002") {
+                const owner = await userRepository.findByEmployeeId(employeeId);
+                if (owner && owner.keycloakId !== profile.keycloakId) {
+                    return error(EMPLOYEE_ID_ALREADY_LINKED_MESSAGE, EMPLOYEE_ID_ALREADY_LINKED);
+                }
+            }
+            throw cause;
+        }
+
+        if (existingUser) {
+            const linked = await offSiteWorkEmployeeService.linkForUser(syncedUser.id);
+            if (!linked.success) console.warn("Deferred off-site work employee linking", syncedUser.id);
+            return success(syncedUser, "User profile synced successfully");
+        }
+
+        const newUser = syncedUser;
 
         // Log user creation
         await actionLogService.log({

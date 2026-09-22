@@ -51,7 +51,7 @@ export default async function SignInPage({
   const error = getParam(params, "error");
   const session = await auth();
 
-  if (session?.user?.dbUserId) {
+  if (!error && session?.user?.dbUserId) {
     redirect(callbackUrl);
   }
 

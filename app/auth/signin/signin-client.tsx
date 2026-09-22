@@ -7,6 +7,7 @@ import { ArrowLeft, LogIn } from "lucide-react";
 
 import { LoadingButton } from "@/components/workflow-ui/loading-button";
 import { Button } from "@/components/workflow-ui/button";
+import { EMPLOYEE_ID_ALREADY_LINKED, EMPLOYEE_ID_ALREADY_LINKED_MESSAGE } from "@/lib/domains/user/errors";
 
 interface SignInClientProps {
   callbackUrl: string;
@@ -15,17 +16,21 @@ interface SignInClientProps {
 
 export function SignInClient({ callbackUrl, error }: SignInClientProps) {
   const [isPending, setIsPending] = useState(false);
+  const employeeIdConflict = error === EMPLOYEE_ID_ALREADY_LINKED;
 
   const handleSignIn = () => {
     setIsPending(true);
-    void signIn("keycloak", { callbackUrl });
+    // Let the user switch accounts instead of reusing the rejected Keycloak SSO session.
+    void signIn("keycloak", { callbackUrl }, employeeIdConflict ? { prompt: "login" } : undefined);
   };
 
   return (
     <div className="space-y-5">
       {error ? (
-        <div className="rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-sm text-destructive">
-          {error === "AccessDenied"
+        <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-sm text-destructive">
+          {employeeIdConflict
+            ? EMPLOYEE_ID_ALREADY_LINKED_MESSAGE
+            : error === "AccessDenied"
             ? "ไม่สามารถเตรียมข้อมูลบัญชีเพื่อเข้าสู่ระบบได้ กรุณาลองใหม่อีกครั้ง หากยังพบปัญหาให้ติดต่อผู้ดูแลระบบ"
             : "ไม่สามารถเข้าสู่ระบบได้ กรุณาลองใหม่อีกครั้ง"}
         </div>

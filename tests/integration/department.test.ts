@@ -28,7 +28,7 @@ describe("department sync with PostgreSQL", () => {
       department: "แผนกทดสอบ", department_short: "ทส.",
     }));
     const sessions = await Promise.all(profiles.map((profile) => authEvents.onSignIn(profile)));
-    expect(sessions.every((session) => session?.userId)).toBe(true);
+    expect(sessions.every((session) => session.success && session.data.userId)).toBe(true);
     const departments = await prisma.department.findMany();
     expect(departments).toHaveLength(1);
     expect(await prisma.user.count({ where: { departmentId: departments[0].id } })).toBe(12);
@@ -59,12 +59,12 @@ describe("department sync with PostgreSQL", () => {
     const before = await prisma.department.findMany({ orderBy: { name: "asc" } });
     const profile = { sub: "existing-account", email: "existing@example.test", given_name: "Before", family_name: "User", department: first.name, department_short: first.shortName! };
     const existing = await authEvents.onSignIn(profile);
-    expect(existing?.userId).toBeTruthy();
+    if (!existing.success) throw new Error(existing.error);
     expect(await authEvents.onSignIn({ ...profile, given_name: "After", department_short: second.shortName! })).toEqual(existing);
-    expect(await prisma.user.findUniqueOrThrow({ where: { id: existing!.userId } })).toMatchObject({ firstName: "After", departmentId: first.id });
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: existing.data.userId } })).toMatchObject({ firstName: "After", departmentId: first.id });
     const created = await authEvents.onSignIn({ ...profile, sub: "new-account", email: "new@example.test", department_short: second.shortName! });
-    expect(created?.userId).toBeTruthy();
-    expect(await prisma.user.findUniqueOrThrow({ where: { id: created!.userId } })).toMatchObject({ departmentId: null });
+    if (!created.success) throw new Error(created.error);
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: created.data.userId } })).toMatchObject({ departmentId: null });
     expect(await prisma.department.findMany({ orderBy: { name: "asc" } })).toEqual(before);
   });
 });

@@ -49,6 +49,12 @@ export const userRepository = {
         });
     },
 
+    async findByEmployeeId(employeeId: string): Promise<UserEntity | null> {
+        return prisma.user.findUnique({
+            where: { employeeId },
+        });
+    },
+
     /**
      * Find user with department details
      */

@@ -10,7 +10,7 @@
 import { userService } from "@/lib/domains/user/service";
 import { actionLogService } from "@/lib/domains/action-log/service";
 import { userRepository } from "@/lib/domains/user/repository";
-import { ActionType } from "@/lib/shared/types";
+import { ActionType, error, success, type Result } from "@/lib/shared/types";
 import type { KeycloakUserProfile } from "@/lib/domains/user/types";
 
 /**
@@ -113,13 +113,13 @@ export const authEvents = {
     async onSignIn(
         profile: KeycloakProfile,
         context?: AuthRequestContext
-    ): Promise<{ userId: string } | null> {
+    ): Promise<Result<{ userId: string }>> {
         try {
             const userProfile = toKeycloakUserProfile(profile);
 
             if (!userProfile) {
                 console.error("Invalid Keycloak profile - missing required fields");
-                return null;
+                return error("Invalid Keycloak profile", "INVALID_PROFILE");
             };
 
             // Sync user from Keycloak (creates or updates)
@@ -132,7 +132,7 @@ export const authEvents = {
 
             if (!syncResult.success) {
                 console.error("Failed to sync user:", syncResult.error);
-                return null;
+                return syncResult;
             }
 
             const user = syncResult.data;
@@ -147,14 +147,13 @@ export const authEvents = {
 
             if (!loginResult.success) {
                 console.error("Login handling failed:", loginResult.error);
-                // Still return user ID even if login handling failed
-                // The user was synced successfully
+                return loginResult;
             }
 
-            return { userId: user.id };
+            return success({ userId: user.id });
         } catch (err) {
             console.error("Error in onSignIn:", err);
-            return null;
+            return error("Unable to synchronize account", "USER_SYNC_FAILED");
         }
     },
 

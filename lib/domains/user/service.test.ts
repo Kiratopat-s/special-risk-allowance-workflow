@@ -9,10 +9,13 @@ import { actionLogService } from "@/lib/domains/action-log/service";
 import { departmentService } from "@/lib/domains/department/service";
 import { userRoleRepository, roleRepository } from "@/lib/domains/permission/repository";
 import { userService } from "./service";
+import { offSiteWorkEmployeeService } from "@/lib/domains/off-site-work/employee-service";
+import { EMPLOYEE_ID_ALREADY_LINKED, EMPLOYEE_ID_ALREADY_LINKED_MESSAGE } from "./errors";
 
 const repo = userRepository as unknown as {
   findById: vi.Mock;
   findByKeycloakId: vi.Mock;
+  findByEmployeeId: vi.Mock;
   create: vi.Mock;
   update: vi.Mock;
   updateLastLogin: vi.Mock;
@@ -23,7 +26,10 @@ const repo = userRepository as unknown as {
 const mockLogService = actionLogService as unknown as { log: vi.Mock };
 const mockDeptService = departmentService as unknown as { resolveFromKeycloak: vi.Mock };
 
-beforeEach(() => { mockDeptService.resolveFromKeycloak.mockResolvedValue({ success: true, data: null }); });
+beforeEach(() => {
+  mockDeptService.resolveFromKeycloak.mockResolvedValue({ success: true, data: null });
+  repo.findByEmployeeId.mockReset().mockResolvedValue(null);
+});
 const mockRoleRepo = roleRepository as unknown as { findByCode: vi.Mock };
 const mockUserRoleRepo = userRoleRepository as unknown as { assign: vi.Mock };
 
@@ -54,6 +60,75 @@ describe("userService", () => {
       positionShort: "Eng",
       positionLevel: "L5",
     };
+
+    it.each(["ACTIVE", "INACTIVE", "SUSPENDED"])("rejects a new email using an employee ID owned by a %s account before any writes", async (status) => {
+      repo.findByKeycloakId.mockResolvedValue(null);
+      repo.findByEmployeeId.mockResolvedValue(makeUser({ keycloakId: "original-account", email: "original@example.com", status }));
+
+      expect(await userService.syncFromKeycloak(profile)).toMatchObject({
+        success: false,
+        code: EMPLOYEE_ID_ALREADY_LINKED,
+        error: EMPLOYEE_ID_ALREADY_LINKED_MESSAGE,
+      });
+      expect(repo.create).not.toHaveBeenCalled();
+      expect(repo.update).not.toHaveBeenCalled();
+      expect(mockDeptService.resolveFromKeycloak).not.toHaveBeenCalled();
+      expect(mockLogService.log).not.toHaveBeenCalled();
+      expect(mockRoleRepo.findByCode).not.toHaveBeenCalled();
+      expect(offSiteWorkEmployeeService.linkForUser).not.toHaveBeenCalled();
+    });
+
+    it("rejects an existing account trying to change to another account's employee ID", async () => {
+      repo.findByKeycloakId.mockResolvedValue(makeUser({ employeeId: "654321" }));
+      repo.findByEmployeeId.mockResolvedValue(makeUser({ id: "original-user", keycloakId: "original-account", email: "original@example.com" }));
+
+      expect(await userService.syncFromKeycloak(profile)).toMatchObject({ success: false, code: EMPLOYEE_ID_ALREADY_LINKED });
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it("allows the owning Keycloak account to sign in and sync a changed email", async () => {
+      repo.findByKeycloakId.mockResolvedValue(makeUser());
+      repo.findByEmployeeId.mockResolvedValue(makeUser());
+      repo.update.mockResolvedValue(makeUser({ email: "updated@example.com" }));
+
+      expect(await userService.syncFromKeycloak({ ...profile, email: "updated@example.com" })).toMatchObject({ success: true });
+      expect(repo.update).toHaveBeenCalledWith("u1", expect.objectContaining({ email: "updated@example.com", employeeId: "123456" }));
+    });
+
+    it("checks the trimmed employee ID so surrounding whitespace cannot bypass ownership", async () => {
+      repo.findByKeycloakId.mockResolvedValue(null);
+      repo.findByEmployeeId.mockResolvedValue(makeUser({ keycloakId: "original-account" }));
+
+      expect(await userService.syncFromKeycloak({ ...profile, employeeId: " 123456 " })).toMatchObject({ success: false, code: EMPLOYEE_ID_ALREADY_LINKED });
+      expect(repo.findByEmployeeId).toHaveBeenCalledWith("123456");
+    });
+
+    it.each([undefined, "", "   "])("preserves sign-in without an employee ID (%s)", async (employeeId) => {
+      repo.findByKeycloakId.mockResolvedValue(makeUser({ employeeId: null }));
+      repo.update.mockResolvedValue(makeUser({ employeeId: null }));
+
+      expect(await userService.syncFromKeycloak({ ...profile, employeeId })).toMatchObject({ success: true });
+      expect(repo.findByEmployeeId).not.toHaveBeenCalled();
+      expect(repo.update).toHaveBeenCalledWith("u1", expect.objectContaining({ employeeId: undefined }));
+    });
+
+    it.each(["create", "update"] as const)("reports ownership conflicts when a concurrent sign-in wins the %s race", async (operation) => {
+      repo.findByKeycloakId.mockResolvedValue(operation === "update" ? makeUser({ employeeId: "654321" }) : null);
+      repo.findByEmployeeId.mockResolvedValueOnce(null).mockResolvedValueOnce(makeUser({ keycloakId: "race-winner" }));
+      repo[operation].mockRejectedValueOnce({ code: "P2002" });
+
+      expect(await userService.syncFromKeycloak(profile)).toMatchObject({ success: false, code: EMPLOYEE_ID_ALREADY_LINKED });
+      expect(mockLogService.log).not.toHaveBeenCalled();
+      expect(mockRoleRepo.findByCode).not.toHaveBeenCalled();
+      expect(offSiteWorkEmployeeService.linkForUser).not.toHaveBeenCalled();
+    });
+
+    it.each([{ code: "P2002" }, new Error("Storage unavailable")])("does not mislabel unrelated database failures as employee conflicts", async (cause) => {
+      repo.findByKeycloakId.mockResolvedValue(null);
+      repo.create.mockRejectedValueOnce(cause);
+
+      await expect(userService.syncFromKeycloak(profile)).rejects.toBe(cause);
+    });
 
     it.each([null, makeUser({ departmentId: "keep-department" })])("continues without changing membership on an unresolved conflict", async (existing) => {
       repo.findByKeycloakId.mockResolvedValue(existing);
