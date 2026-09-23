@@ -11,8 +11,9 @@ import { success, error, type Result } from "@/lib/shared/types";
 import { sendLeaderVerifyEmail } from "@/lib/email";
 import type {
     LeaderVerificationEntity,
-    LeaderVerificationWithRelations,
     CreateLeaderVerificationInput,
+    LeaderVerificationQueueItem,
+    LeaderClaimDetail,
 } from "./types";
 
 // Lazy-import to avoid circular deps
@@ -208,9 +209,23 @@ export const leaderVerificationService = {
      */
     async listPendingForLeader(
         userId: string
-    ): Promise<Result<LeaderVerificationWithRelations[]>> {
+    ): Promise<Result<LeaderVerificationQueueItem[]>> {
         const records = await leaderVerificationRepository.findPendingByLeaderUserId(userId);
         return success(records);
+    },
+
+    /** Read access follows an assigned, still-linked order, regardless of verification expiry. */
+    async getClaimDetailForLeader(
+        expenseClaimId: string,
+        userId: string,
+    ): Promise<Result<LeaderClaimDetail>> {
+        if (typeof expenseClaimId !== "string" || !expenseClaimId.trim()) {
+            return error("ไม่พบเอกสารเบิกที่คุณมีสิทธิ์ตรวจสอบ", "CLAIM_NOT_FOUND");
+        }
+        const claim = await leaderVerificationRepository.findClaimDetailForLeader(expenseClaimId, userId);
+        return claim
+            ? success(claim)
+            : error("ไม่พบเอกสารเบิกที่คุณมีสิทธิ์ตรวจสอบ", "CLAIM_NOT_FOUND");
     },
 
     /**

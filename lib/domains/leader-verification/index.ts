@@ -7,6 +7,8 @@
 export type {
     LeaderVerificationEntity,
     LeaderVerificationWithRelations,
+    LeaderVerificationQueueItem,
+    LeaderClaimDetail,
     CreateLeaderVerificationInput,
 } from "./types";
 

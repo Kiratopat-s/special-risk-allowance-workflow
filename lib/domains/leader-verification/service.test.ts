@@ -19,6 +19,7 @@ vi.mock("@/lib/domains/notification", () => ({
 import { leaderVerificationRepository } from "./repository";
 import { prisma } from "@/lib/db";
 import { leaderVerificationService } from "./service";
+import type { LeaderClaimDetail } from "./types";
 
 const repo = leaderVerificationRepository as unknown as {
   create: vi.Mock;
@@ -51,6 +52,35 @@ const makeVerification = (overrides = {}) => ({
 });
 
 describe("leaderVerificationService", () => {
+  describe("assigned leader reads", () => {
+    it("delegates pending reads to the scoped repository", async () => {
+      repo.findPendingByLeaderUserId.mockResolvedValue([]);
+      expect(await leaderVerificationService.listPendingForLeader("leader1")).toEqual({ success: true, data: [] });
+      expect(repo.findPendingByLeaderUserId).toHaveBeenCalledWith("leader1");
+    });
+
+    it("returns an assigned claim detail without applying token expiry or write permission checks", async () => {
+      const detail = { id: "claim1" } as LeaderClaimDetail;
+      vi.mocked(leaderVerificationRepository.findClaimDetailForLeader).mockResolvedValue(detail);
+      expect(await leaderVerificationService.getClaimDetailForLeader("claim1", "leader1"))
+        .toEqual({ success: true, data: detail });
+      expect(leaderVerificationRepository.findClaimDetailForLeader).toHaveBeenCalledWith("claim1", "leader1");
+      expect(repo.verify).not.toHaveBeenCalled();
+    });
+
+    it("uses the same missing response for an inaccessible or missing claim", async () => {
+      vi.mocked(leaderVerificationRepository.findClaimDetailForLeader).mockResolvedValue(null);
+      expect(await leaderVerificationService.getClaimDetailForLeader("claim1", "other-leader"))
+        .toMatchObject({ success: false, code: "CLAIM_NOT_FOUND" });
+    });
+
+    it("rejects an empty claim ID before querying", async () => {
+      expect(await leaderVerificationService.getClaimDetailForLeader("  ", "leader1"))
+        .toMatchObject({ success: false, code: "CLAIM_NOT_FOUND" });
+      expect(leaderVerificationRepository.findClaimDetailForLeader).not.toHaveBeenCalled();
+    });
+  });
+
   describe("verifyByToken", () => {
     it("verifies successfully", async () => {
       const record = makeVerification();

@@ -14,7 +14,7 @@ const result = await build({
   entrypoints: [resolve(import.meta.dirname, "ui-alignment-preview.tsx")],
   outdir: output,
   target: "browser",
-  define: { "process.env.NODE_ENV": '"development"' },
+  define: { "process.env.NODE_ENV": '"development"', "process.env": "{}" },
   plugins: [{
     name: "isolated-ui-fixtures",
     setup(builder) {
@@ -33,7 +33,7 @@ await write(join(output, "styles.css"), css.css);
 const html = '<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>SRAW isolated UI fixtures</title><style>@layer theme, base, mui, components, utilities;</style><meta name="emotion-insertion-point" content=""><link rel="stylesheet" href="/styles.css"></head><body><div id="root"></div><script type="module" src="/ui-alignment-preview.js"></script></body></html>';
 const server = serve({
   hostname: "127.0.0.1",
-  port: 4186,
+  port: Number(process.env.UI_FIXTURE_PORT ?? 4186),
   async fetch(request) {
     const path = new URL(request.url).pathname;
     if (path === "/") return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });

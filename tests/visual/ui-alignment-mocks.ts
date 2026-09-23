@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { alignmentDepartments, alignmentNotifications, alignmentPermissions, alignmentRoles, alignmentUsers } from "../fixtures/ui-alignment";
+import { leaderQueueClaimDetail, secondLeaderQueueClaimDetail } from "../fixtures/leader-queue";
 
 // Browser fixture entrypoints never import authentication, actions, or the database.
 const disabledMutation = async () => ({ success: false, error: "Visual fixture: saving is disabled" });
@@ -19,6 +20,8 @@ export const updateMonthlyRequestCollection = disabledMutation;
 export const createOffSiteWork = disabledMutation;
 export const updateOffSiteWork = disabledMutation;
 export const deleteOffSiteWork = disabledMutation;
+export const verifyAsLeader = disabledMutation;
+export const getMyVerificationClaimDetail = async (claimId: string) => ({ success: true, data: claimId === leaderQueueClaimDetail.id ? leaderQueueClaimDetail : secondLeaderQueueClaimDetail });
 export const listOffSiteWorks = async () => ({ success: true, data: { data: [], pagination: null } });
 export const searchUsersForLeader = async () => ({ success: true, data: [] });
 export const matchOffSiteWorkEmployees = async () => ({ success: true, data: [] });

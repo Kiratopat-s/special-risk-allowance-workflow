@@ -38,7 +38,6 @@ import {
   Search,
   Send,
   Trash2,
-  User,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/workflow-ui/button";
@@ -83,6 +82,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfirmDialog } from "@/components/workflow-ui/confirm-dialog";
 import { LeaderVerificationSection } from "./leader-verification-section";
+import { ClaimDetailContent } from "@/components/expense-claims/claim-detail-content";
 
 interface ExpenseClaimDocumentClientProps {
   initialItems: ExpenseClaimDocumentWithRelations[];
@@ -279,22 +279,6 @@ export function ExpenseClaimDocumentClient({
     () => new Set(selectedClaimDates),
     [selectedClaimDates],
   );
-
-  const viewMonthValue = useMemo(
-    () =>
-      selected ? toMonthInput(selected.expenseMonth) : bangkokCurrentMonth(),
-    [selected],
-  );
-
-  const viewCalendarCells = useMemo(
-    () => getCalendarGridDates(viewMonthValue),
-    [viewMonthValue],
-  );
-
-  const viewSelectedDateSet = useMemo(() => {
-    const selectedDates = selected?.selectedDates ?? [];
-    return new Set(selectedDates.map((value) => value.slice(0, 10)));
-  }, [selected]);
 
   const refresh = useCallback(
     async (nextPage = page, nextSearch = search) => {
@@ -1416,44 +1400,7 @@ export function ExpenseClaimDocumentClient({
         </DialogHeader>
         <DialogBody>
           {selected ? (
-            <div className="space-y-4 text-sm">
-              <div>
-                <p className="text-xs text-muted-foreground">ผู้ยื่น</p>
-                <p className="font-medium">
-                  <User className="mr-1 inline h-4 w-4" />
-                  {selected.claimant.firstName} {selected.claimant.lastName}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">เดือน</p>
-                <p className="font-medium">
-                  {monthDisplay(selected.expenseMonth)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">จำนวนวัน</p>
-                <p className="font-medium">
-                  {decimalText(selected.countDates)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">จำนวนเงิน</p>
-                <p className="font-medium">{decimalText(selected.amount)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">สถานะ</p>
-                <Badge variant={claimStatusVariant(selected.status)}>
-                  {STATUS_LABEL[selected.status] ?? selected.status}
-                </Badge>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">หมายเหตุ</p>
-                <p className="font-medium whitespace-pre-wrap">
-                  {selected.remark || "-"}
-                </p>
-              </div>
-
-              {/* Leader verification section */}
+            <ClaimDetailContent claim={selected}>
               {selected.leaderVerifications &&
               selected.leaderVerifications.length > 0 ? (
                 <LeaderVerificationSection
@@ -1461,63 +1408,7 @@ export function ExpenseClaimDocumentClient({
                   claimId={selected.id}
                 />
               ) : null}
-
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  วันที่ที่ยื่นเบิก (ปฏิทิน)
-                </p>
-                <div className="rounded-md border p-2">
-                  {viewSelectedDateSet.size === 0 ? (
-                    <p className="py-4 text-center text-sm text-muted-foreground">
-                      ไม่มีวันที่ที่บันทึกไว้
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground">
-                        <span>Sun</span>
-                        <span>Mon</span>
-                        <span>Tue</span>
-                        <span>Wed</span>
-                        <span>Thu</span>
-                        <span>Fri</span>
-                        <span>Sat</span>
-                      </div>
-                      <div className="grid grid-cols-7 gap-1">
-                        {viewCalendarCells.map((cell, idx) => {
-                          if (!cell) {
-                            return (
-                              <div
-                                key={`view-empty-${idx}`}
-                                className="h-9 rounded-md"
-                              />
-                            );
-                          }
-
-                          const checked = viewSelectedDateSet.has(cell);
-
-                          return (
-                            <div
-                              key={`view-${cell}`}
-                              className={`flex h-9 items-center justify-center rounded-md border text-xs ${
-                                checked
-                                  ? "border-primary bg-primary text-primary-foreground"
-                                  : "border-muted-foreground/20 text-muted-foreground"
-                              }`}
-                              title={formatDay(cell)}
-                            >
-                              {new Date(cell).getUTCDate()}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        วันที่ที่เลือก: {viewSelectedDateSet.size} วัน
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            </ClaimDetailContent>
           ) : null}
         </DialogBody>
         <DialogFooter>

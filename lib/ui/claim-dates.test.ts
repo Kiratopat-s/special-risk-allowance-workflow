@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getClaimDatePool, getCalendarGridDates } from "./claim-dates";
+import { getClaimDatePool, getCalendarGridDates, normalizeClaimDates, formatClaimDateRanges } from "./claim-dates";
 import type { EligibleOffSiteWorkOption } from "@/lib/domains/expense-claim-document/types";
 const work = (id: string, start: string, end: string) =>
   ({
@@ -53,5 +53,33 @@ describe("claim calendar regression", () => {
     expect(cells.filter(Boolean)).toHaveLength(29);
     expect(cells.length % 7).toBe(0);
     expect(cells[4]).toBe("2024-02-01");
+  });
+});
+
+describe("saved claim dates", () => {
+  it("sorts and deduplicates saved dates while rejecting impossible and out-of-month dates", () => {
+    const result = normalizeClaimDates("2026-09", ["2026-09-05", "2026-09-01", "2026-09-05", "2026-09-31", "2026-10-01", "invalid", 1], 6);
+    expect(result.dates).toEqual(["2026-09-01", "2026-09-05"]);
+    expect(result.warnings).toEqual([
+      "มีวันที่ไม่ถูกต้องหรืออยู่นอกเดือนที่เบิก จึงไม่แสดงวันที่เหล่านั้นในปฏิทิน",
+      "พบวันที่เบิกซ้ำ จึงแสดงแต่ละวันเพียงครั้งเดียว",
+      "วันที่ที่บันทึกไว้ 2 วัน ไม่ตรงกับจำนวนที่ขอเบิก 6 วัน",
+    ]);
+  });
+  it("does not infer missing dates from stored counts or malformed JSON", () => {
+    expect(normalizeClaimDates(new Date("2026-09-01T00:00:00Z"), null, 2)).toEqual({ dates: [], warnings: ["ยังไม่มีข้อมูลวันที่เบิกที่บันทึกไว้", "วันที่ที่บันทึกไว้ 0 วัน ไม่ตรงกับจำนวนที่ขอเบิก 2 วัน"] });
+    expect(normalizeClaimDates("2026-09", { 0: "2026-09-01" }).dates).toEqual([]);
+    expect(normalizeClaimDates("2026-09", [null, "2026-09-02"]).dates).toEqual(["2026-09-02"]);
+    expect(normalizeClaimDates("invalid", ["2026-09-01"]).warnings).toEqual(["ไม่สามารถระบุเดือนที่เบิกได้"]);
+    expect(getCalendarGridDates("2026-13")).toEqual([]);
+  });
+  it("preserves selected weekends and valid leap days without warnings", () => {
+    expect(normalizeClaimDates("2024-02", ["2024-02-29", "2024-02-24"], 2)).toEqual({ dates: ["2024-02-24", "2024-02-29"], warnings: [] });
+    expect(normalizeClaimDates("2025-02", ["2025-02-29"], null).dates).toEqual([]);
+  });
+  it("formats contiguous dates as compact Thai month ranges", () => {
+    expect(formatClaimDateRanges(["2026-09-05", "2026-09-03", "2026-09-01", "2026-09-02", "2026-09-05"])).toBe("1–3, 5 ก.ย. 2569");
+    expect(formatClaimDateRanges(["2026-09-01", "2026-08-31", "2026-08-30", "invalid"])).toBe("30–31 ส.ค. 2569; 1 ก.ย. 2569");
+    expect(formatClaimDateRanges([])).toBe("");
   });
 });

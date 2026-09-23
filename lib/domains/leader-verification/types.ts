@@ -50,6 +50,40 @@ export interface LeaderVerificationWithRelations extends LeaderVerificationEntit
     } | null;
 }
 
+/** Read-only claim fields permitted in an assigned leader's internal queue. */
+interface LeaderClaimSummary {
+    id: string;
+    expenseMonth: Date;
+    claimantPositionAtSubmission: string;
+    status: string;
+    selectedDates: string[] | null;
+    countDates: number | null;
+    amount: number | null;
+    claimant: LeaderVerificationWithRelations["expenseClaim"]["claimant"];
+}
+
+/** Internal queue projection, deliberately separate from public token records. */
+export interface LeaderVerificationQueueItem {
+    id: string;
+    expenseClaimId: string;
+    offSiteWorkId: string;
+    expiresAt: Date;
+    verifiedAt: Date | null;
+    createdAt: Date;
+    expenseClaim: LeaderClaimSummary;
+    offSiteWork: LeaderVerificationWithRelations["offSiteWork"];
+}
+
+/** Claim details available through an assigned verification, without sharing controls. */
+export interface LeaderClaimDetail extends LeaderClaimSummary {
+    remark: string | null;
+    expenseClaimOffSiteWorks: Array<{
+        offSiteWorkId: string;
+        offSiteWork: Pick<LeaderVerificationWithRelations["offSiteWork"],
+            "id" | "innerRefDocumentId" | "startDate" | "endDate" | "location" | "objective">;
+    }>;
+}
+
 export interface CreateLeaderVerificationInput {
     expenseClaimId: string;
     offSiteWorkId: string;

@@ -17,6 +17,8 @@ import type { Result } from "@/lib/shared/types";
 import type {
     LeaderVerificationWithRelations,
     LeaderVerificationEntity,
+    LeaderVerificationQueueItem,
+    LeaderClaimDetail,
 } from "@/lib/domains/leader-verification";
 import type { VerifyResult } from "@/lib/domains/leader-verification";
 
@@ -72,7 +74,7 @@ export async function verifyByToken(
  * List all pending verifications for the currently logged-in user (internal leader).
  */
 export async function listMyPendingVerifications(): Promise<
-    Result<LeaderVerificationWithRelations[]>
+    Result<LeaderVerificationQueueItem[]>
 > {
     const session = await auth();
     if (!session?.user?.dbUserId) {
@@ -82,6 +84,17 @@ export async function listMyPendingVerifications(): Promise<
     return leaderVerificationService.listPendingForLeader(
         session.user.dbUserId
     );
+}
+
+/** Read a claim through the current user's assigned verification, without broad claim permissions. */
+export async function getMyVerificationClaimDetail(
+    claimId: string,
+): Promise<Result<LeaderClaimDetail>> {
+    const session = await auth();
+    if (!session?.user?.dbUserId) {
+        return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
+    }
+    return leaderVerificationService.getClaimDetailForLeader(claimId, session.user.dbUserId);
 }
 
 /**

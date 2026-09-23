@@ -7,13 +7,14 @@ import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow
  * PendingVerificationsClient
  *
  * Shows the authenticated leader's pending verification queue.
- * Each card requires the leader to provide a signature before confirming.
+ * Groups documents for review while preserving per-order signatures.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ClipboardList,
+  FileText,
   MapPin,
   PenLine,
   RotateCcw,
@@ -24,9 +25,17 @@ import { toast } from "sonner";
 import { Button } from "@/components/workflow-ui/button";
 import { LoadingButton } from "@/components/workflow-ui/loading-button";
 import { Badge } from "@/components/ui/badge";
-import { verifyAsLeader } from "@/app/actions/leader-verify";
-import type { LeaderVerificationWithRelations } from "@/lib/domains/leader-verification";
-import { monthDisplay, dateDisplay } from "@/lib/shared/format";
+import { getMyVerificationClaimDetail, verifyAsLeader } from "@/app/actions/leader-verify";
+import type { LeaderClaimDetail, LeaderVerificationQueueItem } from "@/lib/domains/leader-verification";
+import { monthDisplay, dateDisplay, toDateInputValue } from "@/lib/shared/format";
+import { formatClaimDateRanges, normalizeClaimDates } from "@/lib/ui/claim-dates";
+import { ClaimDatesCalendar } from "@/components/expense-claims/claim-dates-calendar";
+import { ClaimDetailContent } from "@/components/expense-claims/claim-detail-content";
+import { DetailPanelSkeleton } from "@/components/ui/skeleton";
+import {
+  Dialog, DialogBody, DialogClose, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle,
+} from "@/components/workflow-ui/dialog";
 
 // ─── Inline signature canvas (shared util) ────────────────────────────────────
 
@@ -170,203 +179,114 @@ function SignatureCanvas({
   );
 }
 
-// ─── Single verification card ──────────────────────────────────────────────
+// Dates are claim-level; this intersection describes a period, not an allocation.
+function datesWithinOrder(dates: string[], work: LeaderVerificationQueueItem["offSiteWork"]) {
+  const start = toDateInputValue(work.startDate);
+  const end = toDateInputValue(work.endDate);
+  return dates.filter((date) => date >= start && date <= end);
+}
 
 type CardSigStep = "choose" | "draw" | "ready";
 
-function VerificationCard({
+function VerificationOrder({
   item,
+  done,
+  selectedDates,
   existingSignatureDataUrl,
   onVerified,
 }: {
-  item: LeaderVerificationWithRelations;
+  item: LeaderVerificationQueueItem;
+  done: boolean;
+  selectedDates: string[];
   existingSignatureDataUrl?: string | null;
   onVerified: (id: string) => void;
 }) {
   const [isPending, startTransition] = useTransition();
-  const [done, setDone] = useState(false);
-
-  const initialStep: CardSigStep = existingSignatureDataUrl ? "choose" : "draw";
-  const [sigStep, setSigStep] = useState<CardSigStep>(initialStep);
+  const inFlight = useRef(false);
+  const [sigStep, setSigStep] = useState<CardSigStep>(existingSignatureDataUrl ? "choose" : "draw");
   const [capturedSig, setCapturedSig] = useState<string | null>(null);
+  const [isExpired, setExpired] = useState(() => new Date(item.expiresAt).getTime() <= Date.now());
 
-  const isExpired = !item.verifiedAt && new Date(item.expiresAt) < new Date();
+  useEffect(() => {
+    if (done) return;
+    const updateExpiry = () => setExpired(new Date(item.expiresAt).getTime() <= Date.now());
+    // A renewed link keeps the same verification ID; refresh its current state
+    // as well as scheduling the next expiration deadline.
+    const refresh = setTimeout(updateExpiry, 0);
+    // Cap browser timers; production verification links expire after seven days.
+    const delay = Math.min(Math.max(0, new Date(item.expiresAt).getTime() - Date.now() + 1), 2_147_483_647);
+    const timer = setTimeout(updateExpiry, delay);
+    return () => { clearTimeout(refresh); clearTimeout(timer); };
+  }, [item.expiresAt, done]);
 
   const handleVerify = (sigDataUrl: string) => {
+    if (inFlight.current || done) return;
+    if (new Date(item.expiresAt).getTime() <= Date.now()) {
+      setExpired(true);
+      return;
+    }
+    inFlight.current = true;
     startTransition(async () => {
-      const res = await runServerAction(() => verifyAsLeader(
-        item.expenseClaimId,
-        item.offSiteWorkId,
-        sigDataUrl,
-      ));
-      if (res === undefined) return;
-      if (!res.success) {
-        toast.error("ยืนยันไม่สำเร็จ", { description: res.error });
-        return;
+      try {
+        const result = await runServerAction(() => verifyAsLeader(item.expenseClaimId, item.offSiteWorkId, sigDataUrl));
+        if (result === undefined) return;
+        if (!result.success) {
+          toast.error("ยืนยันไม่สำเร็จ", { description: result.error });
+          return;
+        }
+        toast.success("ยืนยันการออกปฏิบัติงานสำเร็จ");
+        onVerified(item.id);
+      } finally {
+        inFlight.current = false;
       }
-      setDone(true);
-      toast.success("ยืนยันการออกปฏิบัติงานสำเร็จ");
-      onVerified(item.id);
     });
   };
 
-  const osw = item.offSiteWork;
-  const claim = item.expenseClaim;
-
-  // Which sig will be submitted
-  const submitSig = capturedSig ?? existingSignatureDataUrl ?? null;
-
-  const renderSignatureSection = () => {
-    if (done || isExpired) return null;
-
-    if (sigStep === "choose" && existingSignatureDataUrl) {
-      return (
-        <div className="rounded-lg border p-3 space-y-2 bg-muted/30">
-          <p className="text-xs font-medium text-muted-foreground">
-            ลายเซ็นของคุณ
-          </p>
-          <div className="rounded border bg-white p-1.5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={existingSignatureDataUrl}
-              alt="ลายเซ็นที่บันทึกไว้"
-              className="h-12 w-full object-contain"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              className="flex-1 h-7 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700"
-              onClick={() => setCapturedSig(existingSignatureDataUrl)}
-            >
-              <Star className="h-3 w-3" /> ใช้ลายเซ็นที่บันทึกไว้
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs gap-1"
-              onClick={() => setSigStep("draw")}
-            >
-              <PenLine className="h-3 w-3" /> เซ็นใหม่
-            </Button>
-          </div>
-        </div>
-      );
-    }
-
-    if (capturedSig) {
-      return (
-        <div className="rounded-lg border p-3 space-y-2 bg-muted/30">
-          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
-            ลายเซ็นพร้อมใช้งาน
-          </p>
-          <div className="rounded border bg-white p-1.5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={capturedSig}
-              alt="ลายเซ็น"
-              className="h-12 w-full object-contain"
-            />
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs gap-1"
-            onClick={() => {
-              setCapturedSig(null);
-              setSigStep("draw");
-            }}
-          >
-            <RotateCcw className="h-3 w-3" /> เซ็นใหม่
-          </Button>
-        </div>
-      );
-    }
-
-    return (
-      <SignatureCanvas
-        onCapture={(dataUrl) => {
-          setCapturedSig(dataUrl);
-          setSigStep("ready");
-        }}
-        onCancel={
-          existingSignatureDataUrl ? () => setSigStep("choose") : undefined
-        }
-        showCancel={!!existingSignatureDataUrl}
-      />
-    );
-  };
+  const work = item.offSiteWork;
+  const reference = work.innerRefDocumentId || work.id;
+  const matchingDates = datesWithinOrder(selectedDates, work);
+  // Drawing a replacement must not silently submit the previously saved signature.
+  const submitSig = sigStep === "draw" ? null : capturedSig ?? existingSignatureDataUrl ?? null;
 
   return (
-    <div
-      className={`rounded-xl border border-border/60 bg-card p-5 shadow-sm space-y-4 transition-all hover:border-primary/30 hover:bg-accent/30 ${
-        done ? "opacity-60" : ""
-      }`}
-    >
-      {/* Status badge row */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="space-y-0.5">
-          <p className="text-sm font-semibold">
-            {claim.claimant.firstName} {claim.claimant.lastName}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            เดือน {monthDisplay(claim.expenseMonth)}
-          </p>
+    <section aria-label={`คำสั่ง ${reference}`} className="grid gap-4 py-5 first:pt-0 last:pb-0 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="min-w-0 space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="min-w-0 break-words text-sm font-semibold">คำสั่ง {reference}</h3>
+          <Badge variant={done ? "secondary" : isExpired ? "destructive" : "outline"}>
+            {done ? <><CheckCircle2 className="mr-1 h-3 w-3" />ยืนยันแล้ว</> : isExpired ? "หมดอายุ" : "รอยืนยัน"}
+          </Badge>
         </div>
-        {done ? (
-          <Badge variant="default" className="shrink-0 bg-green-600">
-            <CheckCircle2 className="mr-1 h-3 w-3" />
-            ยืนยันแล้ว
-          </Badge>
-        ) : isExpired ? (
-          <Badge variant="destructive" className="shrink-0">
-            หมดอายุ
-          </Badge>
-        ) : (
-          <Badge variant="secondary" className="shrink-0">
-            รอยืนยัน
-          </Badge>
-        )}
+        <dl className="space-y-2 text-sm">
+          <div><dt className="text-xs text-muted-foreground">ช่วงปฏิบัติงาน</dt><dd>{dateDisplay(work.startDate)} – {dateDisplay(work.endDate)}</dd></div>
+          {work.location && <div><dt className="text-xs text-muted-foreground"><MapPin className="mr-1 inline h-3 w-3" />สถานที่</dt><dd className="break-words">{work.location}</dd></div>}
+          {work.objective && <div><dt className="text-xs text-muted-foreground">วัตถุประสงค์</dt><dd className="whitespace-pre-wrap break-words">{work.objective}</dd></div>}
+          <div>
+            <dt className="text-xs text-muted-foreground">วันที่เบิกในช่วงคำสั่งนี้</dt>
+            <dd className="mt-1 font-medium">{matchingDates.length ? `${formatClaimDateRanges(matchingDates)} · ${matchingDates.length} วัน` : selectedDates.length ? "ไม่มีวันเบิกตรงกับช่วงคำสั่งนี้" : "ไม่มีวันที่เบิกที่บันทึกไว้"}</dd>
+          </div>
+        </dl>
       </div>
-
-      {/* OSW details */}
-      <div className="rounded-lg border bg-sky-50/60 dark:bg-sky-950/20 px-4 py-3 text-sm space-y-1.5">
-        {osw.innerRefDocumentId && (
-          <div className="flex gap-2 text-muted-foreground">
-            <span className="w-24 shrink-0">เลขที่คำสั่ง</span>
-            <span className="font-medium text-foreground font-mono text-xs">
-              {osw.innerRefDocumentId}
-            </span>
-          </div>
-        )}
-        <div className="flex gap-2 text-muted-foreground">
-          <span className="w-24 shrink-0">ช่วงวันที่</span>
-          <span className="font-medium text-foreground">
-            {dateDisplay(osw.startDate)} – {dateDisplay(osw.endDate)}
-          </span>
-        </div>
-        {osw.location && (
-          <div className="flex gap-2 text-muted-foreground">
-            <span className="w-24 shrink-0">
-              <MapPin className="inline mr-0.5 h-3 w-3" />
-              สถานที่
-            </span>
-            <span className="font-medium text-foreground">{osw.location}</span>
-          </div>
-        )}
-        {osw.objective && (
-          <div className="flex gap-2 text-muted-foreground">
-            <span className="w-24 shrink-0">วัตถุประสงค์</span>
-            <span className="font-medium text-foreground">{osw.objective}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Signature section */}
-      {renderSignatureSection()}
-
-      {/* Action */}
-      {!done && (
+      {!done && <div className="min-w-0 space-y-3">
+        {!isExpired && <fieldset disabled={isPending} className="min-w-0 space-y-2" aria-label={`ลายเซ็นสำหรับคำสั่ง ${reference}`}>
+          {sigStep === "draw" ? <div className={isPending ? "pointer-events-none" : undefined}>
+            <SignatureCanvas
+              onCapture={(dataUrl) => { setCapturedSig(dataUrl); setSigStep("ready"); }}
+              onCancel={existingSignatureDataUrl ? () => { setCapturedSig(null); setSigStep("choose"); } : undefined}
+              showCancel={!!existingSignatureDataUrl}
+            />
+          </div> : <>
+            <p className="text-xs font-medium text-muted-foreground">{capturedSig ? "ลายเซ็นพร้อมใช้งาน" : "ลายเซ็นที่บันทึกไว้"}</p>
+            <div className="rounded border bg-white p-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={submitSig ?? ""} alt="ลายเซ็นของคุณ" className="h-12 w-full object-contain" />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {sigStep === "choose" && existingSignatureDataUrl && <Button variant="outline" size="sm" onClick={() => { setCapturedSig(existingSignatureDataUrl); setSigStep("ready"); }}><Star className="h-3 w-3" />ใช้ลายเซ็นที่บันทึกไว้</Button>}
+              <Button variant="ghost" size="sm" onClick={() => { setCapturedSig(null); setSigStep("draw"); }}><PenLine className="h-3 w-3" />เซ็นใหม่</Button>
+            </div>
+          </>}
+        </fieldset>}
         <LoadingButton
           className="w-full"
           disabled={isPending || isExpired || submitSig === null}
@@ -375,105 +295,153 @@ function VerificationCard({
           onClick={() => submitSig && handleVerify(submitSig)}
         >
           <ShieldCheck className="h-4 w-4" />
-          {isExpired
-            ? "ลิงก์หมดอายุ — ติดต่อผู้ยื่น"
-            : submitSig
-            ? "ยืนยันการออกปฏิบัติงาน"
-            : "กรุณาลงลายเซ็นก่อน"}
+          {isExpired ? "หมดอายุ — ติดต่อผู้ยื่น" : submitSig ? "ยืนยันการออกปฏิบัติงาน" : "กรุณาลงลายเซ็นก่อน"}
         </LoadingButton>
-      )}
-    </div>
+      </div>}
+    </section>
   );
 }
 
-// ─── Main component ─────────────────────────────────────────────────────────
+function ClaimVerificationCard({ items, verifiedIds, existingSignatureDataUrl, onVerified, onOpenDetail }: {
+  items: LeaderVerificationQueueItem[];
+  verifiedIds: Set<string>;
+  existingSignatureDataUrl?: string | null;
+  onVerified: (id: string) => void;
+  onOpenDetail: (claimId: string) => void;
+}) {
+  const claim = items[0].expenseClaim;
+  const { dates } = normalizeClaimDates(claim.expenseMonth, claim.selectedDates, claim.countDates);
+  const highlightedDates = [...new Set(items.flatMap((item) => datesWithinOrder(dates, item.offSiteWork)))];
+  const isDone = (item: LeaderVerificationQueueItem) => verifiedIds.has(item.id) || !!item.verifiedAt;
+  const remaining = items.filter((item) => !isDone(item)).length;
+  const claimantName = `${claim.claimant.firstName} ${claim.claimant.lastName}`;
 
-export function PendingVerificationsClient({
-  initialItems,
-  existingSignatureDataUrl,
-}: {
-  initialItems: LeaderVerificationWithRelations[];
+  return (
+    <article aria-label={`${claimantName} · ${monthDisplay(claim.expenseMonth)}`} className="min-w-0 rounded-xl border bg-card p-4 shadow-sm sm:p-6">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="min-w-0 space-y-4">
+          <div className="space-y-1">
+            <h2 className="break-words text-lg font-semibold">{claimantName}</h2>
+            <p className="text-sm text-muted-foreground">เดือน {monthDisplay(claim.expenseMonth)}</p>
+            <p className="break-all text-xs text-muted-foreground">เอกสาร {claim.id}</p>
+          </div>
+          <dl className="flex flex-wrap gap-x-8 gap-y-3">
+            <div><dt className="text-xs text-muted-foreground">จำนวนวันตามคำขอ</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{claim.countDates == null ? "—" : `${claim.countDates.toLocaleString("th-TH")} วัน`}</dd></div>
+            <div><dt className="text-xs text-muted-foreground">ยอดเงินตามคำขอ</dt><dd className="mt-1 text-lg font-semibold tabular-nums">{claim.amount == null ? "—" : `${claim.amount.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} บาท`}</dd></div>
+          </dl>
+          <p className="text-sm text-muted-foreground">{remaining ? `รอคุณยืนยัน ${remaining} จาก ${items.length} คำสั่ง` : "คุณยืนยันคำสั่งในเอกสารนี้ครบแล้ว"}</p>
+          <Button variant="outline" onClick={() => onOpenDetail(claim.id)}><FileText className="h-4 w-4" />ดูรายละเอียดคำขอ</Button>
+        </div>
+        <div className="min-w-0">
+          <ClaimDatesCalendar expenseMonth={claim.expenseMonth} selectedDates={claim.selectedDates} countDates={claim.countDates} highlightedDates={highlightedDates} compact />
+        </div>
+      </div>
+      <div className="mt-5 border-t pt-5">
+        <p className="mb-4 text-xs text-muted-foreground">คำสั่งที่คุณรับผิดชอบ · วันเบิกอาจอยู่ในหลายช่วงคำสั่ง ยอดรวมเอกสารนับแต่ละวันครั้งเดียว</p>
+        <div className="divide-y">
+          {items.map((item) => <VerificationOrder key={item.id} item={item} done={isDone(item)} selectedDates={dates} existingSignatureDataUrl={existingSignatureDataUrl} onVerified={onVerified} />)}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+export function PendingVerificationsClient({ initialItems, existingSignatureDataUrl }: {
+  initialItems: LeaderVerificationQueueItem[];
   existingSignatureDataUrl?: string | null;
 }) {
-  const items = initialItems;
-  const [verifiedIds, setVerifiedIds] = useState<Set<string>>(new Set());
+  // Revalidation removes completed rows from server props. Keep this session's
+  // successful items so partial groups and the completed section stay visible.
+  const [verifiedItems, setVerifiedItems] = useState<Map<string, LeaderVerificationQueueItem>>(new Map());
+  const [detailClaimId, setDetailClaimId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<LeaderClaimDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const requestId = useRef(0);
 
-  const handleVerified = (id: string) => {
-    setVerifiedIds((prev) => new Set([...prev, id]));
+  useEffect(() => () => { requestId.current += 1; }, []);
+
+  const items = useMemo(() => {
+    const merged = new Map(initialItems.map((item) => [item.id, item]));
+    for (const [id, item] of verifiedItems) if (!merged.has(id)) merged.set(id, item);
+    return [...merged.values()];
+  }, [initialItems, verifiedItems]);
+  const verifiedIds = new Set(verifiedItems.keys());
+  const groups = useMemo(() => {
+    const grouped = new Map<string, LeaderVerificationQueueItem[]>();
+    for (const item of items) {
+      const group = grouped.get(item.expenseClaimId) ?? [];
+      group.push(item);
+      grouped.set(item.expenseClaimId, group);
+    }
+    return [...grouped.values()].sort((a, b) =>
+      Math.min(...a.map((item) => new Date(item.createdAt).getTime())) -
+      Math.min(...b.map((item) => new Date(item.createdAt).getTime())),
+    ).map((group) => group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()));
+  }, [items]);
+  const isDone = (item: LeaderVerificationQueueItem) => verifiedIds.has(item.id) || !!item.verifiedAt;
+  const pendingGroups = groups.filter((items) => items.some((item) => !isDone(item)));
+  const doneGroups = groups.filter((items) => items.every(isDone));
+  const pendingCount = items.filter((item) => !isDone(item)).length;
+
+  const openDetail = async (claimId: string) => {
+    const currentRequest = ++requestId.current;
+    setDetailClaimId(claimId);
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    try {
+      const result = await runServerAction(() => getMyVerificationClaimDetail(claimId));
+      if (currentRequest !== requestId.current) return;
+      if (result?.success) setDetail(result.data);
+      else setDetailError(result === undefined ? "กรุณาโหลดหน้าใหม่เพื่อดูรายละเอียดคำขอ" : result.error);
+    } catch {
+      if (currentRequest === requestId.current) setDetailError("โหลดรายละเอียดไม่สำเร็จ กรุณาลองใหม่");
+    } finally {
+      if (currentRequest === requestId.current) setDetailLoading(false);
+    }
   };
-
-  const pending = items.filter((i) => !verifiedIds.has(i.id) && !i.verifiedAt);
-  const done = items.filter((i) => verifiedIds.has(i.id) || !!i.verifiedAt);
+  const closeDetail = () => {
+    requestId.current += 1;
+    setDetailClaimId(null);
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(false);
+  };
+  const handleVerified = (id: string) => {
+    const item = items.find((candidate) => candidate.id === id);
+    if (item) setVerifiedItems((previous) => new Map(previous).set(id, item));
+  };
+  const renderGroup = (items: LeaderVerificationQueueItem[]) => <ClaimVerificationCard key={items[0].expenseClaimId} items={items} verifiedIds={verifiedIds} existingSignatureDataUrl={existingSignatureDataUrl} onVerified={handleVerified} onOpenDetail={(id) => void openDetail(id)} />;
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-100 dark:bg-sky-900/40">
-          <ClipboardList className="h-5 w-5 text-sky-600 dark:text-sky-400" />
+      <header className="flex flex-wrap items-start gap-3">
+        <ClipboardList className="mt-1 h-7 w-7 shrink-0 text-primary" aria-hidden="true" />
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">คิวยืนยันการออกปฏิบัติงาน</h1>
+          <p className="mt-1 text-sm text-muted-foreground">รายการที่รอการยืนยันจากคุณในฐานะหัวหน้า</p>
+          <p className="mt-3 text-sm font-medium" aria-live="polite">{pendingGroups.length} เอกสาร · {pendingCount} รายการรอยืนยัน</p>
         </div>
-        <div>
-          <div className="eyebrow">LEADER VERIFICATION</div><h1 className="text-3xl font-bold tracking-tight">คิวยืนยันการออกปฏิบัติงาน</h1>
-          <p className="text-sm text-muted-foreground">
-            รายการที่รอการยืนยันจากคุณในฐานะหัวหน้า
-          </p>
-        </div>
-        {pending.length > 0 && (
-          <Badge
-            variant="destructive"
-            className="ml-auto text-sm px-2.5 py-0.5"
-          >
-            {pending.length} รายการ
-          </Badge>
-        )}
-      </div>
-
-      {/* Pending list */}
-      {pending.length === 0 && done.length === 0 ? (
-        <div className="rounded-2xl border bg-card p-10 text-center space-y-3 shadow-sm">
-          <ShieldCheck className="mx-auto h-12 w-12 text-green-400" />
-          <p className="font-medium text-muted-foreground">
-            ไม่มีรายการรอยืนยันในขณะนี้
-          </p>
-        </div>
-      ) : (
-        <>
-          {pending.length > 0 && (
-            <div className="space-y-3">
-              {pending.map((item) => (
-                <VerificationCard
-                  key={item.id}
-                  item={item}
-                  existingSignatureDataUrl={existingSignatureDataUrl}
-                  onVerified={handleVerified}
-                />
-              ))}
-            </div>
-          )}
-
-          {done.length > 0 && (
-            <details className="group">
-              <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground select-none list-none flex items-center gap-1.5">
-                <CheckCircle2 className="h-4 w-4 text-green-500" />
-                ยืนยันแล้ว ({done.length} รายการ)
-              </summary>
-              <div className="mt-3 space-y-3 opacity-70">
-                {done.map((item) => (
-                  <VerificationCard
-                    key={item.id}
-                    item={{
-                      ...item,
-                      verifiedAt: item.verifiedAt ?? new Date(),
-                    }}
-                    existingSignatureDataUrl={existingSignatureDataUrl}
-                    onVerified={() => undefined}
-                  />
-                ))}
-              </div>
-            </details>
-          )}
-        </>
-      )}
+      </header>
+      {pendingGroups.length > 0 ? <div className="space-y-5">{pendingGroups.map(renderGroup)}</div> : <div className="rounded-xl border bg-card p-8 text-center">
+        <ShieldCheck className="mx-auto mb-3 h-9 w-9 text-primary" aria-hidden="true" />
+        <p className="font-medium">ไม่มีรายการรอยืนยันในขณะนี้</p>
+      </div>}
+      {doneGroups.length > 0 && <details>
+        <summary className="cursor-pointer text-sm font-medium text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-4">ยืนยันแล้วในรอบนี้ ({doneGroups.length} เอกสาร)</summary>
+        <div className="mt-4 space-y-5">{doneGroups.map(renderGroup)}</div>
+      </details>}
+      <Dialog open={detailClaimId !== null} presentation="drawer" onClose={closeDetail}>
+        <DialogClose onClose={closeDetail} />
+        <DialogHeader><DialogTitle>รายละเอียดคำขอ</DialogTitle><DialogDescription className="break-all">{detailClaimId}</DialogDescription></DialogHeader>
+        <DialogBody>
+          {detailLoading && <div role="status"><p className="mb-4 text-sm text-muted-foreground">กำลังโหลดรายละเอียดคำขอ…</p><DetailPanelSkeleton /></div>}
+          {detailError && <div role="alert" className="space-y-3"><p className="text-sm">{detailError}</p><Button variant="outline" onClick={() => detailClaimId && void openDetail(detailClaimId)}>ลองใหม่</Button></div>}
+          {detail && <ClaimDetailContent claim={detail} />}
+        </DialogBody>
+        <DialogFooter><Button variant="outline" onClick={closeDetail}>ปิด</Button></DialogFooter>
+      </Dialog>
     </div>
   );
 }
