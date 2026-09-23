@@ -110,8 +110,20 @@ model User {
   mrcApprovalSteps MrcApprovalStep[]
   notifications    Notification[]
   pushSubscriptions PushSubscription[]
+  presence         UserPresence?
   ledOSWs          OffSiteWork[]        @relation("OffSiteWorkLeader")
   leaderVerifications LeaderVerification[] @relation("LeaderVerificationUser")
+}
+
+// Ephemeral presence is bounded to one row per user; expired rows are excluded
+// by lastSeenAt instead of requiring a cleanup job or per-session records.
+model UserPresence {
+  userId     String   @id @map("user_id")
+  lastSeenAt DateTime @db.Timestamptz(3) @map("last_seen_at")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([lastSeenAt])
+  @@map("user_presence")
 }
 
 // =============================================================================
@@ -682,4 +694,3 @@ model LeaderVerification {
   @@index([token])
   @@index([verifiedAt])
 }
-

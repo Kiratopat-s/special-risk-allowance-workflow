@@ -254,6 +254,13 @@ const config: NextAuthConfig = {
 
             // Force re-authentication when the refresh token is invalid
             if (hasTokenError) {
+                // Polling must receive an auth status, not a redirected HTML page.
+                if (nextUrl.pathname === "/api/presence") {
+                    return Response.json({ success: false, error: "Unauthorized", code: "UNAUTHORIZED" }, {
+                        status: 401,
+                        headers: { "Cache-Control": "private, no-store" },
+                    });
+                }
                 const signInUrl = new URL("/api/auth/signin", nextUrl.origin);
                 signInUrl.searchParams.set("callbackUrl", nextUrl.href);
                 return Response.redirect(signInUrl);

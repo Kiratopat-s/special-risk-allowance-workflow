@@ -30,6 +30,7 @@ import {
 import { ThemeToggle } from "@/components/theme-toggle";
 import { NotificationBell } from "@/components/notification-bell";
 import { Footer } from "@/components/footer";
+import { OnlineUserCount } from "@/components/workflow-ui/online-user-count";
 import { usePermissions } from "@/lib/hooks/use-permissions";
 import { Button } from "./button";
 
@@ -154,6 +155,7 @@ function Navigation({ close }: { close: () => void }) {
             <ArrowUpRight size={14} className="ml-auto" />
           </Link>
         </nav>
+        <OnlineUserCount />
         <div className="sidebar-note">
           <span className="inline-block size-1.5 rounded-full bg-emerald-400 mr-2" />
           Special Risk Allowance Workflow

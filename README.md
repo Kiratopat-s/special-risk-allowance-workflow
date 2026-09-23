@@ -430,6 +430,29 @@ Before a rollback, confirm that the database migration is backward-compatible.
 Then restore the prior Git revision or image tag and run `docker compose up -d
 app`; do not attempt to roll back production Prisma migrations automatically.
 
+## Online user count
+
+The sidebar and mobile drawer share one presence controller per tab. Signed-in,
+visible tabs send `POST /api/presence` every 60 seconds (with 5 seconds of jitter);
+hidden or offline tabs pause. PostgreSQL counts unique accounts with a recorded
+heartbeat in the last 180 seconds, including the viewer. Repeated devices share
+one row, with writes limited to once per 45 seconds. Each app process caches the
+aggregate for 10 seconds and shares concurrent count queries. Departures appear
+after expiry and the next polling round; this is an approximate online count.
+
+Deploy `20260923090000_add_user_presence` using the normal migration deployment
+before starting the updated app, then generate the Prisma client. The additive
+table starts empty and needs no backfill or cleanup job. Logging out stops the
+heartbeat without deleting presence for another device. Failed refreshes show
+the last value as stale, then hide it after two minutes without a successful
+response. `AUTH_URL` (or `NEXTAUTH_URL`) must match the browser's public origin.
+
+Run `bun run test:presence-db` with Docker available for isolated PostgreSQL
+upgrade/fresh-install checks, expiry, concurrent writes, and a 1,000-account
+burst. This command never uses the application's database. Normal `bun run test`
+also checks polling lifecycle, API authentication/cookie refresh, and count-query
+budgets (1,000 simultaneous requests share one count query).
+
 ## Troubleshooting
 
 - `Cannot find module "@/lib/generated/prisma/..."`: run `bunx prisma generate`.

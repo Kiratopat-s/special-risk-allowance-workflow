@@ -15,6 +15,9 @@ export default defineConfig({
   oxc: { jsx: { runtime: "automatic" } },
   test: {
     globals: true,
+    // Auth.js imports extensionless Next.js modules; resolve them with Vite
+    // when exercising the actual route/session wrapper in Node tests.
+    server: { deps: { inline: ["next-auth"] } },
     // MUI/jsdom suites are CPU- and memory-heavy. Vitest's CPU-count default
     // runs too many at once on shared laptops/runners, starving UI timers.
     // Keep the normal 5-second timeout; limit contention instead.

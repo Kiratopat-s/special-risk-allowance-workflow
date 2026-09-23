@@ -15,7 +15,8 @@
     "test:migrations": "bun scripts/test-migrations.mjs",
     "prepare:pdf": "node scripts/prepare-pdf-worker.mjs",
     "test:department-db": "node scripts/test-department-db.mjs",
-    "test:off-site-work-db": "node scripts/test-off-site-work-db.mjs"
+    "test:off-site-work-db": "node scripts/test-off-site-work-db.mjs",
+    "test:presence-db": "node scripts/test-presence-db.mjs"
   },
   "dependencies": {
     "@emotion/cache": "11.14.0",

@@ -57,3 +57,20 @@ it("does not resync existing sessions during normal JWT reads", async () => {
   expect(await callbacks.jwt!({ token } as never)).toEqual(token);
   expect(captured.sync).not.toHaveBeenCalled();
 });
+
+it("keeps presence refresh failures as JSON 401 while profile requests still redirect", async () => {
+  const auth = { user: { dbUserId: "db-1" }, error: "RefreshAccessTokenError" };
+  const presenceResponse = await callbacks.authorized!({
+    auth, request: { nextUrl: new URL("https://sraw.example.test/api/presence") },
+  } as never);
+  expect(presenceResponse).toBeInstanceOf(Response);
+  expect((presenceResponse as Response).status).toBe(401);
+  expect(await (presenceResponse as Response).json()).toEqual({ success: false, error: "Unauthorized", code: "UNAUTHORIZED" });
+  expect((presenceResponse as Response).headers.get("Location")).toBeNull();
+
+  const profileResponse = await callbacks.authorized!({
+    auth, request: { nextUrl: new URL("https://sraw.example.test/profile") },
+  } as never);
+  expect((profileResponse as Response).status).toBe(302);
+  expect((profileResponse as Response).headers.get("Location")).toContain("/api/auth/signin");
+});

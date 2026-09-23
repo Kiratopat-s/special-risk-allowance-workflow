@@ -1,0 +1,7 @@
+export const HEARTBEAT_INTERVAL_MS = 60_000;
+export const HEARTBEAT_JITTER_MS = 5_000;
+export const HEARTBEAT_TIMEOUT_MS = 10_000;
+export const PRESENCE_WINDOW_MS = 180_000;
+export const PRESENCE_WRITE_INTERVAL_MS = 45_000;
+export const PRESENCE_CACHE_MS = 10_000;
+export const PRESENCE_STALE_MS = 120_000;

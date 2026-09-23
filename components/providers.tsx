@@ -7,6 +7,7 @@ import { workflowTheme } from "@/components/workflow-ui/theme";
 import { Toaster } from "@/components/ui/sonner";
 import { PermissionsProvider } from "@/lib/hooks/use-permissions";
 import { useSessionGuard } from "@/lib/hooks/use-session-guard";
+import { PresenceProvider } from "@/components/presence-provider";
 
 function SessionGuard({ children }: { children: React.ReactNode }) {
   useSessionGuard();
@@ -29,7 +30,7 @@ export function Providers({ children }: ProvidersProps) {
         <SessionProvider>
           <PermissionsProvider>
             <SessionGuard>
-              {children}
+              <PresenceProvider>{children}</PresenceProvider>
               <Toaster position="top-right" richColors />
             </SessionGuard>
           </PermissionsProvider>
