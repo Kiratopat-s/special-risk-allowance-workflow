@@ -83,25 +83,25 @@ export const dashboardService = {
           : null,
       ]);
       const nextActions: DashboardOverview["nextActions"] = [];
-      if (createClaim)
-        nextActions.push({
-          label: "สร้างเอกสารเบิก",
-          href: "/dashboard?tab=expense-claims&create=1",
-        });
       if (createWork)
         nextActions.push({
           label: "สร้างคำสั่งออกนอกสถานที่",
           href: "/dashboard?tab=off-site-work&create=1",
         });
-      if (manage)
+      if (createClaim)
         nextActions.push({
-          label: "รวบรวมเอกสารรายเดือน",
-          href: "/dashboard?tab=monthly-requests",
+          label: "สร้างเอกสารเบิก",
+          href: "/dashboard?tab=expense-claims&create=1",
         });
       nextActions.push({
         label: "ตรวจสอบคิวยืนยันการปฏิบัติงาน",
         href: "/dashboard?tab=leader-queue",
       });
+      if (manage)
+        nextActions.push({
+          label: "รวบรวมเอกสารรายเดือน",
+          href: "/dashboard?tab=monthly-requests",
+        });
       const statuses = Object.fromEntries(
         claimData?.groups.map((group) => [group.status, group._count._all]) ||
           [],
