@@ -228,7 +228,7 @@ function VerificationOrder({
     inFlight.current = true;
     startTransition(async () => {
       try {
-        const result = await runServerAction(() => verifyAsLeader(item.expenseClaimId, item.offSiteWorkId, sigDataUrl));
+        const result = await runServerAction(() => verifyAsLeader(item.expenseClaimId, item.offSiteWorkId, sigDataUrl, item.id));
         if (result === undefined) return;
         if (!result.success) {
           toast.error("ยืนยันไม่สำเร็จ", { description: result.error });

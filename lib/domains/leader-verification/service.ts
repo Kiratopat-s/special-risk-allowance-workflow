@@ -91,43 +91,33 @@ export const leaderVerificationService = {
         // Re-fetch to get IDs + tokens
         const created = await leaderVerificationRepository.findAllByExpenseClaimId(expenseClaimId);
 
-        // Fire-and-forget: notify internal leaders
-        const internalLeaderIds = [
-            ...new Set(
-                records
-                    .filter((r) => r.leaderUserId)
-                    .map((r) => r.leaderUserId as string)
-            ),
-        ];
-        if (internalLeaderIds.length > 0) {
-            getNotificationService()
-                .then((ns) =>
-                    ns.sendToMany(
-                        internalLeaderIds,
-                        "LEADER_VERIFY_REQUEST",
-                        "มีคำขอยืนยันการออกปฏิบัติงาน",
-                        "พนักงานได้ยื่นเบิกค่าตอบแทนเสี่ยงภัยฯ และรอการยืนยันจากคุณ",
-                        "/dashboard?tab=leader-queue",
-                    )
-                )
-                .catch(() => undefined);
-        }
-
-        // Fire-and-forget: send email to external leaders
-        for (const record of created) {
-            if (record.leaderEmail && !record.leaderUserId) {
-                const osw = osws.find((o) => o.id === record.offSiteWorkId);
-                sendLeaderVerifyEmail({
-                    to: record.leaderEmail,
-                    token: record.token,
-                    offSiteWorkRef: osw?.innerRefDocumentId ?? null,
-                    claimantName,
-                    expiresAt: record.expiresAt,
-                }).catch(() => undefined);
-            }
-        }
+        dispatchVerificationNotifications(created, osws, claimantName);
 
         return created;
+    },
+
+    /** Notify after the caller has committed new verification records atomically. */
+    async notifyForClaim(expenseClaimId: string): Promise<void> {
+        try {
+            const created = (await leaderVerificationRepository.findAllByExpenseClaimId(expenseClaimId))
+                .filter((record) => !record.verifiedAt);
+            if (!created.length) return;
+            const [osws, claim] = await Promise.all([
+                prisma.offSiteWork.findMany({
+                    where: { id: { in: created.map((record) => record.offSiteWorkId) }, deletedAt: null },
+                    select: { id: true, innerRefDocumentId: true },
+                }),
+                prisma.expenseClaim.findUnique({
+                    where: { id: expenseClaimId },
+                    select: { claimant: { select: { firstName: true, lastName: true } } },
+                }),
+            ]);
+            const claimantName = claim?.claimant ? `${claim.claimant.firstName} ${claim.claimant.lastName}`.trim() : undefined;
+            dispatchVerificationNotifications(created, osws, claimantName);
+        } catch {
+            // The claim and verification requests have already committed. Optional
+            // notification lookup failures must not report that the save failed.
+        }
     },
 
     /**
@@ -152,7 +142,8 @@ export const leaderVerificationService = {
             return error("ลิงก์ยืนยันหมดอายุแล้ว กรุณาติดต่อผู้ดูแลเพื่อขอลิงก์ใหม่", "TOKEN_EXPIRED");
         }
 
-        await leaderVerificationRepository.verify(record.id, signatureData ?? null);
+        const verified = await leaderVerificationRepository.verify(record.id, signatureData ?? null);
+        if (!verified) return error("เอกสารมีการแก้ไข กรุณาเปิดรายการยืนยันใหม่", "VERIFICATION_NOT_FOUND");
 
         const allDone = await checkAllDone(record.expenseClaimId);
         const becameReady = allDone && await leaderVerificationRepository.markReadyForCollection(record.expenseClaimId);
@@ -169,14 +160,18 @@ export const leaderVerificationService = {
         expenseClaimId: string,
         offSiteWorkId: string,
         userId: string,
-        signatureData?: Buffer | null
+        signatureData?: Buffer | null,
+        expectedVerificationId?: string,
     ): Promise<Result<VerifyResult>> {
+        if (!expectedVerificationId) {
+            return error("เอกสารมีการแก้ไข กรุณาเปิดรายการยืนยันใหม่", "VERIFICATION_NOT_FOUND");
+        }
         const record = await leaderVerificationRepository.findByClaimAndOsw(
             expenseClaimId,
             offSiteWorkId
         );
 
-        if (!record) {
+        if (!record || record.id !== expectedVerificationId) {
             return error("ไม่พบรายการยืนยัน", "VERIFICATION_NOT_FOUND");
         }
 
@@ -195,7 +190,8 @@ export const leaderVerificationService = {
             return error("ลิงก์ยืนยันหมดอายุแล้ว กรุณาติดต่อผู้ดูแลเพื่อขอลิงก์ใหม่", "TOKEN_EXPIRED");
         }
 
-        await leaderVerificationRepository.verify(record.id, signatureData ?? null);
+        const verified = await leaderVerificationRepository.verify(record.id, signatureData ?? null);
+        if (!verified) return error("เอกสารมีการแก้ไข กรุณาเปิดรายการยืนยันใหม่", "VERIFICATION_NOT_FOUND");
 
         const allDone = await checkAllDone(expenseClaimId);
         const becameReady = allDone && await leaderVerificationRepository.markReadyForCollection(expenseClaimId);
@@ -292,4 +288,48 @@ async function checkAllDone(expenseClaimId: string): Promise<boolean> {
     const all = await leaderVerificationRepository.findAllByExpenseClaimId(expenseClaimId);
     if (!all.length) return false;
     return all.every((r) => r.verifiedAt !== null);
+}
+
+function dispatchVerificationNotifications(
+    created: LeaderVerificationEntity[],
+    osws: { id: string; innerRefDocumentId: string | null }[],
+    claimantName?: string,
+): void {
+        // Fire-and-forget: notify internal leaders
+        const internalLeaderIds = [
+            ...new Set(
+                created
+                    .filter((r) => r.leaderUserId)
+                    .map((r) => r.leaderUserId as string)
+            ),
+        ];
+        if (internalLeaderIds.length > 0) {
+            getNotificationService()
+                .then((ns) =>
+                    ns.sendToMany(
+                        internalLeaderIds,
+                        "LEADER_VERIFY_REQUEST",
+                        "มีคำขอยืนยันการออกปฏิบัติงาน",
+                        "พนักงานได้ยื่นเบิกค่าตอบแทนเสี่ยงภัยฯ และรอการยืนยันจากคุณ",
+                        "/dashboard?tab=leader-queue",
+                    )
+                )
+                .catch(() => undefined);
+        }
+
+        // Fire-and-forget: send email to external leaders
+        for (const record of created) {
+            if (record.leaderEmail && !record.leaderUserId) {
+                const osw = osws.find((o) => o.id === record.offSiteWorkId);
+                sendLeaderVerifyEmail({
+                    to: record.leaderEmail,
+                    token: record.token,
+                    offSiteWorkRef: osw?.innerRefDocumentId ?? null,
+                    claimantName,
+                    expiresAt: record.expiresAt,
+                }).catch(() => undefined);
+            }
+        }
+
+
 }

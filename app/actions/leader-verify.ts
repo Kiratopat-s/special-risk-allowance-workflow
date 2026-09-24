@@ -104,11 +104,20 @@ export async function getMyVerificationClaimDetail(
 export async function verifyAsLeader(
     expenseClaimId: string,
     offSiteWorkId: string,
-    signatureDataUrl?: string
+    signatureDataUrl?: string,
+    expectedVerificationId?: string
 ): Promise<Result<VerifyResult>> {
     const session = await auth();
     if (!session?.user?.dbUserId) {
         return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
+    }
+
+    if (typeof expectedVerificationId !== "string" || !expectedVerificationId.trim()) {
+        return {
+            success: false,
+            error: "เอกสารมีการแก้ไข กรุณาเปิดรายการยืนยันใหม่",
+            code: "VERIFICATION_NOT_FOUND",
+        };
     }
 
     const signatureData = signatureDataUrl ? dataUrlToBuffer(signatureDataUrl) : null;
@@ -116,7 +125,8 @@ export async function verifyAsLeader(
         expenseClaimId,
         offSiteWorkId,
         session.user.dbUserId,
-        signatureData ?? undefined
+        signatureData ?? undefined,
+        expectedVerificationId
     );
     if (result.success) {
         revalidatePath("/expense-claim-document");

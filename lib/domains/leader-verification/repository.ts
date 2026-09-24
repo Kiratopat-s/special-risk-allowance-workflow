@@ -5,6 +5,7 @@
  */
 
 import { prisma } from "@/lib/db";
+import { lockClaim } from "@/lib/domains/expense-claim-document/department-snapshot";
 import type { Prisma } from "@/lib/generated/prisma/client";
 import { toSelectedDates } from "@/lib/domains/expense-claim-document/types";
 import type {
@@ -119,14 +120,20 @@ function serializeClaimSummary(claim: LeaderClaimSource): LeaderVerificationQueu
 export const leaderVerificationRepository = {
     /** A late verification must never reopen a collected or approved claim. */
     async markReadyForCollection(expenseClaimId: string): Promise<boolean> {
-        const updated = await prisma.expenseClaim.updateMany({
-            where: {
-                id: expenseClaimId, cancelledAt: null, monthlyRequestCollectionId: null,
-                status: { in: ["PENDING", "PENDING_LEADER_VERIFY"] },
-            },
-            data: { status: "WAIT_FOR_COLLECTION" },
+        return prisma.$transaction(async (tx) => {
+            const claim = await lockClaim(tx, expenseClaimId);
+            if (!claim || claim.cancelledAt || claim.monthlyRequestCollectionId ||
+                !["PENDING", "PENDING_LEADER_VERIFY"].includes(claim.status)) return false;
+            // A prior all-done read may refer to signatures invalidated by an edit.
+            const [records, links] = await Promise.all([
+                tx.leaderVerification.findMany({ where: { expenseClaimId }, select: { offSiteWorkId: true, verifiedAt: true } }),
+                tx.expenseClaimOffSiteWork.findMany({ where: { expenseClaimId }, select: { offSiteWorkId: true } }),
+            ]);
+            if (!links.length || links.some((link) => !records.some((record) =>
+                record.offSiteWorkId === link.offSiteWorkId && record.verifiedAt !== null))) return false;
+            await tx.expenseClaim.update({ where: { id: expenseClaimId }, data: { status: "WAIT_FOR_COLLECTION" } });
+            return true;
         });
-        return updated.count > 0;
     },
 
     async create(data: CreateLeaderVerificationInput): Promise<LeaderVerificationEntity> {
@@ -240,14 +247,24 @@ export const leaderVerificationRepository = {
         }) as Promise<LeaderVerificationEntity[]>;
     },
 
-    async verify(id: string, signatureData?: Buffer | null): Promise<LeaderVerificationEntity> {
-        return prisma.leaderVerification.update({
-            where: { id },
-            data: {
-                verifiedAt: new Date(),
-                ...(signatureData != null ? { signatureData: new Uint8Array(signatureData) } : {}),
-            },
-        }) as Promise<LeaderVerificationEntity>;
+    async verify(id: string, signatureData?: Buffer | null): Promise<LeaderVerificationEntity | null> {
+        const record = await prisma.leaderVerification.findUnique({ where: { id }, select: { expenseClaimId: true } });
+        if (!record) return null;
+        return prisma.$transaction(async (tx) => {
+            const claim = await lockClaim(tx, record.expenseClaimId);
+            if (!claim || claim.cancelledAt || ["DRAFT", "CANCELLED"].includes(claim.status)) return null;
+            // Claim edits delete and replace these IDs. Never sign a replacement
+            // using a request that was authorized for the previous date selection.
+            const current = await tx.leaderVerification.findUnique({ where: { id } });
+            if (!current || current.expiresAt <= new Date()) return null;
+            if (current.verifiedAt) return current as LeaderVerificationEntity;
+            return tx.leaderVerification.update({
+                where: { id }, data: {
+                    verifiedAt: new Date(),
+                    ...(signatureData != null ? { signatureData: new Uint8Array(signatureData) } : {}),
+                },
+            }) as Promise<LeaderVerificationEntity>;
+        });
     },
 
     /** Delete all verification records for a claim-OSW pair (used on claim update). */

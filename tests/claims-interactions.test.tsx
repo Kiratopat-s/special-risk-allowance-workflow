@@ -207,8 +207,6 @@ describe("claim presentation preserves behavior", () => {
     expect(mock.create.mock.calls[0][0]).toMatchObject({
       status: "PENDING_LEADER_VERIFY",
       selectedDates: ["2026-09-04", "2026-09-05", "2026-09-07"],
-      countDates: "3",
-      amount: "450",
       remark: "ค่าที่ต้องไม่หาย",
     });
     await waitFor(() =>
@@ -242,29 +240,88 @@ describe("claim presentation preserves behavior", () => {
         "claim-1",
         expect.objectContaining({
           selectedDates: ["2026-09-05"],
-          countDates: "1",
-          amount: "150",
         }),
       ),
     );
   });
-  it("keeps non-draft editing separate and never invents a resubmit transition", async () => {
-    mount([{ ...claim, status: "REJECTED" }]);
-    fireEvent.click(
-      screen.getByRole("button", { name: "แก้ไขเอกสาร claim-1" }),
-    );
-    expect(screen.queryByRole("button", { name: "ถัดไป" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "ส่งเอกสาร" })).toBeNull();
-    fireEvent.change(screen.getByLabelText("จำนวนเงิน"), {
-      target: { value: "600" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "บันทึกการแก้ไข" }));
-    await waitFor(() => expect(mock.update).toHaveBeenCalled());
-    const payload = mock.update.mock.calls[0][1];
-    expect(payload.amount).toBe("600");
-    expect(payload).not.toHaveProperty("status");
-    expect(payload).not.toHaveProperty("offSiteWorkIds");
-    expect(mock.submit).not.toHaveBeenCalled();
+  it.each(["PENDING_LEADER_VERIFY", "WAIT_FOR_COLLECTION", "REJECTED"] as const)(
+    "edits %s through work/date selection with read-only derived totals", async (status) => {
+      mount([{ ...claim, status }]);
+      fireEvent.click(screen.getByRole("button", { name: "แก้ไขเอกสาร claim-1" }));
+      await screen.findByRole("button", { name: /คำสั่งทดสอบ/ });
+      expect(mock.eligible).toHaveBeenCalledWith("2026-09", "claim-1");
+      const days = screen.getByLabelText("จำนวนวันที่เลือก") as HTMLInputElement;
+      const amount = screen.getByLabelText("ยอดเบิก (บาท)") as HTMLInputElement;
+      expect(days.readOnly).toBe(true);
+      expect(amount.readOnly).toBe(true);
+      expect(days.value).toBe("1");
+      expect(amount.value).toBe("150");
+      const calendarDay = screen.getByRole("button", { name: "ศุกร์ 04/09" });
+      fireEvent.click(calendarDay);
+      expect(days.value).toBe("2");
+      expect(amount.value).toBe("300");
+      fireEvent.click(screen.getByRole("button", { name: "ถัดไป" }));
+      fireEvent.click(screen.getByRole("button", { name: "ถัดไป" }));
+      expect(screen.queryByRole("button", { name: "ส่งเอกสาร" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "บันทึกการแก้ไข" }));
+      await waitFor(() => expect(mock.update).toHaveBeenCalled());
+      const payload = mock.update.mock.calls[0][1];
+      expect(payload.selectedDates).toEqual(["2026-09-04", "2026-09-05"]);
+      expect(payload.offSiteWorkIds).toEqual(["work-1"]);
+      expect(payload).not.toHaveProperty("amount");
+      expect(payload).not.toHaveProperty("countDates");
+      expect(payload).not.toHaveProperty("status");
+      expect(mock.submit).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    { status: "COLLECTED" }, { status: "APPROVED" }, { status: "CANCELLED" },
+    { status: "WAIT_FOR_COLLECTION", monthlyRequestCollectionId: "mrc-1" },
+  ] as const)("hides mutations for locked claim %j even when permissions allow all", (fields) => {
+    mount([{ ...claim, ...fields }]);
+    expect(screen.queryByRole("button", { name: "แก้ไขเอกสาร claim-1" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "ยกเลิกเอกสาร claim-1" })).toBeNull();
+  });
+  it("blocks saving on failed eligibility load and restores saved dates after retry", async () => {
+    mock.eligible.mockResolvedValueOnce({ success: false, error: "โหลดไม่สำเร็จ" });
+    mount([claim]);
+    fireEvent.click(screen.getByRole("button", { name: "แก้ไขเอกสาร claim-1" }));
+    await screen.findByText("โหลดไม่สำเร็จ");
+    expect((screen.getByRole("button", { name: "บันทึกร่าง" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "ลองโหลดอีกครั้ง" }));
+    await screen.findByRole("button", { name: /คำสั่งทดสอบ/ });
+    expect(screen.getByRole("button", { name: /05\/09/ }).getAttribute("aria-pressed")).toBe("true");
+    expect((screen.getByRole("button", { name: "บันทึกร่าง" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+  it("does not invent selected days for a legacy document with no saved dates", async () => {
+    mount([{ ...claim, status: "PENDING_LEADER_VERIFY", selectedDates: null }]);
+    fireEvent.click(screen.getByRole("button", { name: "แก้ไขเอกสาร claim-1" }));
+    await screen.findByRole("button", { name: /คำสั่งทดสอบ/ });
+    expect((screen.getByLabelText("จำนวนวันที่เลือก") as HTMLInputElement).value).toBe("0");
+    expect(screen.getByText(/เอกสารเดิมไม่มีวันที่เบิก/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /05\/09/ }).getAttribute("aria-pressed")).toBe("false");
+  });
+  it("recovers from a transport failure while loading edit options", async () => {
+    mock.eligible.mockRejectedValueOnce(new Error("offline"));
+    mount([claim]);
+    fireEvent.click(screen.getByRole("button", { name: "แก้ไขเอกสาร claim-1" }));
+    await screen.findByText("เชื่อมต่อไม่สำเร็จ กรุณาลองโหลดคำสั่งปฏิบัติงานอีกครั้ง");
+    fireEvent.click(screen.getByRole("button", { name: "ลองโหลดอีกครั้ง" }));
+    await screen.findByRole("button", { name: /คำสั่งทดสอบ/ });
+    expect((screen.getByRole("button", { name: "บันทึกร่าง" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+  it("ignores an older options response after another document is opened", async () => {
+    let finishFirst!: (value: unknown) => void;
+    mock.eligible.mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve; }));
+    mount([claim, { ...claim, id: "claim-2", selectedDates: ["2026-09-07"] }]);
+    fireEvent.click(screen.getByRole("button", { name: "แก้ไขเอกสาร claim-1" }));
+    expect((screen.getByRole("button", { name: "บันทึกร่าง" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getAllByRole("button", { name: "ปิด" })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "แก้ไขเอกสาร claim-2" }));
+    await screen.findByRole("button", { name: /คำสั่งทดสอบ/ });
+    await act(async () => { finishFirst({ success: true, data: [] }); });
+    expect(screen.getByRole("button", { name: "จันทร์ 07/09" }).getAttribute("aria-pressed")).toBe("true");
+    expect((screen.getByLabelText("จำนวนวันที่เลือก") as HTMLInputElement).value).toBe("1");
   });
   it("never shows owner-only submit for another user's draft", async () => {
     mount([{ ...claim, userId: "other" }]);

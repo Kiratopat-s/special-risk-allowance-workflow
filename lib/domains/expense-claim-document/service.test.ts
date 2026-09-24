@@ -1,302 +1,67 @@
-vi.mock("@/lib/domains/off-site-work/employee-service", () => ({ offSiteWorkEmployeeService: { linkForUser: vi.fn(async () => ({ success: true, data: 0 })), prepare: vi.fn(async (data) => ({ success: true, data })) } }));
+import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/domains/off-site-work/employee-service", () => ({ offSiteWorkEmployeeService: { linkForUser: vi.fn(async () => ({ success: true, data: 0 })) } }));
 vi.mock("./repository");
 vi.mock("@/lib/domains/action-log/service");
 vi.mock("@/lib/domains/leader-verification");
-vi.mock("@/lib/domains/leader-verification/repository");
-vi.mock("@/lib/db", () => ({
-  prisma: {
-    offSiteWork: { findMany: vi.fn() },
-  },
-}));
-
-import { expenseClaimDocumentRepository } from "./repository";
+vi.mock("@/lib/db", () => ({ prisma: {} }));
+import { expenseClaimDocumentRepository as repository } from "./repository";
 import { actionLogService } from "@/lib/domains/action-log/service";
 import { leaderVerificationService } from "@/lib/domains/leader-verification";
-import { prisma } from "@/lib/db";
-import { expenseClaimDocumentService } from "./service";
+import { expenseClaimDocumentService as service } from "./service";
+import type { ClaimMutationOutcome } from "./repository";
 
-const repo = expenseClaimDocumentRepository as unknown as {
-  findById: vi.Mock;
-  findWithRelations: vi.Mock;
-  findEligibleOffSiteWorksForUser: vi.Mock;
-  create: vi.Mock;
-  update: vi.Mock;
-  updateStatus: vi.Mock;
-  submitDraft: vi.Mock;
-  softDelete: vi.Mock;
-  findMany: vi.Mock;
-};
+const claim = { id: "claim1", userId: "user1", expenseMonth: new Date("2026-09-01"), status: "PENDING_LEADER_VERIFY" };
+const outcome = { claim, previous: { ...claim, status: "WAIT_FOR_COLLECTION" }, verificationsReset: true } as ClaimMutationOutcome;
+const input = { expenseMonth: "2026-09-01", claimantPositionAtSubmission: "Engineer" };
+beforeEach(() => vi.resetAllMocks());
 
-const mockLogService = actionLogService as unknown as { log: vi.Mock };
-const mockLvService = leaderVerificationService as unknown as { createForClaim: vi.Mock };
-const mockPrisma = prisma as unknown as { offSiteWork: { findMany: vi.Mock } };
-
-const makeClaim = (overrides = {}) => ({
-  id: "claim1",
-  userId: "u1",
-  status: "DRAFT",
-  expenseMonth: new Date("2024-01-01"),
-  remark: null,
-  cancelledAt: null,
-  claimantPositionAtSubmission: "Engineer",
-  ...overrides,
-});
-
-describe("expenseClaimDocumentService", () => {
-  describe("create", () => {
-    it("creates draft claim successfully", async () => {
-      repo.create.mockResolvedValue(makeClaim());
-      mockLogService.log.mockResolvedValue({});
-
-      const result = await expenseClaimDocumentService.create(
-        {
-          expenseMonth: "2024-01-01",
-          claimantPositionAtSubmission: "Engineer",
-          status: "DRAFT",
-        },
-        "actor1",
-        "u1"
-      );
-
-      expect(result.success).toBe(true);
-    });
-
-    it("keeps a draft with leader-assigned work as a draft without notifications or verifications", async () => {
-      repo.create.mockResolvedValue(makeClaim());
-      mockLogService.log.mockResolvedValue({});
-      const result = await expenseClaimDocumentService.create({
-        expenseMonth: "2024-01-01", claimantPositionAtSubmission: "Engineer",
-        status: "DRAFT", offSiteWorkIds: ["osw1"],
-      }, "actor1", "u1");
-      expect(result.success).toBe(true);
-      expect(mockLvService.createForClaim).not.toHaveBeenCalled();
-      expect(repo.updateStatus).not.toHaveBeenCalled();
-    });
-
-    it("treats omitted initial status as a draft", async () => {
-      repo.create.mockResolvedValue(makeClaim());
-      mockLogService.log.mockResolvedValue({});
-      await expenseClaimDocumentService.create({
-        expenseMonth: "2024-01-01", claimantPositionAtSubmission: "Engineer", offSiteWorkIds: ["osw1"],
-      }, "actor1", "u1");
-      expect(repo.create.mock.calls[0][0].status).toBe("DRAFT");
-      expect(mockLvService.createForClaim).not.toHaveBeenCalled();
-    });
-
-    it("rejects missing claimant position", async () => {
-      const result = await expenseClaimDocumentService.create(
-        {
-          expenseMonth: "2024-01-01",
-          claimantPositionAtSubmission: "",
-          status: "DRAFT",
-        },
-        "actor1",
-        "u1"
-      );
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("MISSING_CLAIMANT_POSITION");
-    });
-
-    it("rejects invalid selected dates format", async () => {
-      const result = await expenseClaimDocumentService.create(
-        {
-          expenseMonth: "2024-01-01",
-          claimantPositionAtSubmission: "Engineer",
-          selectedDates: ["not-a-date"],
-          status: "DRAFT",
-        },
-        "actor1",
-        "u1"
-      );
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("INVALID_SELECTED_DATES");
-    });
-
-    it("rejects OSW missing leader when not draft", async () => {
-      mockPrisma.offSiteWork.findMany.mockResolvedValue([
-        { id: "osw1", innerRefDocumentId: "REF-001", leaderUserId: null, leaderEmail: null },
-      ]);
-
-      const result = await expenseClaimDocumentService.create(
-        {
-          expenseMonth: "2024-01-01",
-          claimantPositionAtSubmission: "Engineer",
-          status: "PENDING",
-          offSiteWorkIds: ["osw1"],
-        },
-        "actor1",
-        "u1"
-      );
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("OSW_MISSING_LEADER");
-    });
+describe("claim mutations and committed notifications", () => {
+  it("creates through the validating transaction and notifies only after commit", async () => {
+    vi.mocked(repository.createWithSelection).mockResolvedValue({ success: true, data: outcome });
+    expect(await service.create(input, "actor1", "user1")).toMatchObject({ success: true, data: claim });
+    expect(repository.createWithSelection).toHaveBeenCalledWith(input, "user1", "actor1");
+    expect(leaderVerificationService.notifyForClaim).toHaveBeenCalledWith("claim1");
+    expect(vi.mocked(repository.createWithSelection).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(leaderVerificationService.notifyForClaim).mock.invocationCallOrder[0]);
+    expect(leaderVerificationService.createForClaim).not.toHaveBeenCalled();
   });
 
-  describe("update", () => {
-    it("updates claim successfully", async () => {
-      repo.findById.mockResolvedValue(makeClaim());
-      repo.update.mockResolvedValue(makeClaim({ remark: "updated" }));
-      mockLogService.log.mockResolvedValue({});
-
-      const result = await expenseClaimDocumentService.update(
-        "claim1",
-        { remark: "updated" },
-        "actor1"
-      );
-
-      expect(result.success).toBe(true);
-    });
-
-    it("returns error when not found", async () => {
-      repo.findById.mockResolvedValue(null);
-
-      const result = await expenseClaimDocumentService.update("missing", {}, "actor1");
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("CLAIM_NOT_FOUND");
-    });
-
-    it("rejects editing cancelled claim", async () => {
-      repo.findById.mockResolvedValue(makeClaim({ status: "CANCELLED" }));
-
-      const result = await expenseClaimDocumentService.update("claim1", {}, "actor1");
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("CLAIM_CANCELLED");
-    });
-
-    it("rejects invalid selected dates", async () => {
-      repo.findById.mockResolvedValue(makeClaim());
-
-      const result = await expenseClaimDocumentService.update(
-        "claim1",
-        { selectedDates: ["bad-date"] },
-        "actor1"
-      );
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("INVALID_SELECTED_DATES");
-    });
+  it("returns the committed post-reset status after an edit", async () => {
+    vi.mocked(repository.updateEditable).mockResolvedValue({ success: true, data: outcome });
+    expect(await service.update("claim1", { selectedDates: ["2026-09-02"] }, "user1")).toMatchObject({ success: true, data: { status: "PENDING_LEADER_VERIFY" } });
+    expect(leaderVerificationService.notifyForClaim).toHaveBeenCalledWith("claim1");
   });
 
-  describe("submitDraft", () => {
-    it("submits draft with OSWs having leaders", async () => {
-      const claim = makeClaim({
-        status: "DRAFT",
-        expenseClaimOffSiteWorks: [
-          { offSiteWorkId: "osw1", offSiteWork: { id: "osw1", leaderUserId: "leader1", leaderEmail: null, innerRefDocumentId: "REF-001" } },
-        ],
-      });
-      repo.findWithRelations.mockResolvedValue(claim);
-      mockLvService.createForClaim.mockResolvedValue([{ id: "lv1" }]);
-      repo.submitDraft.mockResolvedValue({ success: true, data: makeClaim({ status: "PENDING_LEADER_VERIFY" }) });
-      repo.findById.mockResolvedValue(makeClaim({ status: "PENDING_LEADER_VERIFY" }));
-      mockLogService.log.mockResolvedValue({});
-
-      const result = await expenseClaimDocumentService.submitDraft("claim1", "u1");
-
-      expect(result.success).toBe(true);
-      expect(repo.submitDraft).toHaveBeenCalledWith("claim1", "PENDING_LEADER_VERIFY");
-      expect(repo.submitDraft.mock.invocationCallOrder[0]).toBeLessThan(mockLvService.createForClaim.mock.invocationCallOrder[0]);
-    });
-
-    it("rejects when not DRAFT", async () => {
-      repo.findWithRelations.mockResolvedValue(makeClaim({ status: "PENDING" }));
-
-      const result = await expenseClaimDocumentService.submitDraft("claim1", "u1");
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("INVALID_STATUS");
-    });
-
-    it("rejects when actor is not owner", async () => {
-      repo.findWithRelations.mockResolvedValue(makeClaim({ userId: "other-user" }));
-
-      const result = await expenseClaimDocumentService.submitDraft("claim1", "u1");
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("FORBIDDEN");
-    });
-
-    it("rejects when OSW missing leader", async () => {
-      const claim = makeClaim({
-        status: "DRAFT",
-        expenseClaimOffSiteWorks: [
-          { offSiteWorkId: "osw1", offSiteWork: { id: "osw1", leaderUserId: null, leaderEmail: null, innerRefDocumentId: "REF-001" } },
-        ],
-      });
-      repo.findWithRelations.mockResolvedValue(claim);
-
-      const result = await expenseClaimDocumentService.submitDraft("claim1", "u1");
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("OSW_MISSING_LEADER");
-    });
-
-    it("transitions to PENDING when no OSWs", async () => {
-      const claim = makeClaim({ status: "DRAFT", expenseClaimOffSiteWorks: [] });
-      repo.findWithRelations.mockResolvedValue(claim);
-      repo.submitDraft.mockResolvedValue({ success: true, data: makeClaim({ status: "PENDING" }) });
-      repo.findById.mockResolvedValue(makeClaim({ status: "PENDING" }));
-      mockLogService.log.mockResolvedValue({});
-
-      const result = await expenseClaimDocumentService.submitDraft("claim1", "u1");
-
-      expect(result.success).toBe(true);
-      expect(repo.submitDraft).toHaveBeenCalledWith("claim1", "PENDING");
-    });
-
-    it("returns a stale-submission error from the locked mutation without logging success", async () => {
-      repo.findWithRelations.mockResolvedValue(makeClaim({ expenseClaimOffSiteWorks: [
-        { offSiteWorkId: "osw1", offSiteWork: { leaderUserId: "leader1", leaderEmail: null } },
-      ] }));
-      repo.submitDraft.mockResolvedValue({ success: false, error: "Already submitted", code: "INVALID_STATUS" });
-      expect(await expenseClaimDocumentService.submitDraft("claim1", "u1")).toMatchObject({ code: "INVALID_STATUS" });
-      expect(mockLogService.log).not.toHaveBeenCalled();
-      expect(mockLvService.createForClaim).not.toHaveBeenCalled();
-    });
+  it("does not re-notify for remark-only or draft edits", async () => {
+    vi.mocked(repository.updateEditable).mockResolvedValue({ success: true, data: { ...outcome, verificationsReset: false } });
+    expect((await service.update("claim1", { remark: "Updated" }, "user1")).success).toBe(true);
+    expect(leaderVerificationService.notifyForClaim).not.toHaveBeenCalled();
   });
 
-  describe("delete", () => {
-    it("cancels claim successfully", async () => {
-      repo.findById.mockResolvedValue(makeClaim({ status: "PENDING" }));
-      repo.softDelete.mockResolvedValue({});
-      mockLogService.log.mockResolvedValue({});
+  it("validates the submitting owner and selection in the locked repository path", async () => {
+    vi.mocked(repository.submitDraftWithSelection).mockResolvedValue({ success: true, data: outcome });
+    expect((await service.submitDraft("claim1", "user1")).success).toBe(true);
+    expect(repository.submitDraftWithSelection).toHaveBeenCalledWith("claim1", "user1");
+    expect(leaderVerificationService.notifyForClaim).toHaveBeenCalledWith("claim1");
+  });
 
-      const result = await expenseClaimDocumentService.delete("claim1", "actor1");
+  it("returns locked/invalid/stale errors without logging or notifying success", async () => {
+    const failure = { success: false as const, error: "Locked", code: "CLAIM_LOCKED" };
+    vi.mocked(repository.updateEditable).mockResolvedValue(failure);
+    vi.mocked(repository.createWithSelection).mockResolvedValue(failure);
+    vi.mocked(repository.submitDraftWithSelection).mockResolvedValue(failure);
+    vi.mocked(repository.cancelEditable).mockResolvedValue(failure);
+    expect(await service.update("claim1", {}, "user1")).toEqual(failure);
+    expect(await service.create(input, "actor1", "user1")).toEqual(failure);
+    expect(await service.submitDraft("claim1", "user1")).toEqual(failure);
+    expect(await service.delete("claim1", "user1")).toEqual(failure);
+    expect(leaderVerificationService.notifyForClaim).not.toHaveBeenCalled();
+    expect(actionLogService.log).not.toHaveBeenCalled();
+  });
 
-      expect(result.success).toBe(true);
-      expect(repo.softDelete).toHaveBeenCalledWith("claim1");
-    });
-
-    it("rejects cancelling approved claim", async () => {
-      repo.findById.mockResolvedValue(makeClaim({ status: "APPROVED" }));
-
-      const result = await expenseClaimDocumentService.delete("claim1", "actor1");
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("CLAIM_ALREADY_APPROVED");
-    });
-
-    it("rejects cancelling already cancelled claim", async () => {
-      repo.findById.mockResolvedValue(makeClaim({ status: "CANCELLED" }));
-
-      const result = await expenseClaimDocumentService.delete("claim1", "actor1");
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("CLAIM_CANCELLED");
-    });
-
-    it("returns error when not found", async () => {
-      repo.findById.mockResolvedValue(null);
-
-      const result = await expenseClaimDocumentService.delete("missing", "actor1");
-
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.code).toBe("CLAIM_NOT_FOUND");
-    });
+  it("cancels through the same claim-locking policy and logs only a committed result", async () => {
+    vi.mocked(repository.cancelEditable).mockResolvedValue({ success: true, data: outcome.claim });
+    expect((await service.delete("claim1", "user1")).success).toBe(true);
+    expect(repository.cancelEditable).toHaveBeenCalledWith("claim1");
+    expect(actionLogService.log).toHaveBeenCalledOnce();
   });
 });

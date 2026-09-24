@@ -312,13 +312,19 @@ export const monthlyRequestCollectionRepository = {
             if (expenseClaimIds.length) {
                 // Lock before validation so a draft cannot bypass first submission
                 // (and its department snapshot) through bulk collection.
-                const selected = await tx.$queryRaw<Array<{ id: string; status: ClaimDocumentStatus }>>(Prisma.sql`
-                    SELECT id, status FROM expense_claims
+                const selected = await tx.$queryRaw<Array<{ id: string; status: ClaimDocumentStatus; expenseMonth: Date }>>(Prisma.sql`
+                    SELECT id, status, expense_month AS "expenseMonth" FROM expense_claims
                     WHERE id IN (${Prisma.join([...new Set(expenseClaimIds)].sort())})
                     ORDER BY id FOR UPDATE
                 `);
                 if (selected.some((claim) => claim.status === "DRAFT")) {
                     return error("กรุณายื่นคำขอเบิกก่อนนำเข้ารายการรวบรวม", "CLAIM_NOT_SUBMITTED");
+                }
+                // An owner may have changed the month after the collector opened
+                // the picker. Validate the committed month while holding the locks.
+                const collectionMonth = normalizeMonth(mrc.collectForMonth).getTime();
+                if (selected.some((claim) => normalizeMonth(claim.expenseMonth).getTime() !== collectionMonth)) {
+                    return error("มีคำขอเบิกที่เปลี่ยนเดือนแล้ว กรุณาโหลดรายการใหม่และเลือกคำขอในเดือนที่รวบรวม", "CLAIM_MONTH_MISMATCH");
                 }
             }
             // Recheck under the same lock used by submit/review, so a stale editor

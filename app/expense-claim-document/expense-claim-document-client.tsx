@@ -3,7 +3,7 @@
 import { runServerAction } from "@/lib/deployment/client";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Stepper, Step, StepLabel } from "@mui/material";
 import {
@@ -39,7 +39,6 @@ import {
   Send,
   Trash2,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/workflow-ui/button";
 import { LoadingButton } from "@/components/workflow-ui/loading-button";
 import {
@@ -76,7 +75,7 @@ import {
   decimalText,
   toMonthInput,
 } from "@/lib/shared/format";
-import { claimStatusVariant } from "@/lib/shared/claim-status";
+import { CLAIM_DAILY_RATE, isClaimMutationLocked } from "@/lib/shared/claim-mutation";
 import { PaginationControls } from "@/components/workflow-ui/pagination-controls";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -97,7 +96,6 @@ type Mode = "create" | "edit" | "view" | "delete" | null;
 type FormState = ClaimFormState;
 
 const PAGE_SIZE = 20;
-const RATE_PER_DAY = 150;
 
 function toMonthDate(monthValue: string): string {
   return `${monthValue}-01`;
@@ -166,9 +164,6 @@ export function ExpenseClaimDocumentClient({
     expenseMonth: bangkokCurrentMonth(),
     claimantPositionAtSubmission: currentUserClaimantPositionAtSubmission,
     remark: "",
-    status: "DRAFT",
-    countDates: "",
-    amount: "",
   });
 
   const [eligibleOffSiteWorks, setEligibleOffSiteWorks] = useState<
@@ -179,6 +174,10 @@ export function ExpenseClaimDocumentClient({
   >([]);
   const [availableClaimDates, setAvailableClaimDates] = useState<string[]>([]);
   const [selectedClaimDates, setSelectedClaimDates] = useState<string[]>([]);
+  const eligibleRequest = useRef(0);
+  const [eligibleLoaded, setEligibleLoaded] = useState(false);
+  const [eligibleError, setEligibleError] = useState<string | null>(null);
+  const [selectionWarning, setSelectionWarning] = useState<string | null>(null);
   const [offSiteSearch, setOffSiteSearch] = useState("");
   const [isLoadingEligibleOffSites, setIsLoadingEligibleOffSites] =
     useState(false);
@@ -234,7 +233,7 @@ export function ExpenseClaimDocumentClient({
   }, []);
 
   const dateCount = selectedClaimDates.length;
-  const totalAmount = dateCount * RATE_PER_DAY;
+  const totalAmount = dateCount * CLAIM_DAILY_RATE;
 
   const formValid = useMemo(() => {
     if (!form.expenseMonth) return false;
@@ -308,49 +307,48 @@ export function ExpenseClaimDocumentClient({
       monthValue: string,
       preSelectedIds?: string[],
       savedDates?: string[] | null,
+      claimId?: string,
     ) => {
+      const requestId = ++eligibleRequest.current;
       setIsLoadingEligibleOffSites(true);
-      const result = await runServerAction(() => listEligibleOffSiteWorksForClaim(monthValue));
-      setIsLoadingEligibleOffSites(false);
-      if (result === undefined) return;
-      if (!result.success) {
-        toast.error("ไม่สามารถโหลด Off-site Work ได้", {
-          description: result.error,
-        });
-        setEligibleOffSiteWorks([]);
-        setSelectedOffSiteWorkIds([]);
-        setAvailableClaimDates([]);
-        setSelectedClaimDates([]);
+      setEligibleLoaded(false);
+      setEligibleError(null);
+      setSelectionWarning(null);
+      setEligibleOffSiteWorks([]);
+      setSelectedOffSiteWorkIds([]);
+      setAvailableClaimDates([]);
+      setSelectedClaimDates([]);
+      let result: Awaited<ReturnType<typeof listEligibleOffSiteWorksForClaim>> | undefined;
+      try {
+        result = await runServerAction(() => listEligibleOffSiteWorksForClaim(monthValue, claimId));
+      } catch {
+        if (requestId !== eligibleRequest.current) return;
         setIsLoadingEligibleOffSites(false);
+        setEligibleError("เชื่อมต่อไม่สำเร็จ กรุณาลองโหลดคำสั่งปฏิบัติงานอีกครั้ง");
+        return;
+      }
+      if (requestId !== eligibleRequest.current) return;
+      setIsLoadingEligibleOffSites(false);
+      if (result === undefined || !result.success) {
+        setEligibleError(result?.error || "โหลดคำสั่งปฏิบัติงานไม่สำเร็จ กรุณาลองอีกครั้ง");
         return;
       }
 
       setEligibleOffSiteWorks(result.data);
-
-      if (preSelectedIds && preSelectedIds.length > 0) {
-        // Compute available + selected dates using the fetched options directly
-        // (state update is async so we can't rely on eligibleOffSiteWorks here)
-        const { allDates, weekdayDefaultDates } = getClaimDatePool(
-          preSelectedIds,
-          result.data,
-          monthValue,
-        );
-        setSelectedOffSiteWorkIds(preSelectedIds);
-        setAvailableClaimDates(allDates);
-        setSelectedClaimDates(
-          savedDates
-            ? allDates.filter((date) => savedDates.includes(date))
-            : weekdayDefaultDates.length > 0
-              ? weekdayDefaultDates
-              : allDates,
-        );
-      } else {
-        setSelectedOffSiteWorkIds([]);
-        setAvailableClaimDates([]);
-        setSelectedClaimDates([]);
+      setEligibleLoaded(true);
+      const eligibleIds = new Set(result.data.map((work) => work.id));
+      const restoredIds = (preSelectedIds || []).filter((id) => eligibleIds.has(id));
+      const { allDates } = getClaimDatePool(restoredIds, result.data, monthValue);
+      const restoredDates = [...new Set(savedDates || [])].filter((date) => allDates.includes(date)).sort();
+      setSelectedOffSiteWorkIds(restoredIds);
+      setAvailableClaimDates(allDates);
+      setSelectedClaimDates(restoredDates);
+      if (claimId && (restoredIds.length !== (preSelectedIds?.length || 0) ||
+          restoredDates.length !== (savedDates?.length || 0))) {
+        setSelectionWarning("บางคำสั่งหรือวันที่เดิมไม่อยู่ในตัวเลือกของเดือนนี้ กรุณาตรวจสอบก่อนบันทึก");
+      } else if (claimId && preSelectedIds?.length && !savedDates?.length) {
+        setSelectionWarning("เอกสารเดิมไม่มีวันที่เบิกที่บันทึกไว้ กรุณาเลือกวันที่เพื่อคำนวณจำนวนวันและยอดเบิก");
       }
-
-      setIsLoadingEligibleOffSites(false);
     },
     [],
   );
@@ -363,9 +361,6 @@ export function ExpenseClaimDocumentClient({
       expenseMonth: defaultMonth,
       claimantPositionAtSubmission: currentUserClaimantPositionAtSubmission,
       remark: "",
-      status: "DRAFT",
-      countDates: "",
-      amount: "",
     });
     setOffSiteSearch("");
     setEligibleOffSiteWorks([]);
@@ -388,32 +383,24 @@ export function ExpenseClaimDocumentClient({
   }, [query, allows, userId, openCreate]);
 
   const openEdit = (item: ExpenseClaimDocumentWithRelations) => {
+    if (isClaimMutationLocked(item)) {
+      toast.error("เอกสารนี้ถูกล็อก ไม่สามารถแก้ไขได้");
+      return;
+    }
     setStep(0);
     setSelected(item);
     setForm({
       expenseMonth: toMonthInput(item.expenseMonth),
       claimantPositionAtSubmission: item.claimantPositionAtSubmission,
       remark: item.remark || "",
-      status: item.status,
-      countDates: decimalText(item.countDates),
-      amount: decimalText(item.amount),
     });
     setOffSiteSearch("");
-    if (item.status === "DRAFT") {
-      const linkedIds = item.expenseClaimOffSiteWorks.map(
-        (l) => l.offSiteWorkId,
-      );
-      void loadEligibleOffSiteWorks(
-        toMonthInput(item.expenseMonth),
-        linkedIds,
-        item.selectedDates,
-      );
-    } else {
-      setEligibleOffSiteWorks([]);
-      setSelectedOffSiteWorkIds([]);
-      setAvailableClaimDates([]);
-      setSelectedClaimDates([]);
-    }
+    void loadEligibleOffSiteWorks(
+      toMonthInput(item.expenseMonth),
+      item.expenseClaimOffSiteWorks.map((link) => link.offSiteWorkId),
+      item.selectedDates,
+      item.id,
+    );
     setMode("edit");
   };
 
@@ -460,6 +447,7 @@ export function ExpenseClaimDocumentClient({
   };
 
   const submitCreate = (status: ClaimDocumentStatus) => {
+    if (!eligibleLoaded || isLoadingEligibleOffSites || (status !== "DRAFT" && dateCount === 0)) return;
     // Hard-block: when submitting (not saving draft), every selected OSW must have a leader.
     if (status !== "DRAFT" && hasLeaderlessSelectedOsw) {
       const noLeader = eligibleOffSiteWorks.filter(
@@ -476,8 +464,6 @@ export function ExpenseClaimDocumentClient({
           form,
           selectedOffSiteWorkIds,
           selectedClaimDates,
-          dateCount,
-          totalAmount,
           status,
         ),
       ));
@@ -489,7 +475,7 @@ export function ExpenseClaimDocumentClient({
       }
 
       toast.success(
-        status !== "DRAFT" ? "ส่งเอกสารเรียบร้อย" : "บันทึกร่างเอกสารเรียบร้อย",
+        result.data.status !== "DRAFT" ? "ส่งเอกสารเรียบร้อย" : "บันทึกร่างเอกสารเรียบร้อย",
       );
       await refresh(page, search);
       setMode(null);
@@ -502,12 +488,11 @@ export function ExpenseClaimDocumentClient({
       form,
       selectedOffSiteWorkIds,
       selectedClaimDates,
-      dateCount,
-      totalAmount,
     );
 
   const submitUpdate = () => {
-    if (!selected) return;
+    if (!selected || isClaimMutationLocked(selected) || !eligibleLoaded || isLoadingEligibleOffSites) return;
+    if (selected.status !== "DRAFT" && (dateCount === 0 || hasLeaderlessSelectedOsw)) return;
 
     startTransition(async () => {
       const result = await runServerAction(() => updateExpenseClaimDocument(
@@ -584,7 +569,7 @@ export function ExpenseClaimDocumentClient({
 
   // Submit from edit dialog for DRAFT: update OSWs first then submit
   const submitAndUpdate = () => {
-    if (!selected) return;
+    if (!selected || !eligibleLoaded || isLoadingEligibleOffSites || dateCount === 0) return;
 
     // Client-side leader check against current OSW picker selection
     if (hasLeaderlessSelectedOsw) {
@@ -630,7 +615,7 @@ export function ExpenseClaimDocumentClient({
   const changePage = (nextPage: number) =>
     navigateList({ page: nextPage }, false);
   const wizard =
-    mode === "create" || (mode === "edit" && selected?.status === "DRAFT");
+    mode === "create" || mode === "edit";
   const closeDetail = () => {
     setMode(null);
     const next = new URLSearchParams(query);
@@ -806,7 +791,7 @@ export function ExpenseClaimDocumentClient({
                           <Eye size={16} />
                         </Button>
                       )}
-                      {item.status === "DRAFT" &&
+                      {item.status === "DRAFT" && !isClaimMutationLocked(item) &&
                         item.userId === userId &&
                         allows("UPDATE", item.userId) && (
                           <Button
@@ -819,7 +804,7 @@ export function ExpenseClaimDocumentClient({
                             <Send size={16} />
                           </Button>
                         )}
-                      {item.status !== "CANCELLED" &&
+                      {!isClaimMutationLocked(item) &&
                         allows("UPDATE", item.userId) && (
                           <Button
                             variant="ghost"
@@ -830,7 +815,7 @@ export function ExpenseClaimDocumentClient({
                             <Pencil size={16} />
                           </Button>
                         )}
-                      {!["APPROVED", "CANCELLED"].includes(item.status) &&
+                      {!isClaimMutationLocked(item) &&
                         allows("DELETE", item.userId) && (
                           <Button
                             variant="ghost"
@@ -889,7 +874,7 @@ export function ExpenseClaimDocumentClient({
         <DialogBody>
           {wizard && (
             <Stepper activeStep={step} alternativeLabel className="mb-7">
-              {["เดือน / งาน / วันที่", "ข้อมูลผู้เบิก", "ตรวจสอบและส่ง"].map(
+              {["เดือน / งาน / วันที่", "ข้อมูลผู้เบิก", mode === "edit" && selected?.status !== "DRAFT" ? "ตรวจสอบและบันทึก" : "ตรวจสอบและส่ง"].map(
                 (label) => (
                   <Step key={label}>
                     <StepLabel>{label}</StepLabel>
@@ -897,6 +882,9 @@ export function ExpenseClaimDocumentClient({
                 ),
               )}
             </Stepper>
+          )}
+          {mode === "edit" && selected?.status !== "DRAFT" && (
+            <p className="mb-4 text-sm text-muted-foreground">หากเปลี่ยนคำสั่งปฏิบัติงาน เดือน หรือวันที่เบิก ระบบจะส่งให้หัวหน้ายืนยันใหม่</p>
           )}
           {wizard && step === 2 && (
             <div className="space-y-5 rounded-xl border p-5 mb-4">
@@ -929,7 +917,7 @@ export function ExpenseClaimDocumentClient({
               </dl>
               <div className="border-t pt-4 text-sm">
                 <p>
-                  {selectedOffSiteWorkIds.length} คำสั่ง · {dateCount} วัน × 150
+                  {selectedOffSiteWorkIds.length} คำสั่ง · {dateCount} วัน × {CLAIM_DAILY_RATE}
                   บาท
                 </p>
                 <p className="text-muted-foreground mt-2 break-words">
@@ -958,16 +946,9 @@ export function ExpenseClaimDocumentClient({
                 value={form.expenseMonth}
                 onValueChange={(nextMonth) => {
                   setForm((prev) => ({ ...prev, expenseMonth: nextMonth }));
-                  if (mode === "create") {
-                    void loadEligibleOffSiteWorks(nextMonth);
-                  } else if (mode === "edit" && selected?.status === "DRAFT") {
-                    void loadEligibleOffSiteWorks(nextMonth);
-                  }
+                  void loadEligibleOffSiteWorks(nextMonth, undefined, undefined, mode === "edit" ? selected?.id : undefined);
                 }}
-                disabled={
-                  mode !== "create" &&
-                  !(mode === "edit" && selected?.status === "DRAFT")
-                }
+                disabled={isPending}
               />
             </div>
 
@@ -995,8 +976,6 @@ export function ExpenseClaimDocumentClient({
               />
             </div>
 
-            {mode === "create" ||
-            (mode === "edit" && selected?.status === "DRAFT") ? (
               <div hidden={step !== 0} className="space-y-4">
                 {hasLeaderlessSelectedOsw && (
                   <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
@@ -1008,6 +987,18 @@ export function ExpenseClaimDocumentClient({
                   </div>
                 )}
 
+                {selectionWarning && <p role="status" className="text-sm text-amber-700 dark:text-amber-300">{selectionWarning}</p>}
+                {eligibleError && (
+                  <div role="alert" className="space-y-2 text-sm text-destructive">
+                    <p>{eligibleError}</p>
+                    <Button variant="outline" onClick={() => void loadEligibleOffSiteWorks(
+                      form.expenseMonth,
+                      selected?.expenseClaimOffSiteWorks.map((link) => link.offSiteWorkId),
+                      selected?.selectedDates,
+                      mode === "edit" ? selected?.id : undefined,
+                    )}>ลองโหลดอีกครั้ง</Button>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="offsite-search">
                     คำสั่งปฏิบัติงานที่เกี่ยวข้อง
@@ -1128,7 +1119,7 @@ export function ExpenseClaimDocumentClient({
                               return (
                                 <div
                                   key={`empty-${idx}`}
-                                  className="h-9 rounded-md"
+                                  className="h-11 rounded-md"
                                 />
                               );
                             }
@@ -1144,7 +1135,7 @@ export function ExpenseClaimDocumentClient({
                                   selectable && toggleClaimDate(cell)
                                 }
                                 disabled={!selectable}
-                                className={`h-9 rounded-md border text-xs transition ${
+                                className={`h-11 rounded-md border text-sm transition ${
                                   selectable
                                     ? checked
                                       ? "border-primary bg-primary text-primary-foreground"
@@ -1168,57 +1159,18 @@ export function ExpenseClaimDocumentClient({
                   </div>
                 </div>
 
+                <p id="claim-totals-help" className="text-sm text-muted-foreground">จำนวนวันและยอดเบิกคำนวณจากวันที่เลือก วันละ {CLAIM_DAILY_RATE} บาท</p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="countDates">จำนวนวันที่เลือก</Label>
-                    <Input id="countDates" value={String(dateCount)} disabled />
+                    <Input id="countDates" value={String(dateCount)} readOnly aria-describedby="claim-totals-help" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="amount">ยอดเบิก (บาท)</Label>
-                    <Input id="amount" value={String(totalAmount)} disabled />
+                    <Input id="amount" value={String(totalAmount)} readOnly aria-describedby="claim-totals-help" />
                   </div>
                 </div>
               </div>
-            ) : (
-              <>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="countDates">จำนวนวัน</Label>
-                    <Input
-                      id="countDates"
-                      inputMode="decimal"
-                      value={form.countDates === "-" ? "" : form.countDates}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          countDates: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="amount">จำนวนเงิน</Label>
-                    <Input
-                      id="amount"
-                      inputMode="decimal"
-                      value={form.amount === "-" ? "" : form.amount}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, amount: e.target.value }))
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>สถานะ</Label>
-                  <div className="flex h-9 items-center">
-                    <Badge variant={claimStatusVariant(form.status)}>
-                      {STATUS_LABEL[form.status] ?? form.status}
-                    </Badge>
-                  </div>
-                </div>
-              </>
-            )}
 
             <div hidden={wizard && step !== 1} className="space-y-2">
               <Label htmlFor="remark">หมายเหตุ (ถ้ามี)</Label>
@@ -1258,7 +1210,7 @@ export function ExpenseClaimDocumentClient({
                 variant="secondary"
                 className="shrink-0"
                 onClick={() => submitCreate("DRAFT")}
-                disabled={!formValid || isPending}
+                disabled={!formValid || isPending || !eligibleLoaded || isLoadingEligibleOffSites}
                 isLoading={isPending}
                 loadingText="กำลังบันทึกร่าง"
               >
@@ -1271,6 +1223,7 @@ export function ExpenseClaimDocumentClient({
                   !formValid ||
                   isPending ||
                   hasLeaderlessSelectedOsw ||
+                  !eligibleLoaded || isLoadingEligibleOffSites || dateCount === 0 ||
                   step !== 2 ||
                   (selected !== null && selected.userId !== userId)
                 }
@@ -1286,7 +1239,7 @@ export function ExpenseClaimDocumentClient({
                 variant="secondary"
                 className="shrink-0"
                 onClick={submitUpdate}
-                disabled={!formValid || isPending}
+                disabled={!formValid || isPending || !eligibleLoaded || isLoadingEligibleOffSites}
                 isLoading={isPending}
                 loadingText="กำลังบันทึกร่าง"
               >
@@ -1299,6 +1252,7 @@ export function ExpenseClaimDocumentClient({
                   !formValid ||
                   isPending ||
                   hasLeaderlessSelectedOsw ||
+                  !eligibleLoaded || isLoadingEligibleOffSites || dateCount === 0 ||
                   step !== 2 ||
                   (selected !== null && selected.userId !== userId)
                 }
@@ -1310,8 +1264,9 @@ export function ExpenseClaimDocumentClient({
             </>
           ) : (
             <LoadingButton
+              className={step === 2 ? "shrink-0" : "hidden"}
               onClick={submitUpdate}
-              disabled={!formValid || isPending}
+              disabled={!formValid || isPending || !eligibleLoaded || isLoadingEligibleOffSites || hasLeaderlessSelectedOsw || dateCount === 0 || step !== 2}
               isLoading={isPending}
               loadingText="กำลังบันทึก"
             >
@@ -1321,7 +1276,7 @@ export function ExpenseClaimDocumentClient({
           {wizard && step < 2 && (
             <Button
               onClick={() => setStep(step + 1)}
-              disabled={!formValid || isPending}
+              disabled={!formValid || isPending || !eligibleLoaded || isLoadingEligibleOffSites}
             >
               ถัดไป
             </Button>

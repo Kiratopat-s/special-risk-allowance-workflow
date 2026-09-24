@@ -11,6 +11,7 @@
 import { requireReadableClaim, resolveClaimReadScope } from "@/lib/domains/expense-claim-document/read-scope";
 import { revalidatePath } from "next/cache";
 import { bangkokCurrentMonth } from "@/lib/shared/format";
+import { isClaimMutationLocked } from "@/lib/shared/claim-mutation";
 import { auth } from "@/lib/auth";
 import { can } from "@/lib/auth/permissions";
 import { expenseClaimDocumentService } from "@/lib/domains/expense-claim-document";
@@ -26,21 +27,34 @@ import type {
 } from "@/lib/domains/expense-claim-document";
 
 /**
- * List off-site work options eligible for creating expense claim for current user
+ * List eligible off-site work for the caller creating a claim or an authorized
+ * editor updating an existing claim's actual claimant.
  */
 export async function listEligibleOffSiteWorksForClaim(
-    month?: string
+    month?: string,
+    claimId?: string
 ): Promise<Result<EligibleOffSiteWorkOption[]>> {
     const session = await auth();
     if (!session?.user?.dbUserId) {
         return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
     }
 
-    const canCreateOwn = await can(session.user.dbUserId, "EXPENSE_CLAIM", "CREATE", {
-        targetOwnerId: session.user.dbUserId,
-    });
+    const existing = claimId !== undefined
+        ? await expenseClaimDocumentRepository.findById(claimId)
+        : null;
+    if (claimId !== undefined && !existing) {
+        return { success: false, error: "Expense claim document not found", code: "CLAIM_NOT_FOUND" };
+    }
 
-    if (!canCreateOwn) {
+    const targetUserId = existing?.userId ?? session.user.dbUserId;
+    const canSelect = await can(
+        session.user.dbUserId,
+        "EXPENSE_CLAIM",
+        existing ? "UPDATE" : "CREATE",
+        { targetOwnerId: targetUserId }
+    );
+
+    if (!canSelect) {
         return {
             success: false,
             error: "Permission denied",
@@ -48,17 +62,26 @@ export async function listEligibleOffSiteWorksForClaim(
         };
     }
 
-    const targetMonth = new Date(`${month || bangkokCurrentMonth()}-01T00:00:00.000Z`);
-    if (Number.isNaN(targetMonth.getTime())) {
+    if (existing && isClaimMutationLocked(existing)) {
+        return {
+            success: false,
+            error: "ไม่สามารถแก้ไขเอกสารที่รวบรวม อนุมัติ หรือยกเลิกแล้วได้",
+            code: "CLAIM_LOCKED",
+        };
+    }
+
+    const monthValue = month ?? bangkokCurrentMonth();
+    if (typeof monthValue !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthValue)) {
         return {
             success: false,
             error: "กรุณาเลือกเดือนและปี พ.ศ. ให้ถูกต้อง",
             code: "INVALID_MONTH",
         };
     }
+    const targetMonth = new Date(`${monthValue}-01T00:00:00.000Z`);
 
     return expenseClaimDocumentService.listEligibleOffSiteWorksForUser(
-        session.user.dbUserId,
+        targetUserId,
         targetMonth
     );
 }

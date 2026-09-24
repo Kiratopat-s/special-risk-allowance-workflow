@@ -4,14 +4,12 @@ import type {
   CreateExpenseClaimDocumentInput,
 } from "@/lib/domains/expense-claim-document/types";
 import type { ClaimDocumentStatus } from "@/lib/shared/types";
-import { decimalText, toMonthInput } from "@/lib/shared/format";
+import { toMonthInput } from "@/lib/shared/format";
+import { isClaimMutationLocked } from "@/lib/shared/claim-mutation";
 export interface ClaimFormState {
   expenseMonth: string;
   claimantPositionAtSubmission: string;
   remark: string;
-  status: ClaimDocumentStatus;
-  countDates: string;
-  amount: string;
 }
 
 const toMonthDate = (month: string) => `${month}-01`;
@@ -20,10 +18,8 @@ export function claimUpdatePayload(
   form: ClaimFormState,
   selectedOffSiteWorkIds: string[],
   selectedClaimDates: string[],
-  dateCount: number,
-  totalAmount: number,
 ): UpdateExpenseClaimDocumentInput {
-  if (!selected) return {};
+  if (!selected || isClaimMutationLocked(selected)) return {};
 
   const base: UpdateExpenseClaimDocumentInput = {
     expenseMonth:
@@ -41,28 +37,11 @@ export function claimUpdatePayload(
         : undefined,
   };
 
-  if (selected.status === "DRAFT") {
-    // For DRAFT edits, always include OSW selection and derived dates/amounts
-    return {
-      ...base,
-      offSiteWorkIds: selectedOffSiteWorkIds,
-      selectedDates:
-        selectedClaimDates.length > 0 ? selectedClaimDates : undefined,
-      countDates: dateCount > 0 ? String(dateCount) : undefined,
-      amount: totalAmount > 0 ? String(totalAmount) : undefined,
-    };
-  }
-
+  // The server derives totals from the actual selection, including an empty draft.
   return {
     ...base,
-    countDates:
-      decimalText(selected.countDates) !== form.countDates
-        ? form.countDates.trim() || null
-        : undefined,
-    amount:
-      decimalText(selected.amount) !== form.amount
-        ? form.amount.trim() || null
-        : undefined,
+    offSiteWorkIds: selectedOffSiteWorkIds,
+    selectedDates: selectedClaimDates,
   };
 }
 
@@ -70,19 +49,13 @@ export function claimCreatePayload(
   form: ClaimFormState,
   selectedOffSiteWorkIds: string[],
   selectedClaimDates: string[],
-  dateCount: number,
-  totalAmount: number,
   status: ClaimDocumentStatus,
 ): CreateExpenseClaimDocumentInput {
   return {
     expenseMonth: toMonthDate(form.expenseMonth),
     claimantPositionAtSubmission: form.claimantPositionAtSubmission.trim(),
-    offSiteWorkIds:
-      selectedOffSiteWorkIds.length > 0 ? selectedOffSiteWorkIds : undefined,
-    selectedDates:
-      selectedClaimDates.length > 0 ? selectedClaimDates : undefined,
-    countDates: dateCount > 0 ? String(dateCount) : undefined,
-    amount: totalAmount > 0 ? String(totalAmount) : undefined,
+    offSiteWorkIds: selectedOffSiteWorkIds,
+    selectedDates: selectedClaimDates,
     remark: form.remark.trim() || undefined,
     status,
   };

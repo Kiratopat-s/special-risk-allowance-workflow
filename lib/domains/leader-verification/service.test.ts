@@ -141,7 +141,9 @@ describe("leaderVerificationService", () => {
       const result = await leaderVerificationService.verifyAsInternalLeader(
         "claim1",
         "osw1",
-        "leader1"
+        "leader1",
+        undefined,
+        "lv1"
       );
 
       expect(result.success).toBe(true);
@@ -153,7 +155,9 @@ describe("leaderVerificationService", () => {
       const result = await leaderVerificationService.verifyAsInternalLeader(
         "claim1",
         "osw1",
-        "wrong-user"
+        "wrong-user",
+        undefined,
+        "lv1"
       );
 
       expect(result.success).toBe(false);
@@ -168,7 +172,9 @@ describe("leaderVerificationService", () => {
       const result = await leaderVerificationService.verifyAsInternalLeader(
         "claim1",
         "osw1",
-        "leader1"
+        "leader1",
+        undefined,
+        "lv1"
       );
 
       expect(result.success).toBe(true);
@@ -185,7 +191,9 @@ describe("leaderVerificationService", () => {
       const result = await leaderVerificationService.verifyAsInternalLeader(
         "claim1",
         "osw1",
-        "leader1"
+        "leader1",
+        undefined,
+        "lv1"
       );
 
       expect(result.success).toBe(false);
@@ -198,7 +206,9 @@ describe("leaderVerificationService", () => {
       const result = await leaderVerificationService.verifyAsInternalLeader(
         "claim1",
         "osw1",
-        "leader1"
+        "leader1",
+        undefined,
+        "lv1"
       );
 
       expect(result.success).toBe(false);
@@ -278,11 +288,44 @@ describe("late verification completion", () => {
     const record = makeVerification();
     repo.findByToken.mockResolvedValue(record);
     repo.findByClaimAndOsw.mockResolvedValue(record);
+    repo.verify.mockResolvedValue(record);
     repo.findAllByExpenseClaimId.mockResolvedValue([{ ...record, verifiedAt: new Date() }]);
     vi.mocked(leaderVerificationRepository.markReadyForCollection).mockResolvedValue(false);
     if (kind === "external") await leaderVerificationService.verifyByToken("token-abc");
-    else await leaderVerificationService.verifyAsInternalLeader("claim1", "osw1", "leader1");
+    else await leaderVerificationService.verifyAsInternalLeader("claim1", "osw1", "leader1", undefined, "lv1");
     expect(leaderVerificationRepository.markReadyForCollection).toHaveBeenCalledWith("claim1");
     expect(mockPrisma.expenseClaim.update).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("stale internal confirmation", () => {
+  it("requires the verification shown to the leader and rejects a replacement record", async () => {
+    repo.findByClaimAndOsw.mockResolvedValue(makeVerification({ id: "replacement-id" }));
+    expect(await leaderVerificationService.verifyAsInternalLeader("claim1", "osw1", "leader1", undefined, "lv1"))
+      .toMatchObject({ success: false, code: "VERIFICATION_NOT_FOUND" });
+    expect(await leaderVerificationService.verifyAsInternalLeader("claim1", "osw1", "leader1"))
+      .toMatchObject({ success: false, code: "VERIFICATION_NOT_FOUND" });
+    expect(repo.verify).not.toHaveBeenCalled();
+  });
+
+  it("reports an edit that invalidates the ID while waiting for the database lock", async () => {
+    repo.findByClaimAndOsw.mockResolvedValue(makeVerification());
+    repo.verify.mockResolvedValue(null);
+    expect(await leaderVerificationService.verifyAsInternalLeader("claim1", "osw1", "leader1", undefined, "lv1"))
+      .toMatchObject({ success: false, code: "VERIFICATION_NOT_FOUND" });
+  });
+});
+
+describe("best-effort post-commit notifications", () => {
+  it("does not turn a successful claim mutation into a failure when loading verification requests fails", async () => {
+    repo.findAllByExpenseClaimId.mockRejectedValueOnce(new Error("read unavailable"));
+    await expect(leaderVerificationService.notifyForClaim("claim1")).resolves.toBeUndefined();
+  });
+
+  it("also tolerates a failure while loading the notification's work or claimant details", async () => {
+    repo.findAllByExpenseClaimId.mockResolvedValueOnce([makeVerification()]);
+    mockPrisma.offSiteWork.findMany.mockRejectedValueOnce(new Error("work read unavailable"));
+    await expect(leaderVerificationService.notifyForClaim("claim1")).resolves.toBeUndefined();
   });
 });

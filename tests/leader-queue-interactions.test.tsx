@@ -75,7 +75,7 @@ describe("leader queue document review", () => {
     const firstOrder = within(firstClaim()).getByRole("region", { name: "คำสั่ง ทดสอบ 001/2569" });
     await userEvent.click(within(firstOrder).getByRole("button", { name: "ใช้ลายเซ็นที่บันทึกไว้" }));
     await userEvent.click(within(firstOrder).getByRole("button", { name: "ยืนยันการออกปฏิบัติงาน" }));
-    await waitFor(() => expect(mock.verify).toHaveBeenCalledWith("claim-fixture-1", "work-fixture-1", leaderQueueSignature));
+    await waitFor(() => expect(mock.verify).toHaveBeenCalledWith("claim-fixture-1", "work-fixture-1", leaderQueueSignature, "verification-fixture-1"));
     await waitFor(() => expect(screen.getByText("1 เอกสาร · 1 รายการรอยืนยัน")).toBeTruthy());
     expect(screen.getAllByRole("article")).toHaveLength(1);
     expect(firstClaim().closest("details")).toBeNull();
@@ -86,7 +86,7 @@ describe("leader queue document review", () => {
     const secondOrder = within(firstClaim()).getByRole("region", { name: "คำสั่ง ทดสอบ 002/2569" });
     await userEvent.click(within(secondOrder).getByRole("button", { name: "ยืนยันการออกปฏิบัติงาน" }));
     await waitFor(() => expect(mock.verify).toHaveBeenCalledTimes(2));
-    expect(mock.verify).toHaveBeenLastCalledWith("claim-fixture-1", "work-fixture-2", leaderQueueSignature);
+    expect(mock.verify).toHaveBeenLastCalledWith("claim-fixture-1", "work-fixture-2", leaderQueueSignature, "verification-fixture-2");
     const completed = await screen.findByText("ยืนยันแล้วในรอบนี้ (1 เอกสาร)");
     expect(screen.getByText("0 เอกสาร · 0 รายการรอยืนยัน")).toBeTruthy();
     expect(firstClaim().closest("details")).toBe(completed.closest("details"));
@@ -130,6 +130,25 @@ describe("leader queue document review", () => {
     expect(within(firstClaim()).getAllByText("ยืนยันแล้ว")).toHaveLength(2);
   });
 
+  it("keeps the displayed verification and selected signature when an edited claim makes it stale", async () => {
+    mock.verify.mockResolvedValue({ success: false, code: "VERIFICATION_NOT_FOUND", error: "เอกสารมีการแก้ไข กรุณาเปิดรายการยืนยันใหม่" });
+    mount(leaderQueueItems.slice(0, 1));
+    const order = within(firstClaim()).getByRole("region", { name: "คำสั่ง ทดสอบ 001/2569" });
+    await userEvent.click(within(order).getByRole("button", { name: "ใช้ลายเซ็นที่บันทึกไว้" }));
+    const submit = within(order).getByRole("button", { name: "ยืนยันการออกปฏิบัติงาน" });
+    await userEvent.click(submit);
+    await waitFor(() => expect(mock.toast).toHaveBeenCalledWith("ยืนยันไม่สำเร็จ", {
+      description: "เอกสารมีการแก้ไข กรุณาเปิดรายการยืนยันใหม่",
+    }));
+    expect(mock.verify).toHaveBeenCalledExactlyOnceWith("claim-fixture-1", "work-fixture-1", leaderQueueSignature, "verification-fixture-1");
+    expect(screen.getByText("1 เอกสาร · 1 รายการรอยืนยัน")).toBeTruthy();
+    expect(within(order).queryByText("ยืนยันแล้ว")).toBeNull();
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    await userEvent.click(submit);
+    await waitFor(() => expect(mock.verify).toHaveBeenCalledTimes(2));
+    expect(mock.verify).toHaveBeenLastCalledWith("claim-fixture-1", "work-fixture-1", leaderQueueSignature, "verification-fixture-1");
+  });
+
   it("requires strokes before using a new signature and submits the captured image", async () => {
     const context = { beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), fillRect: vi.fn() };
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => context as unknown as CanvasRenderingContext2D);
@@ -146,7 +165,7 @@ describe("leader queue document review", () => {
     fireEvent.mouseUp(canvas);
     await userEvent.click(claim.getByRole("button", { name: "ใช้ลายเซ็นนี้" }));
     await userEvent.click(claim.getByRole("button", { name: "ยืนยันการออกปฏิบัติงาน" }));
-    await waitFor(() => expect(mock.verify).toHaveBeenCalledWith("claim-fixture-1", "work-fixture-1", drawnSignature));
+    await waitFor(() => expect(mock.verify).toHaveBeenCalledWith("claim-fixture-1", "work-fixture-1", drawnSignature, "verification-fixture-1"));
   });
 
   it("does not silently submit the saved signature after choosing to draw a replacement", async () => {
@@ -160,7 +179,7 @@ describe("leader queue document review", () => {
     expect(mock.verify).not.toHaveBeenCalled();
     await userEvent.click(claim.getByRole("button", { name: "ยกเลิก" }));
     await userEvent.click(claim.getByRole("button", { name: "ยืนยันการออกปฏิบัติงาน" }));
-    await waitFor(() => expect(mock.verify).toHaveBeenCalledWith("claim-fixture-1", "work-fixture-1", leaderQueueSignature));
+    await waitFor(() => expect(mock.verify).toHaveBeenCalledWith("claim-fixture-1", "work-fixture-1", leaderQueueSignature, "verification-fixture-1"));
   });
 
   it("leaves expired orders readable while disabling verification", async () => {
@@ -186,7 +205,7 @@ describe("leader queue document review", () => {
     expect((submit as HTMLButtonElement).disabled).toBe(false);
     expect(claim.queryByText("หมดอายุ")).toBeNull();
     await userEvent.click(submit);
-    await waitFor(() => expect(mock.verify).toHaveBeenCalledWith("claim-fixture-1", "work-fixture-1", leaderQueueSignature));
+    await waitFor(() => expect(mock.verify).toHaveBeenCalledWith("claim-fixture-1", "work-fixture-1", leaderQueueSignature, "verification-fixture-1"));
   });
 
   it("loads the read-only drawer lazily and restores focus after keyboard dismissal", async () => {
