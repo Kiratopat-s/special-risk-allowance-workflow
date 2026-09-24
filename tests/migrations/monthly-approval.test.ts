@@ -79,6 +79,19 @@ if (phase === "before") {
     const claim = await prisma.expenseClaim.findUniqueOrThrow({ where: { id: `${id}-claim` } });
     return { mrc, claim, step: mrc.approvalSteps[0] };
   }
+  async function linkWork(claimId: string, suffix: string, verified: boolean) {
+    const offSiteWorkId = `${claimId}-work-${suffix}`;
+    await prisma.offSiteWork.create({ data: {
+      id: offSiteWorkId, postedByUserId: collector, leaderUserId: actor,
+      startDate: new Date("2026-09-01"), endDate: new Date("2026-09-02"),
+      expenseClaimOffSiteWorks: { create: { expenseClaimId: claimId } },
+    } });
+    if (verified) await prisma.leaderVerification.create({ data: {
+      expenseClaimId: claimId, offSiteWorkId, leaderUserId: actor,
+      expiresAt: new Date(Date.now() + 86_400_000), verifiedAt: new Date(),
+    } });
+    return offSiteWorkId;
+  }
   beforeAll(async () => {
     for (const id of [actor, collector]) await prisma.user.create({ data: {
       id, keycloakId: id, email: `${id}@example.test`, firstName: "ชื่อเดิม", lastName: "สกุลเดิม", positionShort: "หผ.", positionLevel: "8",
@@ -192,12 +205,40 @@ if (phase === "before") {
     });
     it("late leader verification cannot reopen collected or approved claims", async () => {
       const id = await fixture();
+      await linkWork(`${id}-claim`, "verified", true);
       expect(await leaderVerificationRepository.markReadyForCollection(`${id}-claim`)).toBe(false);
+      expect((await state(id)).claim).toMatchObject({ status: "COLLECTED", monthlyRequestCollectionId: id });
       await repo.reviewCollection(id, approve, actor);
       expect(await leaderVerificationRepository.markReadyForCollection(`${id}-claim`)).toBe(false);
-      expect((await state(id)).claim.status).toBe("APPROVED");
-      await prisma.expenseClaim.update({ where: { id: `${id}-claim` }, data: { monthlyRequestCollectionId: null, status: "PENDING_LEADER_VERIFY" } });
-      expect(await leaderVerificationRepository.markReadyForCollection(`${id}-claim`)).toBe(true);
+      expect((await state(id)).claim).toMatchObject({ status: "APPROVED", monthlyRequestCollectionId: id });
+    });
+    it("marks an uncollected claim ready only when every linked work has a current verification", async () => {
+      const id = `mrc-ready-claim-${++serial}`;
+      await prisma.expenseClaim.create({ data: {
+        id, userId: collector, createdById: collector,
+        expenseMonth: new Date("2026-09-01"), claimantPositionAtSubmission: "ตำแหน่งเดิม",
+        status: "PENDING_LEADER_VERIFY", selectedDates: ["2026-09-01", "2026-09-02"], amount: 300, countDates: 2,
+      } });
+      const expectPending = async () => {
+        expect(await leaderVerificationRepository.markReadyForCollection(id)).toBe(false);
+        expect(await prisma.expenseClaim.findUniqueOrThrow({ where: { id } }))
+          .toMatchObject({ status: "PENDING_LEADER_VERIFY", monthlyRequestCollectionId: null });
+      };
+
+      await expectPending(); // No linked work cannot become ready.
+      await linkWork(id, "verified", true);
+      const unverifiedWorkId = await linkWork(id, "unverified", false);
+      await expectPending(); // One linked work has no verification record.
+      const verification = await prisma.leaderVerification.create({ data: {
+        expenseClaimId: id, offSiteWorkId: unverifiedWorkId, leaderUserId: actor,
+        expiresAt: new Date(Date.now() + 86_400_000),
+      } });
+      await expectPending(); // An existing request still needs a leader's confirmation.
+      await prisma.leaderVerification.update({ where: { id: verification.id }, data: { verifiedAt: new Date() } });
+
+      expect(await leaderVerificationRepository.markReadyForCollection(id)).toBe(true);
+      expect(await prisma.expenseClaim.findUniqueOrThrow({ where: { id } }))
+        .toMatchObject({ status: "WAIT_FOR_COLLECTION", monthlyRequestCollectionId: null });
     });
   });
 }
