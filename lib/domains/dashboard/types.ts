@@ -24,7 +24,7 @@ export interface OverviewCollection {
 }
 export interface DashboardOverview {
   month: string;
-  scope: "OWN" | "ALL" | "RESTRICTED";
+  scope: "OWN" | "ALL" | "DEPARTMENT" | "RESTRICTED";
   claims: null | {
     total: number;
     requestedAmount: number;

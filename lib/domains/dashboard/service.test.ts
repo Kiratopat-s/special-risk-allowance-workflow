@@ -4,6 +4,7 @@ const mock = vi.hoisted(() => ({
   exact: vi.fn(),
   role: vi.fn(),
   scope: vi.fn(),
+  detailScope: vi.fn(),
   claims: vi.fn(),
   collections: vi.fn(),
 }));
@@ -14,6 +15,8 @@ vi.mock("@/lib/auth/permissions", () => ({
 }));
 vi.mock("@/lib/domains/expense-claim-document/read-scope", () => ({
   resolveClaimReadScope: mock.scope,
+  resolveClaimDetailScope: mock.detailScope,
+  canReadClaimInScope: vi.fn().mockReturnValue(false),
 }));
 vi.mock("./repository", () => ({
   dashboardRepository: { claims: mock.claims, collections: mock.collections },
@@ -27,8 +30,9 @@ describe("authorized dashboard overview", () => {
     mock.role.mockResolvedValue(false);
     mock.scope.mockResolvedValue({
       success: true,
-      data: { scope: "OWN", userId: "me" },
+      data: { scope: "OWN", userId: "me", where: { userId: "me" } },
     });
+    mock.detailScope.mockResolvedValue({ success: false, code: "PERMISSION_DENIED" });
     mock.claims.mockResolvedValue({
       groups: [
         { status: "DRAFT", _count: { _all: 25 }, _sum: { amount: "3750.00" } },
@@ -72,12 +76,20 @@ describe("authorized dashboard overview", () => {
         expenseMonthTo: new Date("2026-09-30T23:59:59.999Z"),
       },
       null,
+      { userId: "me" },
     );
   });
   it("does not impose ownership on ALL reads", async () => {
-    mock.scope.mockResolvedValue({ success: true, data: { scope: "ALL" } });
+    mock.scope.mockResolvedValue({ success: true, data: { scope: "ALL", where: {} } });
     const result = await dashboardService.getOverview("me", "2026-09");
     expect(result).toMatchObject({ success: true, data: { scope: "ALL" } });
+    expect(mock.claims.mock.calls[0][0].userId).toBeUndefined();
+  });
+  it("applies department visibility to the complete aggregate instead of coercing it to ALL", async () => {
+    const where = { claimant: { departmentId: { in: ["department"] } } };
+    mock.scope.mockResolvedValue({ success: true, data: { scope: "DEPARTMENT", where } });
+    expect(await dashboardService.getOverview("me", "2026-09")).toMatchObject({ success: true, data: { scope: "DEPARTMENT" } });
+    expect(mock.claims.mock.calls[0][2]).toEqual(where);
     expect(mock.claims.mock.calls[0][0].userId).toBeUndefined();
   });
   it("does not label status alone as requiring action", async () => {

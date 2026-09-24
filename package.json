@@ -25,6 +25,7 @@
     "@hookform/resolvers": "^5.9.1",
     "@mui/material": "7.3.11",
     "@mui/material-nextjs": "7.3.10",
+    "@mui/x-charts": "8.29.3",
     "@mui/x-date-pickers": "8.29.3",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",

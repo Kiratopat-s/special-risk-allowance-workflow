@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mock = vi.hoisted(() => ({ can: vi.fn(), exact: vi.fn(), role: vi.fn(), claim: vi.fn(), claimPrint: vi.fn(), collection: vi.fn(), collectionPrint: vi.fn() }));
+const mock = vi.hoisted(() => ({ can: vi.fn(), exact: vi.fn(), role: vi.fn(), readable: vi.fn(), claim: vi.fn(), claimPrint: vi.fn(), collection: vi.fn(), collectionPrint: vi.fn() }));
 vi.mock("@/lib/auth/permissions", () => ({ can: mock.can, canExact: mock.exact, hasRole: mock.role }));
 vi.mock("@/lib/db", () => ({ prisma: {} }));
+vi.mock("@/lib/domains/expense-claim-document/read-scope", () => ({ requireReadableClaim: mock.readable }));
 vi.mock("@/lib/domains/expense-claim-document/repository", () => ({ expenseClaimDocumentRepository: { findById: mock.claim, findForPrint: mock.claimPrint } }));
 vi.mock("@/lib/domains/monthly-request-collection/repository", () => ({ monthlyRequestCollectionRepository: { findPrintAccess: mock.collection, findClaimsForPrint: mock.collectionPrint } }));
 import { expenseClaimDocumentService } from "@/lib/domains/expense-claim-document/service";
@@ -10,6 +11,7 @@ import { monthlyRequestCollectionService } from "@/lib/domains/monthly-request-c
 beforeEach(() => {
   vi.clearAllMocks();
   mock.can.mockResolvedValue(false); mock.exact.mockResolvedValue(false); mock.role.mockResolvedValue(false);
+  mock.readable.mockResolvedValue({ success: false, code: "PERMISSION_DENIED", error: "Denied" });
   mock.claim.mockResolvedValue({ id: "claim", userId: "owner", status: "DRAFT" });
   mock.collection.mockResolvedValue({ collectorId: "collector", status: "PENDING", approvalSteps: [] });
   mock.collectionPrint.mockResolvedValue({ expenseClaims: [] });
@@ -17,18 +19,18 @@ beforeEach(() => {
 });
 
 describe("print authorization before signatures are fetched", () => {
-  it("passes the actual claim owner into READ and blocks an unrelated user", async () => {
+  it("requires the shared department-aware READ guard before fetching signatures", async () => {
     expect(await expenseClaimDocumentService.getPrintData("claim", "stranger")).toMatchObject({ success: false, code: "PERMISSION_DENIED" });
-    expect(mock.can).toHaveBeenCalledWith("stranger", "EXPENSE_CLAIM", "READ", { targetOwnerId: "owner" });
+    expect(mock.readable).toHaveBeenCalledWith("claim", "stranger");
     expect(mock.claimPrint).not.toHaveBeenCalled();
   });
   it.each(["owner", "read-all-reviewer"])("allows an authorized %s to reach the print query", async (actor) => {
-    mock.can.mockResolvedValue(true);
+    mock.readable.mockResolvedValue({ success: true, data: { id: "claim", userId: "owner", status: "DRAFT" } });
     await expenseClaimDocumentService.getPrintData("claim", actor);
     expect(mock.claimPrint).toHaveBeenCalledWith("claim", "owner");
   });
   it("does not print cancelled claims", async () => {
-    mock.claim.mockResolvedValue({ id: "claim", userId: "owner", status: "CANCELLED" });
+    mock.readable.mockResolvedValue({ success: true, data: { id: "claim", userId: "owner", status: "CANCELLED" } });
     expect(await expenseClaimDocumentService.getPrintData("claim", "owner")).toMatchObject({ code: "CLAIM_NOT_FOUND" });
     expect(mock.claimPrint).not.toHaveBeenCalled();
   });

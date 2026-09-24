@@ -1,5 +1,5 @@
 import { can, canExact, hasRole } from "@/lib/auth/permissions";
-import { resolveClaimReadScope } from "@/lib/domains/expense-claim-document/read-scope";
+import { canReadClaimInScope, resolveClaimDetailScope, resolveClaimReadScope } from "@/lib/domains/expense-claim-document/read-scope";
 import { CLAIM_STATUS_GROUPS } from "@/lib/domains/expense-claim-document/read-query";
 import { dashboardRepository } from "./repository";
 import type { DashboardOverview } from "./types";
@@ -31,6 +31,7 @@ export const dashboardService = {
       );
       const [
         scope,
+        detailScope,
         updateOwn,
         updateAll,
         createClaim,
@@ -42,6 +43,7 @@ export const dashboardService = {
         hpa,
       ] = await Promise.all([
         resolveClaimReadScope(userId),
+        resolveClaimDetailScope(userId),
         can(userId, "EXPENSE_CLAIM", "UPDATE", { targetOwnerId: userId }),
         can(userId, "EXPENSE_CLAIM", "UPDATE", {
           targetOwnerId: "00000000-0000-0000-0000-000000000000",
@@ -65,11 +67,12 @@ export const dashboardService = {
         scope.success
           ? dashboardRepository.claims(
               {
-                userId: scope.data.userId,
+                ...(scope.data.scope === "OWN" && { userId: scope.data.userId }),
                 expenseMonthFrom: start,
                 expenseMonthTo: end,
               },
               actionable,
+              scope.data.where,
             )
           : null,
         listMonthly || readMonthly
@@ -152,9 +155,7 @@ export const dashboardService = {
                       claim.countDates === null
                         ? null
                         : Number(claim.countDates),
-                    canView: await can(userId, "EXPENSE_CLAIM", "READ", {
-                      targetOwnerId: claim.userId,
-                    }),
+                    canView: detailScope.success && canReadClaimInScope(detailScope.data, claim),
                   })),
                 ),
               }

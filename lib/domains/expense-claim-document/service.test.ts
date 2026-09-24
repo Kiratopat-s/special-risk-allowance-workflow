@@ -22,6 +22,7 @@ const repo = expenseClaimDocumentRepository as unknown as {
   create: vi.Mock;
   update: vi.Mock;
   updateStatus: vi.Mock;
+  submitDraft: vi.Mock;
   softDelete: vi.Mock;
   findMany: vi.Mock;
 };
@@ -58,6 +59,28 @@ describe("expenseClaimDocumentService", () => {
       );
 
       expect(result.success).toBe(true);
+    });
+
+    it("keeps a draft with leader-assigned work as a draft without notifications or verifications", async () => {
+      repo.create.mockResolvedValue(makeClaim());
+      mockLogService.log.mockResolvedValue({});
+      const result = await expenseClaimDocumentService.create({
+        expenseMonth: "2024-01-01", claimantPositionAtSubmission: "Engineer",
+        status: "DRAFT", offSiteWorkIds: ["osw1"],
+      }, "actor1", "u1");
+      expect(result.success).toBe(true);
+      expect(mockLvService.createForClaim).not.toHaveBeenCalled();
+      expect(repo.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it("treats omitted initial status as a draft", async () => {
+      repo.create.mockResolvedValue(makeClaim());
+      mockLogService.log.mockResolvedValue({});
+      await expenseClaimDocumentService.create({
+        expenseMonth: "2024-01-01", claimantPositionAtSubmission: "Engineer", offSiteWorkIds: ["osw1"],
+      }, "actor1", "u1");
+      expect(repo.create.mock.calls[0][0].status).toBe("DRAFT");
+      expect(mockLvService.createForClaim).not.toHaveBeenCalled();
     });
 
     it("rejects missing claimant position", async () => {
@@ -169,14 +192,15 @@ describe("expenseClaimDocumentService", () => {
       });
       repo.findWithRelations.mockResolvedValue(claim);
       mockLvService.createForClaim.mockResolvedValue([{ id: "lv1" }]);
-      repo.updateStatus.mockResolvedValue({});
+      repo.submitDraft.mockResolvedValue({ success: true, data: makeClaim({ status: "PENDING_LEADER_VERIFY" }) });
       repo.findById.mockResolvedValue(makeClaim({ status: "PENDING_LEADER_VERIFY" }));
       mockLogService.log.mockResolvedValue({});
 
       const result = await expenseClaimDocumentService.submitDraft("claim1", "u1");
 
       expect(result.success).toBe(true);
-      expect(repo.updateStatus).toHaveBeenCalledWith("claim1", "PENDING_LEADER_VERIFY");
+      expect(repo.submitDraft).toHaveBeenCalledWith("claim1", "PENDING_LEADER_VERIFY");
+      expect(repo.submitDraft.mock.invocationCallOrder[0]).toBeLessThan(mockLvService.createForClaim.mock.invocationCallOrder[0]);
     });
 
     it("rejects when not DRAFT", async () => {
@@ -215,14 +239,24 @@ describe("expenseClaimDocumentService", () => {
     it("transitions to PENDING when no OSWs", async () => {
       const claim = makeClaim({ status: "DRAFT", expenseClaimOffSiteWorks: [] });
       repo.findWithRelations.mockResolvedValue(claim);
-      repo.updateStatus.mockResolvedValue({});
+      repo.submitDraft.mockResolvedValue({ success: true, data: makeClaim({ status: "PENDING" }) });
       repo.findById.mockResolvedValue(makeClaim({ status: "PENDING" }));
       mockLogService.log.mockResolvedValue({});
 
       const result = await expenseClaimDocumentService.submitDraft("claim1", "u1");
 
       expect(result.success).toBe(true);
-      expect(repo.updateStatus).toHaveBeenCalledWith("claim1", "PENDING");
+      expect(repo.submitDraft).toHaveBeenCalledWith("claim1", "PENDING");
+    });
+
+    it("returns a stale-submission error from the locked mutation without logging success", async () => {
+      repo.findWithRelations.mockResolvedValue(makeClaim({ expenseClaimOffSiteWorks: [
+        { offSiteWorkId: "osw1", offSiteWork: { leaderUserId: "leader1", leaderEmail: null } },
+      ] }));
+      repo.submitDraft.mockResolvedValue({ success: false, error: "Already submitted", code: "INVALID_STATUS" });
+      expect(await expenseClaimDocumentService.submitDraft("claim1", "u1")).toMatchObject({ code: "INVALID_STATUS" });
+      expect(mockLogService.log).not.toHaveBeenCalled();
+      expect(mockLvService.createForClaim).not.toHaveBeenCalled();
     });
   });
 

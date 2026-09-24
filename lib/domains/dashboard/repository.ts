@@ -13,8 +13,9 @@ export const dashboardRepository = {
   async claims(
     criteria: ExpenseClaimDocumentFilterCriteria,
     actionable: Prisma.ExpenseClaimWhereInput | null,
+    visibilityWhere: Prisma.ExpenseClaimWhereInput = {},
   ) {
-    const where = claimWhere(criteria);
+    const where: Prisma.ExpenseClaimWhereInput = { AND: [claimWhere(criteria), visibilityWhere] };
     // Aggregates use the full authorized set. Only the recent document table has a limit.
     const [groups, recent, requiresAction] = await Promise.all([
       prisma.expenseClaim.groupBy({
@@ -34,7 +35,7 @@ export const dashboardRepository = {
           status: true,
           amount: true,
           countDates: true,
-          claimant: { select: { firstName: true, lastName: true } },
+          claimant: { select: { firstName: true, lastName: true, departmentId: true } },
           expenseClaimOffSiteWorks: {
             select: {
               offSiteWork: {

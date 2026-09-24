@@ -14,6 +14,7 @@ import {
 } from "@mui/material";
 import {
   ArrowUpRight,
+  ChartNoAxesCombined,
   CircleHelp,
   FileText,
   FolderOpen,
@@ -54,6 +55,7 @@ function Navigation({ close }: { close: () => void }) {
     );
   const links = [
     { tab: "overview", label: "ภาพรวม", icon: LayoutGrid, show: true },
+    { tab: "analytics", label: "รายงานและสถิติ", icon: ChartNoAxesCombined, show: true },
     {
       tab: "expense-claims",
       label: "เอกสารเบิกค่าใช้จ่าย",
@@ -117,10 +119,10 @@ function Navigation({ close }: { close: () => void }) {
           .map(({ tab, label, icon: Icon }) => (
             <Link
               key={tab}
-              href={`/dashboard?tab=${tab}`}
+              href={tab === "analytics" ? "/analytics" : `/dashboard?tab=${tab}`}
               onClick={close}
               aria-current={
-                pathname === "/dashboard" && active === tab ? "page" : undefined
+                (tab === "analytics" ? pathname.startsWith("/analytics") : pathname === "/dashboard" && active === tab) ? "page" : undefined
               }
             >
               <Icon size={18} />
@@ -173,11 +175,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const isPrint = /\/print\/?$/.test(pathname);
-  const workspace = ["/dashboard", "/admin", "/profile", "/notifications"].some(
+  const workspace = ["/dashboard", "/analytics", "/admin", "/profile", "/notifications"].some(
     (path) => pathname.startsWith(path),
   );
   if (isPrint) return <>{children}</>;
-  const title = pathname.startsWith("/admin")
+  const title = pathname.startsWith("/analytics")
+    ? "รายงานและสถิติ"
+    : pathname.startsWith("/admin")
     ? "จัดการระบบ"
     : pathname.startsWith("/profile")
       ? "บัญชีของฉัน"

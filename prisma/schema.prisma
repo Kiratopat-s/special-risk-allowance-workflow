@@ -280,12 +280,25 @@ enum ClaimDocumentStatus {
   REJECTED               // Status when a claim has been reviewed and rejected, often with feedback for the claimant
   CANCELLED              // Status when a claim has been cancelled by the claimant or due to other reasons
 }
+
+enum DepartmentSnapshotSource {
+  SUBMISSION
+  LEGACY_CURRENT
+}
+
 model ExpenseClaim {
   id                     String     @id @default(uuid(7))
   expenseMonth           DateTime    @map("expense_month") // Represents the month for which expenses are claimed (e.g. 2024-01-01 for January 2024)
   userId                 String      @map("user_id")
   claimant               User        @relation("ExpenseClaimUser", fields: [userId], references: [id], onDelete: Cascade)
   claimantPositionAtSubmission String     @map("claimant_position_at_submission")
+  // Scalar snapshots intentionally survive department renames and deletion.
+  // A captured null department means unassigned at submission, not uncaptured.
+  departmentSnapshotId         String?   @map("department_snapshot_id")
+  departmentSnapshotName       String?   @map("department_snapshot_name")
+  departmentSnapshotShortName  String?   @map("department_snapshot_short_name")
+  departmentSnapshotCapturedAt DateTime? @map("department_snapshot_captured_at")
+  departmentSnapshotSource     DepartmentSnapshotSource? @map("department_snapshot_source")
 
   /// Expected structure: JSON array of ISO-8601 date strings (e.g. "2024-01-15"),
   /// listing the specific calendar days within `forMonth` for which expenses are claimed.
@@ -317,6 +330,7 @@ model ExpenseClaim {
   @@index([createdAt])
   @@index([userId, expenseMonth])
   @@index([status, expenseMonth])
+  @@index([departmentSnapshotId, expenseMonth])
 }
 
 model ExpenseClaimOffSiteWork {

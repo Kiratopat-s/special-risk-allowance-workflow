@@ -9,8 +9,10 @@
 import { claimWhere, claimOrderBy } from "./read-query";
 import { claimPrintSelect } from "./print-data";
 import { prisma } from "@/lib/db";
-import { Prisma } from "@/lib/generated/prisma/client";
+import { Prisma, type ClaimDocumentStatus } from "@/lib/generated/prisma/client";
 import { sanitizeStrings } from "@/lib/shared/sanitize";
+import { success, error, type Result } from "@/lib/shared/types";
+import { captureSubmissionDepartment, isSubmittedClaimStatus, lockClaim, needsDepartmentSnapshot } from "./department-snapshot";
 import type {
     ExpenseClaimDocumentEntity,
     ExpenseClaimDocumentWithRelations,
@@ -185,12 +187,35 @@ export const expenseClaimDocumentRepository = {
      */
     async updateStatus(
         id: string,
-        status: string
+        status: ClaimDocumentStatus
     ): Promise<ExpenseClaimDocumentEntity> {
-        return prisma.expenseClaim.update({
-            where: { id },
-            data: { status: status as never },
-        }) as Promise<ExpenseClaimDocumentEntity>;
+        return prisma.$transaction(async (tx) => {
+            const existing = await lockClaim(tx, id);
+            if (!existing) throw new Error("Expense claim document not found");
+            const snapshot = needsDepartmentSnapshot(existing, status)
+                ? await captureSubmissionDepartment(tx, existing.userId) : {};
+            return serializeDecimalFields(await tx.expenseClaim.update({
+                where: { id }, data: { status, ...snapshot },
+            })) as ExpenseClaimDocumentEntity;
+        });
+    },
+
+    /** Recheck the draft under lock before committing its first submission. */
+    async submitDraft(
+        id: string,
+        status: "PENDING" | "PENDING_LEADER_VERIFY"
+    ): Promise<Result<ExpenseClaimDocumentEntity>> {
+        return prisma.$transaction(async (tx) => {
+            const existing = await lockClaim(tx, id);
+            if (!existing) return error("Expense claim document not found", "CLAIM_NOT_FOUND");
+            if (existing.status !== "DRAFT" || existing.cancelledAt !== null) {
+                return error("เอกสารนี้ไม่ได้อยู่ในสถานะร่างแล้ว", "INVALID_STATUS");
+            }
+            const snapshot = needsDepartmentSnapshot(existing, status)
+                ? await captureSubmissionDepartment(tx, existing.userId) : {};
+            const updated = await tx.expenseClaim.update({ where: { id }, data: { status, ...snapshot } });
+            return success(serializeDecimalFields(updated) as ExpenseClaimDocumentEntity);
+        });
     },
 
     /**
@@ -227,9 +252,14 @@ export const expenseClaimDocumentRepository = {
                 : {}),
         };
 
-        return prisma.expenseClaim.create({
-            data: createData as Parameters<typeof prisma.expenseClaim.create>[0]["data"],
-        }) as Promise<ExpenseClaimDocumentEntity>;
+        return prisma.$transaction(async (tx) => {
+            const snapshot = isSubmittedClaimStatus(data.status ?? "DRAFT")
+                ? await captureSubmissionDepartment(tx, userId) : {};
+            const created = await tx.expenseClaim.create({
+                data: { ...createData, ...snapshot } as Parameters<typeof prisma.expenseClaim.create>[0]["data"],
+            });
+            return serializeDecimalFields(created) as ExpenseClaimDocumentEntity;
+        });
     },
 
     /**
@@ -284,10 +314,15 @@ export const expenseClaimDocumentRepository = {
             };
         }
 
-        return prisma.expenseClaim.update({
-            where: { id },
-            data: updateData,
-        }) as Promise<ExpenseClaimDocumentEntity>;
+        return prisma.$transaction(async (tx) => {
+            const existing = await lockClaim(tx, id);
+            if (!existing) throw new Error("Expense claim document not found");
+            const snapshot = needsDepartmentSnapshot(existing, data.status ?? existing.status)
+                ? await captureSubmissionDepartment(tx, existing.userId) : {};
+            return serializeDecimalFields(await tx.expenseClaim.update({
+                where: { id }, data: { ...updateData, ...snapshot },
+            })) as ExpenseClaimDocumentEntity;
+        });
     },
 
     /**
@@ -309,10 +344,13 @@ export const expenseClaimDocumentRepository = {
      * List claim documents with filters and pagination
      */
     async findMany(
-        criteria: ExpenseClaimDocumentFilterCriteria
+        criteria: ExpenseClaimDocumentFilterCriteria,
+        visibilityWhere: Prisma.ExpenseClaimWhereInput = {}
     ): Promise<PaginatedResult<ExpenseClaimDocumentWithRelations>> {
         const { page = 1, pageSize = 20 } = criteria;
-        const where = claimWhere(criteria);
+        const where: Prisma.ExpenseClaimWhereInput = {
+            AND: [claimWhere(criteria), visibilityWhere],
+        };
 
         const [data, total] = await Promise.all([
             prisma.expenseClaim.findMany({

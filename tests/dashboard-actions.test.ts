@@ -4,6 +4,8 @@ const mock = vi.hoisted(() => ({
   overview: vi.fn(),
   scope: vi.fn(),
   list: vi.fn(),
+  readable: vi.fn(),
+  detail: vi.fn(),
 }));
 vi.mock("@/lib/auth", () => ({ auth: mock.auth }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -13,13 +15,14 @@ vi.mock("@/lib/domains/dashboard/service", () => ({
 }));
 vi.mock("@/lib/domains/expense-claim-document/read-scope", () => ({
   resolveClaimReadScope: mock.scope,
+  requireReadableClaim: mock.readable,
 }));
 vi.mock("@/lib/domains/expense-claim-document", () => ({
-  expenseClaimDocumentService: { list: mock.list },
+  expenseClaimDocumentService: { list: mock.list, getById: mock.detail },
   expenseClaimDocumentRepository: {},
 }));
 import { getDashboardOverview } from "@/app/actions/dashboard";
-import { listExpenseClaimDocuments } from "@/app/actions/expense-claim-document";
+import { getExpenseClaimDocument, listExpenseClaimDocuments } from "@/app/actions/expense-claim-document";
 afterEach(() => vi.useRealTimers());
 beforeEach(() => {
   vi.resetAllMocks();
@@ -53,7 +56,7 @@ it("defaults the overview to the new Thai month before UTC midnight", async () =
 it("does not allow an OWN caller to supply another user filter", async () => {
   mock.scope.mockResolvedValue({
     success: true,
-    data: { scope: "OWN", userId: "me" },
+    data: { scope: "OWN", userId: "me", where: { userId: "me" } },
   });
   await listExpenseClaimDocuments({
     userId: "other",
@@ -66,15 +69,30 @@ it("does not allow an OWN caller to supply another user filter", async () => {
     status: "PENDING",
     statusGroup: "approved",
     page: 2,
-  });
+  }, { userId: "me" });
 });
 it("preserves caller filters for ALL visibility", async () => {
-  mock.scope.mockResolvedValue({ success: true, data: { scope: "ALL" } });
+  mock.scope.mockResolvedValue({ success: true, data: { scope: "ALL", where: {} } });
   await listExpenseClaimDocuments({ userId: "other", sort: "amount-desc" });
   expect(mock.list).toHaveBeenCalledWith({
     userId: "other",
     sort: "amount-desc",
-  });
+  }, {});
+});
+it("passes department visibility separately so caller filters cannot replace it", async () => {
+  const where = { claimant: { departmentId: { in: ["permitted"] } } };
+  mock.scope.mockResolvedValue({ success: true, data: { scope: "DEPARTMENT", where } });
+  await listExpenseClaimDocuments({ userId: "other", search: "test" });
+  expect(mock.list).toHaveBeenCalledWith({ userId: "other", search: "test" }, where);
+});
+it("checks direct-ID READ before fetching full document relations", async () => {
+  mock.readable.mockResolvedValue({ success: false, error: "Denied", code: "PERMISSION_DENIED" });
+  expect(await getExpenseClaimDocument("forged-id")).toMatchObject({ success: false, code: "PERMISSION_DENIED" });
+  expect(mock.readable).toHaveBeenCalledWith("forged-id", "me");
+  expect(mock.detail).not.toHaveBeenCalled();
+  mock.readable.mockResolvedValue({ success: true, data: { id: "allowed" } });
+  await getExpenseClaimDocument("allowed");
+  expect(mock.detail).toHaveBeenCalledWith("allowed");
 });
 it("preserves permission-denied Result without executing a read", async () => {
   mock.scope.mockResolvedValue({

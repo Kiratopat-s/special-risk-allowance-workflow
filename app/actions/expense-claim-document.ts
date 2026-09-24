@@ -8,7 +8,7 @@
  * @module app/actions/expense-claim-document
  */
 
-import { resolveClaimReadScope } from "@/lib/domains/expense-claim-document/read-scope";
+import { requireReadableClaim, resolveClaimReadScope } from "@/lib/domains/expense-claim-document/read-scope";
 import { revalidatePath } from "next/cache";
 import { bangkokCurrentMonth } from "@/lib/shared/format";
 import { auth } from "@/lib/auth";
@@ -67,9 +67,10 @@ export async function listEligibleOffSiteWorksForClaim(
  * List expense claim documents with permission-aware visibility.
  *
  * Scope resolution:
- *   LIST:ALL  → return all documents (collector, hpa, rk, drt)
+ *   LIST:ALL  → return all documents for an unbound role
+ *   LIST:DEPARTMENT → constrain to exact permitted departments
  *   LIST:OWN  → return only the caller’s own documents (employee)
- *   READ:OWN  → fallback, same as LIST:OWN
+ *   READ      → own-only fallback when the caller can read their own document
  *   else      → PERMISSION_DENIED
  */
 export async function listExpenseClaimDocuments(
@@ -82,9 +83,9 @@ export async function listExpenseClaimDocuments(
 
     const scope = await resolveClaimReadScope(session.user.dbUserId);
     if (!scope.success) return scope;
-    return expenseClaimDocumentService.list(scope.data.scope === "ALL"
+    return expenseClaimDocumentService.list(scope.data.scope !== "OWN"
         ? filters ?? {}
-        : { ...(filters ?? {}), userId: scope.data.userId });
+        : { ...(filters ?? {}), userId: scope.data.userId }, scope.data.where);
 }
 
 /**
@@ -98,22 +99,8 @@ export async function getExpenseClaimDocument(
         return { success: false, error: "Unauthorized", code: "UNAUTHORIZED" };
     }
 
-    const existing = await expenseClaimDocumentRepository.findById(id);
-    if (!existing) {
-        return { success: false, error: "Expense claim document not found", code: "CLAIM_NOT_FOUND" };
-    }
-
-    const canRead = await can(session.user.dbUserId, "EXPENSE_CLAIM", "READ", {
-        targetOwnerId: existing.userId,
-    });
-
-    if (!canRead) {
-        return {
-            success: false,
-            error: "Permission denied",
-            code: "PERMISSION_DENIED",
-        };
-    }
+    const readable = await requireReadableClaim(id, session.user.dbUserId);
+    if (!readable.success) return readable;
 
     return expenseClaimDocumentService.getById(id);
 }

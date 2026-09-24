@@ -7,7 +7,7 @@
  */
 
 import { expenseClaimDocumentRepository } from "./repository";
-import { can } from "@/lib/auth/permissions";
+import { requireReadableClaim } from "./read-scope";
 import { toClaimPrintDocument } from "./print-data";
 import type { ClaimPrintDocument } from "@/lib/shared/types/claim-print";
 import { offSiteWorkEmployeeService } from "@/lib/domains/off-site-work/employee-service";
@@ -48,12 +48,11 @@ function isIsoDate(value: string): boolean {
 
 export const expenseClaimDocumentService = {
     async getPrintData(id: string, actorId: string): Promise<Result<ClaimPrintDocument>> {
-        const claim = await expenseClaimDocumentRepository.findById(id);
-        if (!claim || claim.status === "CANCELLED") {
+        const readable = await requireReadableClaim(id, actorId);
+        if (!readable.success) return readable;
+        const claim = readable.data;
+        if (claim.status === "CANCELLED") {
             return error("ไม่พบคำขอเบิก", "CLAIM_NOT_FOUND");
-        }
-        if (!(await can(actorId, "EXPENSE_CLAIM", "READ", { targetOwnerId: claim.userId }))) {
-            return error("ไม่มีสิทธิ์อ่านคำขอเบิกนี้", "PERMISSION_DENIED");
         }
         const data = await expenseClaimDocumentRepository.findForPrint(id, claim.userId);
         return data ? success(toClaimPrintDocument(data)) : error("ไม่พบคำขอเบิก", "CLAIM_NOT_FOUND");
@@ -114,10 +113,11 @@ export const expenseClaimDocumentService = {
         }
 
         const normalizedMonth = normalizeMonth(data.expenseMonth);
+        const initialStatus = data.status ?? "DRAFT";
 
         // Guard: when submitting (not draft), every linked OSW must have a leader assigned.
         if (
-            data.status !== "DRAFT" &&
+            initialStatus !== "DRAFT" &&
             data.offSiteWorkIds &&
             data.offSiteWorkIds.length > 0
         ) {
@@ -143,13 +143,14 @@ export const expenseClaimDocumentService = {
             {
                 ...data,
                 expenseMonth: normalizedMonth,
+                status: initialStatus,
             },
             targetUserId,
             actorId
         );
 
         // If any linked OSW has a leader, create verification records
-        if (data.offSiteWorkIds && data.offSiteWorkIds.length > 0) {
+        if (initialStatus !== "DRAFT" && initialStatus !== "CANCELLED" && data.offSiteWorkIds && data.offSiteWorkIds.length > 0) {
             const verifications = await leaderVerificationService.createForClaim(
                 claim.id,
                 data.offSiteWorkIds
@@ -337,18 +338,23 @@ export const expenseClaimDocumentService = {
             (l) => l.offSiteWorkId
         );
 
-        let newStatus: "PENDING_LEADER_VERIFY" | "PENDING" = "PENDING";
+        let newStatus: "PENDING_LEADER_VERIFY" | "PENDING" = offSiteWorkIds.length
+            ? "PENDING_LEADER_VERIFY" : "PENDING";
+        const submitted = await expenseClaimDocumentRepository.submitDraft(id, newStatus);
+        if (!submitted.success) return submitted;
+
+        // Only the submission that committed under the claim lock can create
+        // verification requests or notify leaders.
         if (offSiteWorkIds.length > 0) {
             const verifications = await leaderVerificationService.createForClaim(
                 id,
                 offSiteWorkIds
             );
-            if (verifications.length > 0) {
-                newStatus = "PENDING_LEADER_VERIFY";
+            if (verifications.length === 0) {
+                newStatus = "PENDING";
+                await expenseClaimDocumentRepository.updateStatus(id, newStatus);
             }
         }
-
-        await expenseClaimDocumentRepository.updateStatus(id, newStatus);
 
         await actionLogService.log({
             userId: actorId,
@@ -412,9 +418,10 @@ export const expenseClaimDocumentService = {
      * List claim documents with filters
      */
     async list(
-        criteria: ExpenseClaimDocumentFilterCriteria
+        criteria: ExpenseClaimDocumentFilterCriteria,
+        visibilityWhere: Prisma.ExpenseClaimWhereInput = {}
     ): Promise<Result<PaginatedResult<ExpenseClaimDocumentWithRelations>>> {
-        const result = await expenseClaimDocumentRepository.findMany(criteria);
+        const result = await expenseClaimDocumentRepository.findMany(criteria, visibilityWhere);
         return success(result);
     },
 };

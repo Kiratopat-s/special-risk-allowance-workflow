@@ -16,7 +16,7 @@ import type {
     MrcFilterCriteria,
     EligibleExpenseClaimForCollection,
 } from "./types";
-import type { Prisma } from "@/lib/generated/prisma/client";
+import { Prisma, type ClaimDocumentStatus } from "@/lib/generated/prisma/client";
 import { success, error, type Result } from "@/lib/shared/types";
 import type { PaginatedResult } from "@/lib/shared/types";
 
@@ -309,6 +309,18 @@ export const monthlyRequestCollectionRepository = {
             const mrc = await lockCollection(tx, id);
             if (!mrc) return error("ไม่พบรายการรวบรวม", "MRC_NOT_FOUND");
             if (mrc.status !== "DRAFT") return error("แก้ไขได้เฉพาะรายการร่าง", "MRC_NOT_DRAFT");
+            if (expenseClaimIds.length) {
+                // Lock before validation so a draft cannot bypass first submission
+                // (and its department snapshot) through bulk collection.
+                const selected = await tx.$queryRaw<Array<{ id: string; status: ClaimDocumentStatus }>>(Prisma.sql`
+                    SELECT id, status FROM expense_claims
+                    WHERE id IN (${Prisma.join([...new Set(expenseClaimIds)].sort())})
+                    ORDER BY id FOR UPDATE
+                `);
+                if (selected.some((claim) => claim.status === "DRAFT")) {
+                    return error("กรุณายื่นคำขอเบิกก่อนนำเข้ารายการรวบรวม", "CLAIM_NOT_SUBMITTED");
+                }
+            }
             // Recheck under the same lock used by submit/review, so a stale editor
             // cannot replace claims after they have been submitted or signed.
             await tx.expenseClaim.updateMany({
