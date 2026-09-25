@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { ClaimDatesCalendar } from "@/components/expense-claims/claim-dates-calendar";
 import { ClaimDetailContent, type ClaimDetailData } from "@/components/expense-claims/claim-detail-content";
 
@@ -32,12 +32,42 @@ describe("shared read-only claim details", () => {
     expect(container.querySelectorAll('[data-selected="true"]')).toHaveLength(0);
   });
   it("shows safe claim and work information without injecting owner operations", () => {
-    render(<ClaimDetailContent claim={claim} />);
+    const { container } = render(<ClaimDetailContent claim={claim} />);
     expect(screen.getByText("ผู้ยื่น ทดสอบ")).toBeTruthy();
     expect(screen.getByText("ช่างระดับ 5")).toBeTruthy();
     expect(screen.getByText("300 บาท")).toBeTruthy();
     expect(screen.getByText("กท. 1/2569")).toBeTruthy();
     expect(screen.getByText("ปฏิบัติงานตามคำสั่ง")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryByText("คำสั่งที่คุณกำลังยืนยัน")).toBeNull();
+    expect(container.querySelectorAll('[data-highlighted="true"]')).toHaveLength(0);
+  });
+  it("marks the linked order and its saved dates while retaining the whole claim", () => {
+    const detail: ClaimDetailData = {
+      ...claim,
+      expenseClaimOffSiteWorks: [
+        ...claim.expenseClaimOffSiteWorks,
+        {
+          offSiteWorkId: "work-2",
+          offSiteWork: {
+            id: "work-2", innerRefDocumentId: "กท. 2/2569", startDate: "2026-09-05", endDate: "2026-09-06", location: "พื้นที่คำสั่งอื่น", objective: "คำสั่งของหัวหน้าอีกคน",
+          },
+        },
+      ],
+    };
+    const { container } = render(<ClaimDetailContent claim={detail} highlightedDates={["2026-09-05", "2026-09-06"]} highlightedOffSiteWorkId="work-2" />);
+    const orders = within(screen.getByRole("region", { name: "คำสั่งที่ใช้ประกอบการเบิก" })).getAllByRole("listitem");
+    expect(orders).toHaveLength(2);
+    expect(within(orders[0]).queryByText("คำสั่งที่คุณกำลังยืนยัน")).toBeNull();
+    expect(within(orders[1]).getByText("คำสั่งที่คุณกำลังยืนยัน")).toBeTruthy();
+    expect(screen.getByText("300 บาท")).toBeTruthy();
+    expect(screen.getByText("2 วัน")).toBeTruthy();
+    expect(screen.getByText("คำสั่งของหัวหน้าอีกคน")).toBeTruthy();
+    expect(container.querySelectorAll('[data-selected="true"]')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-highlighted="true"]')).toHaveLength(1);
+    expect(screen.getByRole("cell", { name: "5 ก.ย. 2569: ยื่นเบิก อยู่ในคำสั่งที่คุณรับผิดชอบ" })).toBeTruthy();
+    expect(screen.getByRole("cell", { name: "6 ก.ย. 2569: ไม่ได้ยื่นเบิก" })).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByRole("link")).toBeNull();
   });

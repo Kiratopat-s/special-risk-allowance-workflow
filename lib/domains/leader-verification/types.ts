@@ -84,6 +84,22 @@ export interface LeaderClaimDetail extends LeaderClaimSummary {
     }>;
 }
 
+/** Public review data granted by a current token, without sharing or account data. */
+export type TokenVerificationView = {
+    state: "ready";
+    id: string;
+    offSiteWorkId: string;
+    expiresAt: Date;
+    expenseClaim: Omit<LeaderClaimDetail, "claimant"> & {
+        claimant: Pick<LeaderClaimDetail["claimant"], "firstName" | "lastName" | "employeeId">;
+    };
+    offSiteWork: Omit<LeaderVerificationWithRelations["offSiteWork"], "leaderEmpId">;
+} | {
+    state: "already_verified";
+    offSiteWorkId: string;
+    verifiedAt: Date;
+};
+
 export interface CreateLeaderVerificationInput {
     expenseClaimId: string;
     offSiteWorkId: string;

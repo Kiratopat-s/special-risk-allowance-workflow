@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { alignmentDepartments, alignmentNotifications, alignmentPermissions, alignmentRoles, alignmentUsers } from "../fixtures/ui-alignment";
 import { leaderQueueClaimDetail, secondLeaderQueueClaimDetail } from "../fixtures/leader-queue";
+import { tokenVerificationReady } from "../fixtures/token-verification";
 
 // Browser fixture entrypoints never import authentication, actions, or the database.
 const disabledMutation = async () => ({ success: false, error: "Visual fixture: saving is disabled" });
@@ -21,6 +22,15 @@ export const createOffSiteWork = disabledMutation;
 export const updateOffSiteWork = disabledMutation;
 export const deleteOffSiteWork = disabledMutation;
 export const verifyAsLeader = disabledMutation;
+export const verifyByToken = disabledMutation;
+export const getVerificationByToken = async () => ({ success: true, data: {
+  ...tokenVerificationReady,
+  expenseClaim: {
+    ...tokenVerificationReady.expenseClaim,
+    // Exercise multi-line notes and long words in the narrow external review layout.
+    remark: "ข้อมูลจำลองสำหรับตรวจสอบหน้าจอ: ผู้ยื่นขอเบิกเฉพาะวันที่เลือกไว้ในปฏิทิน โดยมีคำสั่งปฏิบัติงานหลายฉบับและช่วงวันที่ทับซ้อนกัน กรุณาตรวจสอบรายละเอียดทั้งหมดก่อนลงนาม\nเลขอ้างอิงตัวอย่าง: EXTERNAL-REVIEW-REFERENCE-WITH-A-LONG-UNBROKEN-IDENTIFIER-1234567890",
+  },
+} });
 export const getMyVerificationClaimDetail = async (claimId: string) => ({ success: true, data: claimId === leaderQueueClaimDetail.id ? leaderQueueClaimDetail : secondLeaderQueueClaimDetail });
 export const listOffSiteWorks = async () => ({ success: true, data: { data: [], pagination: null } });
 export const searchUsersForLeader = async () => ({ success: true, data: [] });

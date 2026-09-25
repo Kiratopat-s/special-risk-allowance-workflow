@@ -13,6 +13,7 @@ import { PermissionsClient } from "@/app/admin/permissions/permissions-client";
 import { MrcClient } from "@/app/monthly-request-collection/monthly-request-collection-client";
 import { OffSiteWorkClient } from "@/app/off-site-work/off-site-work-client";
 import { PendingVerificationsClient } from "@/app/leader-verify/pending/pending-client";
+import { LeaderVerifyClient } from "@/app/leader-verify/leader-verify-client";
 import { leaderQueueItems, leaderQueueSignature } from "../fixtures/leader-queue";
 import { alignmentDepartments, alignmentPermissions, alignmentRoles, alignmentUsers } from "../fixtures/ui-alignment";
 
@@ -26,7 +27,7 @@ function Preview() {
       <div className="ml-auto flex gap-2"><ThemeToggle /><NotificationBell /></div>
     </header>
     <nav className="flex flex-wrap gap-2 p-4" aria-label="Fixture scenes">
-      {["Roles", "Users", "Departments", "Permissions", "Collections", "Off-site work", "Leader queue"].map((name) => <Button key={name} variant={scene === name ? "default" : "outline"} onClick={() => setScene(name)}>{name}</Button>)}
+      {["Roles", "Users", "Departments", "Permissions", "Collections", "Off-site work", "Leader queue", "External verification"].map((name) => <Button key={name} variant={scene === name ? "default" : "outline"} onClick={() => setScene(name)}>{name}</Button>)}
       <Button onClick={() => setDialog(true)}>Long dialog</Button>
     </nav>
     <main className="mx-auto max-w-[1600px] p-4" key={scene}>
@@ -37,6 +38,7 @@ function Preview() {
       {scene === "Collections" && <MrcClient initialItems={[]} initialPagination={null} canManage canHpa={false} />}
       {scene === "Off-site work" && <OffSiteWorkClient initialItems={[]} initialPagination={null} />}
       {scene === "Leader queue" && <PendingVerificationsClient initialItems={leaderQueueItems} existingSignatureDataUrl={leaderQueueSignature} />}
+      {scene === "External verification" && <div className="mx-auto max-w-2xl"><LeaderVerifyClient token="visual-fixture-token" existingSignatureDataUrl={leaderQueueSignature} /></div>}
     </main>
     <Dialog open={dialog} onClose={() => setDialog(false)}>
       <DialogClose onClose={() => setDialog(false)} />

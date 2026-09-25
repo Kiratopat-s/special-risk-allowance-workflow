@@ -14,6 +14,7 @@ import type {
     CreateLeaderVerificationInput,
     LeaderVerificationQueueItem,
     LeaderClaimDetail,
+    TokenVerificationView,
 } from "./types";
 
 // Lazy-import to avoid circular deps
@@ -38,6 +39,31 @@ export interface VerifyResult {
 }
 
 export const leaderVerificationService = {
+    /** A bearer token grants review details only until expiry or verification. */
+    async getVerificationByToken(token: string): Promise<Result<TokenVerificationView>> {
+        if (typeof token !== "string" || !token.trim()) {
+            return error("ลิงก์ยืนยันไม่ถูกต้อง", "INVALID_TOKEN");
+        }
+        const record = await leaderVerificationRepository.findReviewByToken(token);
+        if (!record) {
+            return error("ไม่พบรายการยืนยัน หรือลิงก์ไม่ถูกต้อง", "TOKEN_NOT_FOUND");
+        }
+        if (record.verifiedAt) {
+            return success({ state: "already_verified", offSiteWorkId: record.offSiteWorkId, verifiedAt: record.verifiedAt });
+        }
+        if (record.expiresAt <= new Date()) {
+            return error("ลิงก์ยืนยันหมดอายุแล้ว กรุณาติดต่อผู้ยื่นเอกสารเพื่อขอลิงก์ใหม่", "TOKEN_EXPIRED");
+        }
+        return success({
+            state: "ready",
+            id: record.id,
+            offSiteWorkId: record.offSiteWorkId,
+            expiresAt: record.expiresAt,
+            expenseClaim: record.expenseClaim,
+            offSiteWork: record.offSiteWork,
+        });
+    },
+
     /**
      * Create verification records for each OSW that has a leader.
      * Returns the created records so the caller can extract share URLs.

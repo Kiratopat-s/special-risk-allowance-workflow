@@ -19,7 +19,7 @@ vi.mock("@/lib/domains/notification", () => ({
 import { leaderVerificationRepository } from "./repository";
 import { prisma } from "@/lib/db";
 import { leaderVerificationService } from "./service";
-import type { LeaderClaimDetail } from "./types";
+import type { LeaderClaimDetail, TokenVerificationView } from "./types";
 
 const repo = leaderVerificationRepository as unknown as {
   create: vi.Mock;
@@ -52,6 +52,80 @@ const makeVerification = (overrides = {}) => ({
 });
 
 describe("leaderVerificationService", () => {
+  describe("public token reads", () => {
+    const read = vi.mocked(leaderVerificationRepository.findReviewByToken);
+    const review = () => ({
+      id: "verification1", offSiteWorkId: "order1", verifiedAt: null,
+      expiresAt: new Date(Date.now() + 10000),
+      expenseClaim: {
+        id: "claim1", expenseMonth: new Date("2026-09-01"),
+        claimantPositionAtSubmission: "พนักงาน", status: "PENDING_LEADER_VERIFY",
+        selectedDates: ["2026-09-01"], countDates: 1, amount: 300, remark: null,
+        claimant: { firstName: "ชื่อ", lastName: "สกุล", employeeId: "000001" },
+        expenseClaimOffSiteWorks: [],
+      },
+      offSiteWork: {
+        id: "order1", innerRefDocumentId: "REF-1", startDate: new Date("2026-09-01"), endDate: new Date("2026-09-02"),
+        location: "สถานที่", objective: "ปฏิบัติงาน", leaderFirstName: "หัวหน้า", leaderLastName: "ชุด", leaderPosition: null,
+      },
+    });
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-25T00:00:00.000Z"));
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it("returns review details only for a current unexpired verification", async () => {
+      const record = review();
+      read.mockResolvedValue(record);
+      const details = {
+        state: "ready", id: record.id, offSiteWorkId: record.offSiteWorkId,
+        expiresAt: record.expiresAt, expenseClaim: record.expenseClaim, offSiteWork: record.offSiteWork,
+      } satisfies TokenVerificationView;
+      expect(await leaderVerificationService.getVerificationByToken("current-token"))
+        .toEqual({ success: true, data: details });
+      expect(read).toHaveBeenCalledExactlyOnceWith("current-token");
+      expect(repo.verify).not.toHaveBeenCalled();
+    });
+
+    it.each(["", "  ", null, undefined, 42])("rejects invalid token input %j before a query", async (token) => {
+      expect(await leaderVerificationService.getVerificationByToken(token as string))
+        .toMatchObject({ success: false, code: "INVALID_TOKEN" });
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    it("does not disclose details for an unknown, rotated, or inaccessible token", async () => {
+      read.mockResolvedValue(null);
+      expect(await leaderVerificationService.getVerificationByToken("old-token"))
+        .toMatchObject({ success: false, code: "TOKEN_NOT_FOUND" });
+    });
+
+    it.each([-1, 0])("rejects unsigned tokens expired by %i milliseconds without returning claim data", async (offset) => {
+      read.mockResolvedValue({ ...review(), expiresAt: new Date(Date.now() + offset) });
+      const result = await leaderVerificationService.getVerificationByToken("expired-token");
+      expect(result).toMatchObject({ success: false, code: "TOKEN_EXPIRED" });
+      expect(result).not.toHaveProperty("data");
+    });
+
+    it.each([-1, 10000])("returns only a receipt for an already-signed token with expiry offset %i", async (offset) => {
+      const verifiedAt = new Date(Date.now() - 20000);
+      read.mockResolvedValue({ ...review(), expiresAt: new Date(Date.now() + offset), verifiedAt });
+      expect(await leaderVerificationService.getVerificationByToken("signed-token")).toEqual({
+        success: true, data: { state: "already_verified", offSiteWorkId: "order1", verifiedAt },
+      });
+    });
+
+    it("cannot sign an old token after its verification was replaced following a review", async () => {
+      read.mockResolvedValue(review());
+      expect(await leaderVerificationService.getVerificationByToken("old-token")).toMatchObject({ success: true });
+      repo.findByToken.mockResolvedValue(null);
+      expect(await leaderVerificationService.verifyByToken("old-token", Buffer.from("signature")))
+        .toMatchObject({ success: false, code: "VERIFICATION_NOT_FOUND" });
+      expect(repo.verify).not.toHaveBeenCalled();
+    });
+  });
+
   describe("assigned leader reads", () => {
     it("delegates pending reads to the scoped repository", async () => {
       repo.findPendingByLeaderUserId.mockResolvedValue([]);
@@ -127,6 +201,14 @@ describe("leaderVerificationService", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) expect(result.code).toBe("TOKEN_EXPIRED");
+    });
+
+    it("rejects a verification removed while waiting for the claim lock", async () => {
+      repo.findByToken.mockResolvedValue(makeVerification());
+      repo.verify.mockResolvedValue(null);
+      expect(await leaderVerificationService.verifyByToken("token-abc", Buffer.from("signature")))
+        .toMatchObject({ success: false, code: "VERIFICATION_NOT_FOUND" });
+      expect(leaderVerificationRepository.markReadyForCollection).not.toHaveBeenCalled();
     });
   });
 

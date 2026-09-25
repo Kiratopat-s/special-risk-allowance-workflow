@@ -9,6 +9,7 @@ export type {
     LeaderVerificationWithRelations,
     LeaderVerificationQueueItem,
     LeaderClaimDetail,
+    TokenVerificationView,
     CreateLeaderVerificationInput,
 } from "./types";
 

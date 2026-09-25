@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getClaimDatePool, getCalendarGridDates, normalizeClaimDates, formatClaimDateRanges } from "./claim-dates";
+import { getClaimDatePool, getCalendarGridDates, normalizeClaimDates, formatClaimDateRanges, datesWithinOrder } from "./claim-dates";
 import type { EligibleOffSiteWorkOption } from "@/lib/domains/expense-claim-document/types";
 const work = (id: string, start: string, end: string) =>
   ({
@@ -81,5 +81,27 @@ describe("saved claim dates", () => {
     expect(formatClaimDateRanges(["2026-09-05", "2026-09-03", "2026-09-01", "2026-09-02", "2026-09-05"])).toBe("1–3, 5 ก.ย. 2569");
     expect(formatClaimDateRanges(["2026-09-01", "2026-08-31", "2026-08-30", "invalid"])).toBe("30–31 ส.ค. 2569; 1 ก.ย. 2569");
     expect(formatClaimDateRanges([])).toBe("");
+  });
+});
+
+describe("saved claim dates within an order", () => {
+  const dates = ["2026-09-03", "2026-09-05", "2026-09-07", "2026-09-10"];
+
+  it("includes both UTC boundaries and only the saved dates between them", () => {
+    expect(datesWithinOrder(dates, {
+      startDate: new Date("2026-09-05T23:00:00Z"),
+      endDate: "2026-09-07T01:00:00Z",
+    })).toEqual(["2026-09-05", "2026-09-07"]);
+  });
+
+  it("describes overlapping periods without allocating or changing claim dates", () => {
+    expect(datesWithinOrder(dates, { startDate: "2026-09-03", endDate: "2026-09-05" })).toEqual(["2026-09-03", "2026-09-05"]);
+    expect(datesWithinOrder(dates, { startDate: "2026-09-05", endDate: "2026-09-10" })).toEqual(["2026-09-05", "2026-09-07", "2026-09-10"]);
+    expect(dates).toEqual(["2026-09-03", "2026-09-05", "2026-09-07", "2026-09-10"]);
+  });
+
+  it("does not invent dates when the saved dates are missing or outside the order", () => {
+    expect(datesWithinOrder([], { startDate: "2026-09-01", endDate: "2026-09-30" })).toEqual([]);
+    expect(datesWithinOrder(dates, { startDate: "2026-09-11", endDate: "2026-09-20" })).toEqual([]);
   });
 });

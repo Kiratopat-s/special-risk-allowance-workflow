@@ -1,5 +1,5 @@
 import type { EligibleOffSiteWorkOption } from "@/lib/domains/expense-claim-document/types";
-import { thaiDateFormat } from "@/lib/shared/format";
+import { thaiDateFormat, toDateInputValue } from "@/lib/shared/format";
 
 function claimMonthValue(expenseMonth: Date | string): string | null {
   if (!(expenseMonth instanceof Date) && typeof expenseMonth !== "string") return null;
@@ -43,6 +43,16 @@ export function normalizeClaimDates(
     warnings.push(`วันที่ที่บันทึกไว้ ${dates.length} วัน ไม่ตรงกับจำนวนที่ขอเบิก ${countDates} วัน`);
   }
   return { dates, warnings };
+}
+
+/** Dates are claim-level; this intersection describes a period, not an allocation. */
+export function datesWithinOrder(
+  dates: string[],
+  work: { startDate: Date | string; endDate: Date | string },
+): string[] {
+  const start = toDateInputValue(work.startDate);
+  const end = toDateInputValue(work.endDate);
+  return dates.filter((date) => date >= start && date <= end);
 }
 
 /** Compact Thai ranges, e.g. "1–3, 5, 7–9 ก.ย. 2569". */

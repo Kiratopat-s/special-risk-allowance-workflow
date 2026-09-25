@@ -23,44 +23,19 @@ import {
 import { Button } from "@/components/workflow-ui/button";
 import { LoadingButton } from "@/components/workflow-ui/loading-button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ClaimDetailContent } from "@/components/expense-claims/claim-detail-content";
+import type { TokenVerificationView } from "@/lib/domains/leader-verification";
+import { datesWithinOrder, formatClaimDateRanges, normalizeClaimDates } from "@/lib/ui/claim-dates";
 import {
   getVerificationByToken,
   verifyByToken,
 } from "@/app/actions/leader-verify";
-import { monthDisplay, dateDisplay } from "@/lib/shared/format";
+import { dateDisplay } from "@/lib/shared/format";
 
-type LoadState = "loading" | "ready" | "not_found" | "already_verified";
+type VerificationView = TokenVerificationView | { state: "loading" | "not_found" } | { state: "error"; message: string };
 type SubmitState = "idle" | "submitting" | "done" | "error";
 /** choose = pick existing vs draw new; draw = canvas open; ready = signature captured */
 type SigStep = "choose" | "draw" | "ready";
-
-interface VerificationInfo {
-  id: string;
-  offSiteWorkId: string;
-  leaderEmail: string | null;
-  expiresAt: Date;
-  verifiedAt: Date | null;
-  expenseClaim: {
-    id: string;
-    expenseMonth: Date;
-    status: string;
-    claimant: {
-      firstName: string;
-      lastName: string;
-    };
-  };
-  offSiteWork: {
-    id: string;
-    innerRefDocumentId: string | null;
-    startDate: Date;
-    endDate: Date;
-    location: string | null;
-    objective: string | null;
-    leaderFirstName: string | null;
-    leaderLastName: string | null;
-    leaderPosition: string | null;
-  };
-}
 
 // ─── Inline signature canvas ──────────────────────────────────────────────────
 
@@ -205,28 +180,38 @@ function SignatureCanvas({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function LeaderVerifyClient({
-  token,
-  existingSignatureDataUrl,
-}: {
+interface LeaderVerifyClientProps {
   token: string | null;
   existingSignatureDataUrl?: string | null;
-}) {
-  const [loadState, setLoadState] = useState<LoadState>(
-    token ? "loading" : "not_found",
-  );
+}
+
+export function LeaderVerifyClient(props: LeaderVerifyClientProps) {
+  // A different link must never reuse the previous claim or captured signature.
+  return <TokenVerification key={props.token} {...props} />;
+}
+
+function TokenVerification({
+  token,
+  existingSignatureDataUrl,
+}: LeaderVerifyClientProps) {
+  const [view, setView] = useState<VerificationView>({ state: token ? "loading" : "not_found" });
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [info, setInfo] = useState<VerificationInfo | null>(null);
+  const [isExpired, setExpired] = useState(false);
+  const inFlight = useRef(false);
+  const active = useRef(true);
   const [, startTransition] = useTransition();
 
   // Signature flow state
   const initialSigStep: SigStep = existingSignatureDataUrl ? "choose" : "draw";
   const [sigStep, setSigStep] = useState<SigStep>(initialSigStep);
-  const [capturedSig, setCapturedSig] = useState<string | null>(
-    // If existing sig but no draw required yet, don't pre-set — wait for user choice
-    null,
-  );
+  const [capturedSig, setCapturedSig] = useState<string | null>(null);
+
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -234,66 +219,86 @@ export function LeaderVerifyClient({
     let cancelled = false;
 
     const load = async () => {
-      const res = await runServerAction(() => getVerificationByToken(token));
-      if (res === undefined) return;
-      if (cancelled) return;
-
-      if (!res.success) {
-        setLoadState("not_found");
-        return;
+      try {
+        const res = await runServerAction(() => getVerificationByToken(token));
+        if (cancelled) return;
+        if (res === undefined) {
+          setView({ state: "error", message: "กรุณาโหลดหน้าใหม่เพื่อดูรายละเอียดคำขอ" });
+        } else if (res.success) {
+          setExpired(res.data.state === "ready" && new Date(res.data.expiresAt).getTime() <= Date.now());
+          setView(res.data);
+        } else if (["INVALID_TOKEN", "TOKEN_NOT_FOUND", "TOKEN_EXPIRED", "VERIFICATION_NOT_FOUND", "CLAIM_NOT_FOUND"].includes(res.code ?? "")) {
+          setView({ state: "not_found" });
+        } else {
+          setView({ state: "error", message: res.error });
+        }
+      } catch {
+        if (!cancelled) setView({ state: "error", message: "โหลดรายละเอียดไม่สำเร็จ กรุณาลองใหม่" });
       }
-
-      const data = res.data;
-
-      if (data.verifiedAt) {
-        setInfo(data as unknown as VerificationInfo);
-        setLoadState("already_verified");
-        return;
-      }
-
-      if (new Date(data.expiresAt) < new Date()) {
-        setLoadState("not_found");
-        return;
-      }
-
-      setInfo(data as unknown as VerificationInfo);
-      setLoadState("ready");
     };
 
     void load();
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, loadAttempt]);
+
+  const expiresAt = view.state === "ready" ? new Date(view.expiresAt).getTime() : null;
+  useEffect(() => {
+    if (expiresAt === null) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const checkExpiry = () => {
+      const remaining = expiresAt - Date.now();
+      if (remaining <= 0) setExpired(true);
+      else timer = setTimeout(checkExpiry, Math.min(remaining, 2_147_483_647));
+    };
+    timer = setTimeout(checkExpiry, Math.max(0, Math.min(expiresAt - Date.now(), 2_147_483_647)));
+    return () => clearTimeout(timer);
+  }, [expiresAt]);
 
   const handleVerify = (sigDataUrl: string) => {
-    if (!token) return;
+    if (!token || view.state !== "ready" || !sigDataUrl || inFlight.current || submitState === "done") return;
+    if (isExpired || new Date(view.expiresAt).getTime() <= Date.now()) {
+      setExpired(true);
+      return;
+    }
+    inFlight.current = true;
     setSubmitState("submitting");
+    setSubmitError(null);
     startTransition(async () => {
-      const res = await runServerAction(() => verifyByToken(token, sigDataUrl));
-      if (res === undefined) {
-        setSubmitState("idle");
-        return;
+      try {
+        const res = await runServerAction(() => verifyByToken(token, sigDataUrl));
+        if (!active.current) return;
+        if (res === undefined) {
+          setSubmitState("idle");
+        } else if (!res.success) {
+          setSubmitState("error");
+          setSubmitError(res.error);
+          if (res.code === "TOKEN_EXPIRED") setExpired(true);
+        } else {
+          setSubmitState("done");
+        }
+      } catch {
+        if (active.current) {
+          setSubmitState("error");
+          setSubmitError("ยืนยันไม่สำเร็จ ข้อมูลลายเซ็นยังอยู่ กรุณาลองใหม่");
+        }
+      } finally {
+        inFlight.current = false;
       }
-      if (!res.success) {
-        setSubmitState("error");
-        setSubmitError(res.error ?? "เกิดข้อผิดพลาด");
-        return;
-      }
-      setSubmitState("done");
     });
   };
 
   // ──────────── Render states ────────────
 
-  if (loadState === "loading") {
+  if (view.state === "loading") {
     return (
       <div
         aria-busy="true"
         className="space-y-4 rounded-2xl border bg-card p-8 shadow-md"
       >
         <div className="space-y-2">
-          <Skeleton className="h-6 w-64" />
+          <Skeleton className="h-6 w-full max-w-64" />
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-4/5" />
         </div>
@@ -303,7 +308,17 @@ export function LeaderVerifyClient({
     );
   }
 
-  if (loadState === "not_found") {
+  if (view.state === "error") {
+    return <div role="alert" className="space-y-4 rounded-2xl border bg-card p-6 text-center">
+      <p>{view.message}</p>
+      <Button variant="outline" onClick={() => {
+        setView({ state: "loading" });
+        setLoadAttempt((attempt) => attempt + 1);
+      }}>ลองใหม่</Button>
+    </div>;
+  }
+
+  if (view.state === "not_found") {
     return (
       <div className="rounded-2xl border bg-card p-8 shadow-md text-center space-y-3">
         <ShieldAlert className="mx-auto h-12 w-12 text-destructive" />
@@ -318,7 +333,7 @@ export function LeaderVerifyClient({
     );
   }
 
-  if (loadState === "already_verified" && info) {
+  if (view.state === "already_verified") {
     return (
       <div className="rounded-2xl border bg-card p-8 shadow-md text-center space-y-3">
         <ShieldCheck className="mx-auto h-12 w-12 text-green-500" />
@@ -326,10 +341,10 @@ export function LeaderVerifyClient({
           ยืนยันการออกปฏิบัติงานเรียบร้อยแล้ว
         </h2>
         <p className="text-sm text-muted-foreground">
-          เลขที่เอกสาร: <strong>{info.offSiteWorkId}</strong>
+          เลขที่เอกสาร: <strong className="break-all">{view.offSiteWorkId}</strong>
         </p>
         <p className="text-sm text-muted-foreground">
-          ยืนยันเมื่อ: {info.verifiedAt ? dateDisplay(info.verifiedAt, { timeZone: "Asia/Bangkok" }) : "-"}
+          ยืนยันเมื่อ: {dateDisplay(view.verifiedAt, { timeZone: "Asia/Bangkok" })}
         </p>
       </div>
     );
@@ -349,7 +364,11 @@ export function LeaderVerifyClient({
     );
   }
 
-  if (!info) return null;
+  if (view.state !== "ready") return null;
+  const info = view;
+  const { dates } = normalizeClaimDates(info.expenseClaim.expenseMonth, info.expenseClaim.selectedDates, info.expenseClaim.countDates);
+  const matchingDates = datesWithinOrder(dates, info.offSiteWork);
+  const expired = isExpired;
 
   // ──────────── Signature capture section ────────────
 
@@ -367,11 +386,11 @@ export function LeaderVerifyClient({
               className="h-16 w-full object-contain"
             />
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
               className="flex-1 gap-1.5 bg-emerald-600 hover:bg-emerald-700"
-              onClick={() => setCapturedSig(existingSignatureDataUrl)}
+              onClick={() => { setCapturedSig(existingSignatureDataUrl); setSigStep("ready"); }}
             >
               <Star className="h-3.5 w-3.5" />
               ใช้ลายเซ็นที่บันทึกไว้
@@ -380,7 +399,7 @@ export function LeaderVerifyClient({
               variant="outline"
               size="sm"
               className="gap-1.5"
-              onClick={() => setSigStep("draw")}
+              onClick={() => { setCapturedSig(null); setSigStep("draw"); }}
             >
               <PenLine className="h-3.5 w-3.5" />
               เซ็นใหม่
@@ -429,6 +448,7 @@ export function LeaderVerifyClient({
           }}
           onCancel={() => {
             if (existingSignatureDataUrl) {
+              setCapturedSig(null);
               setSigStep("choose");
             }
           }}
@@ -439,14 +459,12 @@ export function LeaderVerifyClient({
     return null;
   };
 
-  const readyToSubmit =
-    capturedSig !== null ||
-    (sigStep === "choose" && existingSignatureDataUrl !== null);
-
-  const submitSig = capturedSig ?? existingSignatureDataUrl ?? "";
+  // A saved signature must not be submitted while drawing its replacement.
+  const submitSig = sigStep === "draw" ? null : capturedSig ?? existingSignatureDataUrl ?? null;
+  const readyToSubmit = submitSig !== null && !expired;
 
   return (
-    <div className="rounded-2xl border bg-card p-6 shadow-md space-y-6">
+    <div className="min-w-0 rounded-2xl border bg-card p-4 shadow-md space-y-6 sm:p-6">
       {/* Header */}
       <div className="text-center space-y-1">
         <ShieldCheck className="mx-auto h-10 w-10 text-sky-500" />
@@ -458,61 +476,28 @@ export function LeaderVerifyClient({
         </p>
       </div>
 
-      {/* Claimant info */}
-      <div className="rounded-xl border bg-sky-50 dark:bg-sky-950/40 p-4 space-y-2 text-sm">
-        <p className="font-medium text-sky-900 dark:text-sky-100">
-          ข้อมูลผู้ยื่นเบิก
-        </p>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
-          <span>ชื่อ</span>
-          <span className="font-medium text-foreground">
-            {info.expenseClaim.claimant.firstName}{" "}
-            {info.expenseClaim.claimant.lastName}
-          </span>
-          <span>เดือนที่เบิก</span>
-          <span className="font-medium text-foreground">
-            {monthDisplay(info.expenseClaim.expenseMonth)}
-          </span>
-          <span>เลขเอกสาร</span>
-          <span className="font-medium text-foreground font-mono text-xs">
-            {info.expenseClaim.id}
-          </span>
+      <section className="space-y-4" aria-label="รายละเอียดคำขอ">
+        <div>
+          <h3 className="font-semibold">รายละเอียดคำขอ</h3>
+          <p className="mt-1 break-all text-xs text-muted-foreground">เลขเอกสาร {info.expenseClaim.id}</p>
+          <p className="mt-2 text-sm text-muted-foreground">จำนวนวันและยอดเงินด้านล่างเป็นยอดรวมทั้งคำขอ</p>
         </div>
-      </div>
+        <ClaimDetailContent
+          claim={info.expenseClaim}
+          highlightedDates={matchingDates}
+          highlightedOffSiteWorkId={info.offSiteWorkId}
+        />
+      </section>
 
-      {/* Off-site work info */}
-      <div className="rounded-xl border p-4 space-y-2 text-sm">
-        <p className="font-medium">รายละเอียดการออกปฏิบัติงาน</p>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
-          <span>เลขที่คำสั่ง</span>
-          <span className="font-medium text-foreground font-mono text-xs">
-            {info.offSiteWork.id}
-          </span>
-          {info.offSiteWork.innerRefDocumentId ? (
-            <>
-              <span>เลขอ้างอิง</span>
-              <span>{info.offSiteWork.innerRefDocumentId}</span>
-            </>
-          ) : null}
-          <span>ช่วงวันที่</span>
-          <span>
-            {dateDisplay(info.offSiteWork.startDate)} –{" "}
-            {dateDisplay(info.offSiteWork.endDate)}
-          </span>
-          {info.offSiteWork.location ? (
-            <>
-              <span>สถานที่</span>
-              <span>{info.offSiteWork.location}</span>
-            </>
-          ) : null}
-          {info.offSiteWork.objective ? (
-            <>
-              <span>วัตถุประสงค์</span>
-              <span>{info.offSiteWork.objective}</span>
-            </>
-          ) : null}
-        </div>
-      </div>
+      <section className="space-y-2 border-t pt-5 text-sm" aria-label="คำสั่งที่กำลังยืนยัน">
+        <h3 className="break-words font-semibold">คุณกำลังยืนยันคำสั่ง {info.offSiteWork.innerRefDocumentId || info.offSiteWork.id}</h3>
+        <p className="font-medium">
+          วันที่เบิกในช่วงคำสั่งนี้: {matchingDates.length
+            ? `${formatClaimDateRanges(matchingDates)} · ${matchingDates.length} วัน`
+            : dates.length ? "ไม่มีวันเบิกตรงกับช่วงคำสั่งนี้" : "ไม่มีวันที่เบิกที่บันทึกไว้"}
+        </p>
+        <p className="text-muted-foreground">การลงนามครั้งนี้ยืนยันเฉพาะคำสั่งที่ระบุ วันเบิกอาจอยู่ในหลายช่วงคำสั่ง ยอดรวมเอกสารนับแต่ละวันครั้งเดียว</p>
+      </section>
 
       {/* Leader name reminder */}
       {info.offSiteWork.leaderFirstName ? (
@@ -528,11 +513,16 @@ export function LeaderVerifyClient({
       ) : null}
 
       {/* Signature section */}
-      {renderSignatureSection()}
+      {!expired && <fieldset disabled={submitState === "submitting"} className="min-w-0" aria-label="ลายเซ็นสำหรับยืนยันคำสั่ง">
+        <div className={submitState === "submitting" ? "pointer-events-none" : undefined}>
+          {renderSignatureSection()}
+        </div>
+      </fieldset>}
+      {expired && <p role="alert" className="text-sm text-destructive">ลิงก์ยืนยันหมดอายุแล้ว กรุณาติดต่อผู้ยื่นเอกสารเพื่อขอลิงก์ใหม่</p>}
 
       {/* Error */}
       {submitState === "error" && submitError ? (
-        <div className="rounded-lg border border-destructive bg-destructive/10 px-4 py-2 text-sm text-destructive">
+        <div role="alert" className="rounded-lg border border-destructive bg-destructive/10 px-4 py-2 text-sm text-destructive">
           {submitError}
         </div>
       ) : null}
@@ -540,13 +530,13 @@ export function LeaderVerifyClient({
       {/* Action */}
       <LoadingButton
         className="w-full"
-        onClick={() => handleVerify(submitSig)}
+        onClick={() => submitSig && handleVerify(submitSig)}
         disabled={submitState === "submitting" || !readyToSubmit}
         isLoading={submitState === "submitting"}
         loadingText="กำลังยืนยัน"
       >
         <ShieldCheck className="h-4 w-4" />
-        {readyToSubmit ? "ยืนยันการออกปฏิบัติงาน" : "กรุณาลงลายเซ็นก่อน"}
+        {expired ? "หมดอายุ — ติดต่อผู้ยื่น" : readyToSubmit ? "ยืนยันการออกปฏิบัติงาน" : "กรุณาลงลายเซ็นก่อน"}
       </LoadingButton>
 
       <p className="text-center text-xs text-muted-foreground">

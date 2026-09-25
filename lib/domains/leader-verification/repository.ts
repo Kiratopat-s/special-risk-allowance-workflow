@@ -14,6 +14,7 @@ import type {
     CreateLeaderVerificationInput,
     LeaderVerificationQueueItem,
     LeaderClaimDetail,
+    TokenVerificationView,
 } from "./types";
 
 const expenseClaimSelect = {
@@ -52,7 +53,7 @@ const leaderUserSelect = {
     employeeId: true,
 } as const;
 
-// These selects are internal-only. Expanding a queue must not expand token access.
+// Token review uses its own explicit projection below; queue changes do not grant public fields.
 const leaderClaimSelect = {
     id: true,
     expenseMonth: true,
@@ -104,7 +105,37 @@ const claimDetailSelect = {
 
 type LeaderClaimSource = Prisma.ExpenseClaimGetPayload<{ select: typeof leaderClaimSelect }>;
 
-function serializeClaimSummary(claim: LeaderClaimSource): LeaderVerificationQueueItem["expenseClaim"] {
+const tokenReviewSelect = {
+    id: true,
+    offSiteWorkId: true,
+    expiresAt: true,
+    verifiedAt: true,
+    expenseClaim: {
+        select: {
+            ...claimDetailSelect,
+            claimant: { select: { firstName: true, lastName: true, employeeId: true } },
+        },
+    },
+    offSiteWork: {
+        select: {
+            id: true,
+            innerRefDocumentId: true,
+            startDate: true,
+            endDate: true,
+            location: true,
+            objective: true,
+            leaderFirstName: true,
+            leaderLastName: true,
+            leaderPosition: true,
+        },
+    },
+} satisfies Prisma.LeaderVerificationSelect;
+
+type TokenReviewRecord = Omit<Extract<TokenVerificationView, { state: "ready" }>, "state"> & {
+    verifiedAt: Date | null;
+};
+
+function serializeClaimFields(claim: Omit<LeaderClaimSource, "claimant">): Omit<LeaderVerificationQueueItem["expenseClaim"], "claimant"> {
     return {
         id: claim.id,
         expenseMonth: claim.expenseMonth,
@@ -113,8 +144,11 @@ function serializeClaimSummary(claim: LeaderClaimSource): LeaderVerificationQueu
         selectedDates: toSelectedDates(claim.selectedDates),
         countDates: claim.countDates == null ? null : Number(claim.countDates),
         amount: claim.amount == null ? null : Number(claim.amount),
-        claimant: claim.claimant,
     };
+}
+
+function serializeClaimSummary(claim: LeaderClaimSource): LeaderVerificationQueueItem["expenseClaim"] {
+    return { ...serializeClaimFields(claim), claimant: claim.claimant };
 }
 
 export const leaderVerificationRepository = {
@@ -170,6 +204,61 @@ export const leaderVerificationRepository = {
                 leaderUser: { select: leaderUserSelect },
             },
         }) as Promise<LeaderVerificationWithRelations | null>;
+    },
+
+    /** Public reads remain scoped to the token's active, still-linked order. */
+    async findReviewByToken(token: string): Promise<TokenReviewRecord | null> {
+        const record = await prisma.leaderVerification.findFirst({
+            where: {
+                token,
+                expenseClaim: { cancelledAt: null, status: { notIn: ["DRAFT", "CANCELLED"] } },
+                offSiteWork: { deletedAt: null },
+            },
+            select: tokenReviewSelect,
+        });
+        if (!record || !record.expenseClaim.expenseClaimOffSiteWorks.some(
+            (link) => link.offSiteWorkId === record.offSiteWorkId,
+        )) return null;
+
+        const claim = record.expenseClaim;
+        const work = record.offSiteWork;
+        return {
+            id: record.id,
+            offSiteWorkId: record.offSiteWorkId,
+            expiresAt: record.expiresAt,
+            verifiedAt: record.verifiedAt,
+            expenseClaim: {
+                ...serializeClaimFields(claim),
+                claimant: {
+                    firstName: claim.claimant.firstName,
+                    lastName: claim.claimant.lastName,
+                    employeeId: claim.claimant.employeeId,
+                },
+                remark: claim.remark,
+                expenseClaimOffSiteWorks: claim.expenseClaimOffSiteWorks.map(({ offSiteWorkId, offSiteWork }) => ({
+                    offSiteWorkId,
+                    offSiteWork: {
+                        id: offSiteWork.id,
+                        innerRefDocumentId: offSiteWork.innerRefDocumentId,
+                        startDate: offSiteWork.startDate,
+                        endDate: offSiteWork.endDate,
+                        location: offSiteWork.location,
+                        objective: offSiteWork.objective,
+                    },
+                })),
+            },
+            offSiteWork: {
+                id: work.id,
+                innerRefDocumentId: work.innerRefDocumentId,
+                startDate: work.startDate,
+                endDate: work.endDate,
+                location: work.location,
+                objective: work.objective,
+                leaderFirstName: work.leaderFirstName,
+                leaderLastName: work.leaderLastName,
+                leaderPosition: work.leaderPosition,
+            },
+        };
     },
 
     async findByClaimAndOsw(

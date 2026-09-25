@@ -27,8 +27,8 @@ import { LoadingButton } from "@/components/workflow-ui/loading-button";
 import { Badge } from "@/components/ui/badge";
 import { getMyVerificationClaimDetail, verifyAsLeader } from "@/app/actions/leader-verify";
 import type { LeaderClaimDetail, LeaderVerificationQueueItem } from "@/lib/domains/leader-verification";
-import { monthDisplay, dateDisplay, toDateInputValue } from "@/lib/shared/format";
-import { formatClaimDateRanges, normalizeClaimDates } from "@/lib/ui/claim-dates";
+import { monthDisplay, dateDisplay } from "@/lib/shared/format";
+import { datesWithinOrder, formatClaimDateRanges, normalizeClaimDates } from "@/lib/ui/claim-dates";
 import { ClaimDatesCalendar } from "@/components/expense-claims/claim-dates-calendar";
 import { ClaimDetailContent } from "@/components/expense-claims/claim-detail-content";
 import { DetailPanelSkeleton } from "@/components/ui/skeleton";
@@ -177,13 +177,6 @@ function SignatureCanvas({
       </div>
     </div>
   );
-}
-
-// Dates are claim-level; this intersection describes a period, not an allocation.
-function datesWithinOrder(dates: string[], work: LeaderVerificationQueueItem["offSiteWork"]) {
-  const start = toDateInputValue(work.startDate);
-  const end = toDateInputValue(work.endDate);
-  return dates.filter((date) => date >= start && date <= end);
 }
 
 type CardSigStep = "choose" | "draw" | "ready";

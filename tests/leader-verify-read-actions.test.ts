@@ -1,17 +1,41 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mock = vi.hoisted(() => ({ auth: vi.fn(), list: vi.fn(), detail: vi.fn() }));
+const mock = vi.hoisted(() => ({ auth: vi.fn(), list: vi.fn(), detail: vi.fn(), tokenReview: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ auth: mock.auth }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/domains/leader-verification", () => ({ leaderVerificationService: {
-  listPendingForLeader: mock.list, getClaimDetailForLeader: mock.detail,
+  listPendingForLeader: mock.list, getClaimDetailForLeader: mock.detail, getVerificationByToken: mock.tokenReview,
 } }));
 vi.mock("@/lib/domains/leader-verification/repository", () => ({ leaderVerificationRepository: {} }));
 vi.mock("@/lib/domains/signature/repository", () => ({ signatureRepository: {} }));
 
-import { getMyVerificationClaimDetail, listMyPendingVerifications } from "@/app/actions/leader-verify";
+import { getMyVerificationClaimDetail, getVerificationByToken, listMyPendingVerifications } from "@/app/actions/leader-verify";
 
 beforeEach(() => vi.resetAllMocks());
+
+describe("public token review action", () => {
+  it("delegates using only the token without requiring an account session", async () => {
+    const result = { success: true, data: { state: "ready", id: "verification1" } };
+    mock.tokenReview.mockResolvedValue(result);
+    expect(await getVerificationByToken("current-token")).toEqual(result);
+    expect(mock.tokenReview).toHaveBeenCalledExactlyOnceWith("current-token");
+    expect(mock.auth).not.toHaveBeenCalled();
+    expect(mock.detail).not.toHaveBeenCalled();
+  });
+
+  it.each(["INVALID_TOKEN", "TOKEN_NOT_FOUND", "TOKEN_EXPIRED"])("preserves the service's %s failure", async (code) => {
+    const failure = { success: false, error: "ไม่สามารถเปิดเอกสาร", code };
+    mock.tokenReview.mockResolvedValue(failure);
+    expect(await getVerificationByToken("invalid-token")).toEqual(failure);
+    expect(mock.auth).not.toHaveBeenCalled();
+  });
+
+  it("preserves the minimal already-verified receipt", async () => {
+    const receipt = { success: true, data: { state: "already_verified", offSiteWorkId: "order1", verifiedAt: new Date() } };
+    mock.tokenReview.mockResolvedValue(receipt);
+    expect(await getVerificationByToken("signed-token")).toEqual(receipt);
+  });
+});
 
 describe("leader queue read actions", () => {
   it.each([null, { user: {} }])("requires a database user session before reading", async (session) => {

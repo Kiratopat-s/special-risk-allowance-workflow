@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@/lib/generated/prisma/client";
 
-const mock = vi.hoisted(() => ({ pending: vi.fn(), detail: vi.fn(), token: vi.fn() }));
+const mock = vi.hoisted(() => ({ pending: vi.fn(), detail: vi.fn(), token: vi.fn(), tokenReview: vi.fn() }));
 vi.mock("@/lib/db", () => ({ prisma: {
-  leaderVerification: { findMany: mock.pending, findUnique: mock.token },
+  leaderVerification: { findMany: mock.pending, findUnique: mock.token, findFirst: mock.tokenReview },
   expenseClaim: { findFirst: mock.detail },
 } }));
 
@@ -69,6 +69,79 @@ describe("assigned leader queue reads", () => {
     mock.pending.mockResolvedValue([{ ...record, expenseClaim: { ...claim, selectedDates: null, countDates: null, amount: null } }]);
     expect((await leaderVerificationRepository.findPendingByLeaderUserId("leader1"))[0].expenseClaim)
       .toMatchObject({ selectedDates: null, countDates: null, amount: null });
+  });
+});
+
+describe("public token review reads", () => {
+  it("returns the full claim and all current orders without sharing, account, or signature data", async () => {
+    const secondWork = { ...work, id: "order/2", innerRefDocumentId: "REF-2" };
+    mock.tokenReview.mockResolvedValue({
+      ...record,
+      token: "secret-token", leaderEmail: "secret@example.com", signatureData: new Uint8Array([1]),
+      expenseClaim: {
+        ...claim, remark: "ตรวจทาน", userId: "private-user", createdById: "private-creator",
+        leaderVerifications: [{ token: "another-secret" }],
+        expenseClaimOffSiteWorks: [
+          { offSiteWorkId: work.id, offSiteWork: { ...work, leaderEmail: "other@example.com" } },
+          { offSiteWorkId: secondWork.id, offSiteWork: secondWork },
+        ],
+      },
+    });
+
+    const result = await leaderVerificationRepository.findReviewByToken("public-token");
+    expect(result).toEqual({
+      id: record.id, offSiteWorkId: record.offSiteWorkId,
+      expiresAt: record.expiresAt, verifiedAt: null,
+      expenseClaim: {
+        id: claim.id, expenseMonth: claim.expenseMonth,
+        claimantPositionAtSubmission: claim.claimantPositionAtSubmission, status: claim.status,
+        selectedDates: claim.selectedDates, countDates: 2, amount: 300.5, remark: "ตรวจทาน",
+        claimant: { firstName: "ชื่อ", lastName: "สกุล", employeeId: "000001" },
+        expenseClaimOffSiteWorks: [
+          { offSiteWorkId: work.id, offSiteWork: work },
+          { offSiteWorkId: secondWork.id, offSiteWork: secondWork },
+        ],
+      },
+      offSiteWork: { ...work, leaderFirstName: "หัวหน้า", leaderLastName: "ชุด", leaderPosition: null },
+    });
+    const query = mock.tokenReview.mock.calls[0][0];
+    expect(query.where).toEqual({
+      token: "public-token",
+      expenseClaim: { cancelledAt: null, status: { notIn: ["DRAFT", "CANCELLED"] } },
+      offSiteWork: { deletedAt: null },
+    });
+    expect(query.select.expenseClaim.select.expenseClaimOffSiteWorks).toMatchObject({
+      where: { offSiteWork: { deletedAt: null } }, orderBy: { offSiteWorkId: "asc" },
+    });
+    expect(query.select.expenseClaim.select.claimant.select).toEqual({ firstName: true, lastName: true, employeeId: true });
+    for (const field of ["token", "signatureData", "leaderEmail", "leaderUser", "leaderUserId", "leaderEmpId", "userId", "createdById", "leaderVerifications"]) {
+      expect(JSON.stringify(query.select)).not.toContain(`"${field}"`);
+      expect(JSON.stringify(result)).not.toContain(`"${field}"`);
+    }
+    expect(result?.expenseClaim.claimant).not.toHaveProperty("id");
+  });
+
+  it.each([null, [], ["2026-09-01", 3, "bad-date"]])("preserves nullable totals and normalizes date JSON %j", async (selectedDates) => {
+    mock.tokenReview.mockResolvedValue({ ...record, expenseClaim: {
+      ...claim, selectedDates, countDates: null, amount: new Prisma.Decimal(0), remark: null,
+    } });
+    expect((await leaderVerificationRepository.findReviewByToken("public-token"))?.expenseClaim)
+      .toMatchObject({ selectedDates: selectedDates?.filter((value) => typeof value === "string") ?? null, countDates: null, amount: 0, remark: null });
+  });
+
+  it("preserves missing amounts instead of inventing a total", async () => {
+    mock.tokenReview.mockResolvedValue({ ...record, expenseClaim: { ...claim, amount: null, remark: null } });
+    expect((await leaderVerificationRepository.findReviewByToken("public-token"))?.expenseClaim.amount).toBeNull();
+  });
+
+  it("rejects an old verification whose target order is no longer in the claim", async () => {
+    mock.tokenReview.mockResolvedValue({ ...record, offSiteWorkId: "unlinked-order" });
+    expect(await leaderVerificationRepository.findReviewByToken("old-token")).toBeNull();
+  });
+
+  it("returns no public detail when the current token and eligibility query finds no record", async () => {
+    mock.tokenReview.mockResolvedValue(null);
+    expect(await leaderVerificationRepository.findReviewByToken("invalid-token")).toBeNull();
   });
 });
 

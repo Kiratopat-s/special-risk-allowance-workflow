@@ -11,11 +11,10 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { leaderVerificationService } from "@/lib/domains/leader-verification";
-import { leaderVerificationRepository } from "@/lib/domains/leader-verification/repository";
 import { signatureRepository } from "@/lib/domains/signature/repository";
 import type { Result } from "@/lib/shared/types";
 import type {
-    LeaderVerificationWithRelations,
+    TokenVerificationView,
     LeaderVerificationEntity,
     LeaderVerificationQueueItem,
     LeaderClaimDetail,
@@ -36,17 +35,8 @@ function dataUrlToBuffer(dataUrl: string): Buffer | null {
  */
 export async function getVerificationByToken(
     token: string
-): Promise<Result<LeaderVerificationWithRelations>> {
-    if (!token?.trim()) {
-        return { success: false, error: "Token is required", code: "INVALID_TOKEN" };
-    }
-
-    const record = await leaderVerificationRepository.findByToken(token);
-    if (!record) {
-        return { success: false, error: "Verification link not found or expired", code: "TOKEN_NOT_FOUND" };
-    }
-
-    return { success: true, data: record };
+): Promise<Result<TokenVerificationView>> {
+    return leaderVerificationService.getVerificationByToken(token);
 }
 
 /**
