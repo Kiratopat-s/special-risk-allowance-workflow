@@ -579,7 +579,7 @@ export function OffSiteWorkClient({
           <Table aria-label="คำสั่งออกนอกสถานที่">
             <TableHead>
               <TableRow>
-                <TableHeader>คำสั่ง / วัตถุประสงค์</TableHeader>
+                <TableHeader>เลขที่เอกสาร / วัตถุประสงค์</TableHeader>
                 <TableHeader>วันที่ปฏิบัติงาน</TableHeader>
                 <TableHeader>หัวหน้างาน</TableHeader>
                 <TableHeader>ผู้ปฏิบัติงาน</TableHeader>
@@ -594,17 +594,21 @@ export function OffSiteWorkClient({
                       <div className="document-icon">
                         <MapPin size={18} />
                       </div>
-                      <div>
-                        <p className="font-semibold line-clamp-2 max-w-80">
-                          {item.objective || item.innerRefDocumentId || item.id}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
+                      <div className="min-w-0 max-w-80">
+                        <p className="font-semibold [overflow-wrap:anywhere]">
                           {item.id}
-                          {item.innerRefDocumentId
-                            ? ` · ${item.innerRefDocumentId}`
-                            : ""}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">
+                        {item.objective?.trim() && (
+                          <p className="text-xs text-muted-foreground mt-1 line-clamp-2 break-words">
+                            {item.objective}
+                          </p>
+                        )}
+                        {item.innerRefDocumentId?.trim() && (
+                          <p className="text-xs text-muted-foreground mt-1 [overflow-wrap:anywhere]">
+                            {item.innerRefDocumentId}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-1 break-words">
                           {item.location || "—"}
                         </p>
                       </div>

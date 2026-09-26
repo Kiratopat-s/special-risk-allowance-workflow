@@ -15,11 +15,11 @@ const INTERVALS = [
 function MonthField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   const [year, month] = value.split("-");
   return <div className="analytics-month-fields" role="group" aria-label={label}>
-    <TextField select label={`${label} · เดือน`} value={Number(month)}
+    <TextField size="small" select label={`${label} · เดือน`} value={Number(month)}
       onChange={(event) => onChange(`${year}-${String(event.target.value).padStart(2, "0")}`)}>
       {MONTHS.map((name, index) => <MenuItem key={name} value={index + 1}>{name}</MenuItem>)}
     </TextField>
-    <TextField label={`${label} · ปี พ.ศ.`} type="number" value={Number(year) + 543}
+    <TextField size="small" label={`${label} · ปี พ.ศ.`} type="number" value={Number(year) + 543}
       onChange={(event) => onChange(`${Number(event.target.value) - 543}-${month}`)}
       slotProps={{ htmlInput: { min: 2444, max: 2742 } }} />
   </div>;
@@ -55,10 +55,10 @@ export function AnalyticsFiltersForm({ filters, departments, pending, onApply, o
       <Button type="button" onClick={onReset} disabled={pending} size="small" startIcon={<RotateCcw size={15} />}>ล้างตัวกรอง</Button>
     </div>
     <fieldset disabled={pending} className="analytics-filter-fields">
-      <TextField select label="ช่วงเวลา" value={draft.interval} onChange={(event) => setDraft({ ...draft, interval: event.target.value as AnalyticsFilters["interval"], period: 1 })}>
+      <TextField size="small" select label="ช่วงเวลา" value={draft.interval} onChange={(event) => setDraft({ ...draft, interval: event.target.value as AnalyticsFilters["interval"], period: 1 })}>
         {INTERVALS.map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
       </TextField>
-      <TextField select label="ปฏิทิน" value={draft.calendar} onChange={(event) => setDraft({ ...draft, calendar: event.target.value as AnalyticsFilters["calendar"] })}>
+      <TextField size="small" select label="ปฏิทิน" value={draft.calendar} onChange={(event) => setDraft({ ...draft, calendar: event.target.value as AnalyticsFilters["calendar"] })}>
         <MenuItem value="calendar">ปีปฏิทิน · ม.ค.–ธ.ค.</MenuItem><MenuItem value="fiscal">ปีงบประมาณ · ต.ค.–ก.ย.</MenuItem>
       </TextField>
       {draft.interval === "range" ? <div className="analytics-range-fields">
@@ -66,15 +66,15 @@ export function AnalyticsFiltersForm({ filters, departments, pending, onApply, o
         <MonthField label="สิ้นสุด" value={draft.toMonth} onChange={(value) => setDraft({ ...draft, toMonth: value })} />
       </div> : draft.interval === "month" ? <MonthField label="เดือนรายงาน" value={draft.fromMonth}
         onChange={(value) => setDraft({ ...draft, fromMonth: value })} /> : <>
-        <TextField label={draft.calendar === "fiscal" ? "ปีงบประมาณ พ.ศ." : "ปี พ.ศ."}
+        <TextField size="small" label={draft.calendar === "fiscal" ? "ปีงบประมาณ พ.ศ." : "ปี พ.ศ."}
           type="number" value={draft.year + 543} onChange={(event) => setDraft({ ...draft, year: Number(event.target.value) - 543 })}
           slotProps={{ htmlInput: { min: 2444, max: 2742 } }} />
-        {draft.interval !== "year" && <TextField select label="รอบรายงาน" value={draft.period}
+        {draft.interval !== "year" && <TextField size="small" select label="รอบรายงาน" value={draft.period}
           onChange={(event) => setDraft({ ...draft, period: Number(event.target.value) })}>
           {(draft.interval === "quarter" ? quarterLabels : halfLabels).map((label, index) => <MenuItem key={label} value={index + 1}>{label}</MenuItem>)}
         </TextField>}
       </>}
-      <Autocomplete multiple disableCloseOnSelect options={departments} className="analytics-department-picker"
+      <Autocomplete size="small" multiple disableCloseOnSelect options={departments} className="analytics-department-picker"
         value={departments.filter((option) => draft.departmentIds.includes(option.id))}
         getOptionLabel={(option) => option.name} isOptionEqualToValue={(a, b) => a.id === b.id}
         onChange={(_event, values) => setDraft({ ...draft, departmentIds: values.map((option) => option.id) })}
@@ -84,7 +84,7 @@ export function AnalyticsFiltersForm({ filters, departments, pending, onApply, o
         }}
         renderInput={(params) => <TextField {...params} label="แผนก" placeholder={draft.departmentIds.length ? "เพิ่มแผนก" : "ทุกแผนก"} />}
         noOptionsText="ไม่พบแผนก" clearText="ล้างแผนก" openText="เลือกแผนก" closeText="ปิดตัวเลือก" />
-      <Autocomplete multiple disableCloseOnSelect options={ANALYTICS_STATUSES} className="analytics-status-picker"
+      <Autocomplete size="small" multiple disableCloseOnSelect options={ANALYTICS_STATUSES} className="analytics-status-picker"
         value={draft.statuses} getOptionLabel={(option) => STATUS_LABELS[option]}
         onChange={(_event, values) => setDraft({ ...draft, statuses: values })}
         renderOption={(props, option, { selected }) => {
