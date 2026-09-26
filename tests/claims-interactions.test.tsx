@@ -133,7 +133,7 @@ describe("claim presentation preserves behavior", () => {
   it("submits the adorned search input with Enter and retains other URL filters", () => {
     mock.query = new URLSearchParams("tab=expense-claims&page=4&month=2026-09&status=PENDING");
     mount();
-    const input = screen.getByRole("textbox", { name: "ค้นหาเลขที่เอกสาร, หมายเหตุ, หรือชื่อผู้ยื่น" });
+    const input = screen.getByRole("textbox", { name: "ค้นหารหัสพนักงาน, ชื่อผู้เบิก, เลขที่เอกสาร หรือหมายเหตุ" });
     fireEvent.change(input, { target: { value: "คำสั่งทดสอบ" } });
     fireEvent.keyDown(input, { key: "Enter" });
     const url = new URL(mock.push.mock.calls[0][0], "https://fixture.test");

@@ -652,7 +652,7 @@ export function ExpenseClaimDocumentClient({
           <div className="min-w-0 flex-1">
             <Input
               startAdornment={<Search className="h-4 w-4 text-muted-foreground" />}
-              placeholder="ค้นหาเลขที่เอกสาร, หมายเหตุ, หรือชื่อผู้ยื่น"
+              placeholder="ค้นหารหัสพนักงาน, ชื่อผู้เบิก, เลขที่เอกสาร หรือหมายเหตุ"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
@@ -737,7 +737,7 @@ export function ExpenseClaimDocumentClient({
           <Table aria-label="เอกสารเบิกค่าใช้จ่าย">
             <TableHead>
               <TableRow>
-                <TableHeader>เอกสาร / ผู้เบิก</TableHeader>
+                <TableHeader>ผู้เบิก / เอกสาร</TableHeader>
                 <TableHeader>เดือน</TableHeader>
                 <TableHeader>สถานะ</TableHeader>
                 <TableHeader className="text-right">ยอดเบิก (บาท)</TableHeader>
@@ -752,19 +752,19 @@ export function ExpenseClaimDocumentClient({
                       <div className="document-icon">
                         <FileText size={18} />
                       </div>
-                      <div>
-                        <p className="font-semibold max-w-72 line-clamp-2">
-                          {item.expenseClaimOffSiteWorks
-                            .map(
-                              (link) =>
-                                link.offSiteWork.objective ||
-                                link.offSiteWork.innerRefDocumentId,
-                            )
+                      <div className="min-w-0 max-w-72">
+                        <p className="font-semibold [overflow-wrap:anywhere]">
+                          {[
+                            item.claimant.employeeId?.trim(),
+                            [item.claimant.firstName, item.claimant.lastName]
+                              .map((name) => name.trim())
+                              .filter(Boolean)
+                              .join(" "),
+                          ]
                             .filter(Boolean)
-                            .join(" · ") || item.id}
+                            .join(" · ")}
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {item.claimant.firstName} {item.claimant.lastName} ·{" "}
                           {item.id.slice(0, 8)}
                         </p>
                       </div>
