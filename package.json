@@ -16,7 +16,9 @@
     "prepare:pdf": "node scripts/prepare-pdf-worker.mjs",
     "test:department-db": "node scripts/test-department-db.mjs",
     "test:off-site-work-db": "node scripts/test-off-site-work-db.mjs",
-    "test:presence-db": "node scripts/test-presence-db.mjs"
+    "test:presence-db": "node scripts/test-presence-db.mjs",
+    "test:email-db": "node scripts/test-email-db.mjs",
+    "email:worker": "bun scripts/email-worker.ts"
   },
   "dependencies": {
     "@emotion/cache": "11.14.0",

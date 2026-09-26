@@ -40,6 +40,40 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  email-worker:
+    build:
+      context: .
+      target: email-worker
+    image: sraw-email-worker:${IMAGE_TAG:-latest}
+    env_file:
+      - ${ENV_FILE:-.env}
+    environment:
+      NODE_ENV: production
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 70s
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bun",
+          "-e",
+          "fetch('http://127.0.0.1:3101/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   migrate:
     profiles: ["ops"]
     build:

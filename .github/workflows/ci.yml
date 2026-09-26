@@ -52,3 +52,6 @@ jobs:
 
       - name: Test migrations against isolated PostgreSQL
         run: bun run test:migrations
+
+      - name: Test email outbox against isolated PostgreSQL
+        run: bun run test:email-db

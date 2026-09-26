@@ -85,32 +85,45 @@ jobs:
       - name: Build migrator image
         run: docker build --target migrator -t sraw-migrator:${IMAGE_TAG} .
 
+      - name: Build email worker image
+        run: docker build --target email-worker -t sraw-email-worker:${IMAGE_TAG} .
+
+      - name: Validate email worker configuration without sending mail
+        run: docker compose run --rm --no-deps email-worker bun scripts/email-worker.ts --check-config
+
       - name: Run database migrations
         run: docker compose --profile ops run --rm migrate
 
       - name: Verify database schema before replacing application
         run: docker compose --profile ops run --rm migrate bun run check:schema
 
-      - name: Deploy application
-        run: docker compose up -d app
+      - name: Deploy application and email worker
+        run: docker compose up -d app email-worker
 
-      - name: Wait for health check
-        env:
-          APP_PORT: ${{ vars.APP_PORT }}
+      - name: Wait for application and email worker health checks
         run: |
-          echo "Waiting for app to become healthy..."
-          sleep 10
-          for i in $(seq 1 12); do
-            if curl --fail --silent http://127.0.0.1:${APP_PORT:-3000}/api/health; then
-              echo ""
-              echo "App is healthy!"
+          echo "Waiting for app and email worker to become healthy..."
+          for i in $(seq 1 24); do
+            healthy=true
+            for service in app email-worker; do
+              container_id=$(docker compose ps -q "$service")
+              status="missing"
+              if [ -n "$container_id" ]; then
+                status=$(docker inspect --format '{{.State.Health.Status}}' "$container_id")
+              fi
+              if [ "$status" != "healthy" ]; then
+                healthy=false
+              fi
+            done
+            if [ "$healthy" = true ]; then
+              echo "App and email worker are healthy."
               exit 0
             fi
-            echo "Attempt $i/12 - waiting 5s..."
+            echo "Attempt $i/24 - waiting 5s..."
             sleep 5
           done
-          echo "Health check failed after 70s"
-          docker compose logs app --tail=50
+          echo "Health checks failed after 120s"
+          docker compose logs --tail=50 app email-worker
           exit 1
 
       - name: Verify deployed version

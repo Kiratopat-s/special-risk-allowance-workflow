@@ -20,13 +20,20 @@ RUN DEPLOYMENT_VERSION="$(bun scripts/deployment-version.mjs)" \
     && bunx prisma generate \
     && bun run build
 
-# This target is used only by the explicit Docker Compose migration and seed jobs.
+# Source and generated Prisma client are shared by the ops jobs and email worker.
 FROM dependencies AS migrator
 
 COPY . .
 RUN bunx prisma generate
 
 CMD ["bunx", "prisma", "migrate", "deploy"]
+
+FROM migrator AS email-worker
+
+ENV NODE_ENV=production
+USER bun
+
+CMD ["bun", "scripts/email-worker.ts"]
 
 FROM node:22-bookworm-slim AS runner
 

@@ -708,3 +708,60 @@ model LeaderVerification {
   @@index([token])
   @@index([verifiedAt])
 }
+
+// Durable internal-leader email outbox. Identity snapshots intentionally have no
+// foreign keys: delivery history survives replacement/deletion of source rows.
+enum EmailDeliveryStatus {
+  PENDING
+  PROCESSING
+  RETRY_WAIT
+  ACCEPTED
+  FAILED
+  SKIPPED
+}
+
+model EmailDelivery {
+  id                  String              @id @default(uuid(7))
+  kind                String              @default("INTERNAL_LEADER_VERIFY")
+  dedupeKey           String              @unique @map("dedupe_key")
+  expenseClaimId      String              @map("expense_claim_id")
+  leaderUserId        String              @map("leader_user_id")
+  verificationIds     String[]            @map("verification_ids")
+  status              EmailDeliveryStatus @default(PENDING)
+  recipientEmail      String?             @map("recipient_email")
+  attemptCount        Int                 @default(0) @map("attempt_count")
+  cycleAttemptCount   Int                 @default(0) @map("cycle_attempt_count")
+  nextAttemptAt       DateTime?           @default(now()) @map("next_attempt_at")
+  leaseToken          String?             @map("lease_token")
+  leaseExpiresAt      DateTime?           @map("lease_expires_at")
+  acceptedAt          DateTime?           @map("accepted_at")
+  messageId           String?             @map("message_id")
+  lastErrorCode       String?             @map("last_error_code")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+  attempts            EmailDeliveryAttempt[]
+
+  @@index([status, nextAttemptAt])
+  @@index([status, leaseExpiresAt])
+  @@index([expenseClaimId])
+  @@index([leaderUserId])
+  @@index([createdAt])
+  @@map("email_deliveries")
+}
+
+model EmailDeliveryAttempt {
+  id                  String        @id @default(uuid(7))
+  deliveryId          String        @map("delivery_id")
+  delivery            EmailDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  attemptNumber       Int           @map("attempt_number")
+  recipientEmail      String?       @map("recipient_email")
+  startedAt           DateTime      @default(now()) @map("started_at")
+  finishedAt          DateTime?     @map("finished_at")
+  outcome             String?
+  errorCode           String?       @map("error_code")
+  messageId           String?       @map("message_id")
+  requestedById       String?       @map("requested_by_id")
+
+  @@index([deliveryId, startedAt])
+  @@map("email_delivery_attempts")
+}

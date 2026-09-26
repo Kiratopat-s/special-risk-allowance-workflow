@@ -9,6 +9,7 @@
 import { claimWhere, claimOrderBy } from "./read-query";
 import { claimSelectionChanged, normalizeClaimSelection, requireEditableClaim, type ClaimSelection } from "./claim-selection";
 import { claimPrintSelect } from "./print-data";
+import { enqueueInternalLeaderEmails } from "@/lib/domains/email-delivery/repository";
 import { prisma } from "@/lib/db";
 import { Prisma, type ClaimDocumentStatus } from "@/lib/generated/prisma/client";
 import { sanitizeStrings } from "@/lib/shared/sanitize";
@@ -159,6 +160,7 @@ async function saveEditableSelection(
                 ...(records.data.length ? { leaderVerifications: { create: records.data } } : {}),
             },
         });
+        if (submitted && resetVerifications) await enqueueInternalLeaderEmails(tx, id);
         return success({
             claim: serializeDecimalFields(claim) as ExpenseClaimDocumentEntity,
             previous: serializeDecimalFields(existing) as ExpenseClaimDocumentEntity,
@@ -193,6 +195,7 @@ export const expenseClaimDocumentRepository = {
                 expenseClaimOffSiteWorks: { create: offSiteWorkIds.map((offSiteWorkId) => ({ offSiteWorkId })) },
                 ...(records.data.length ? { leaderVerifications: { create: records.data } } : {}),
             } });
+            if (submitted) await enqueueInternalLeaderEmails(tx, claim.id);
             return success({ claim: serializeDecimalFields(claim) as ExpenseClaimDocumentEntity, previous: null, verificationsReset: submitted });
         });
     },

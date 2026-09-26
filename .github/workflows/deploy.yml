@@ -49,6 +49,9 @@ jobs:
       - name: Test migrations against isolated PostgreSQL
         run: bun run test:migrations
 
+      - name: Test email outbox against isolated PostgreSQL
+        run: bun run test:email-db
+
   deploy-uat:
     if: github.ref == 'refs/heads/main'
     needs: lint-and-test

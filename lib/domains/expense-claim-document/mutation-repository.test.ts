@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mock = vi.hoisted(() => ({
   transaction: vi.fn(), query: vi.fn(), findClaim: vi.fn(), createClaim: vi.fn(), updateClaim: vi.fn(),
   findLinks: vi.fn(), findWorks: vi.fn(), deleteVerifications: vi.fn(), claimant: vi.fn(),
+  enqueue: vi.fn(),
 }));
 vi.mock("@/lib/db", () => ({ prisma: { $transaction: mock.transaction } }));
+vi.mock("@/lib/domains/email-delivery/repository", () => ({ enqueueInternalLeaderEmails: mock.enqueue }));
 import { expenseClaimDocumentRepository as repository } from "./repository";
 
 const work = { id: "work1", startDate: new Date("2026-09-01"), endDate: new Date("2026-09-30"), hasLeader: true };
@@ -43,12 +45,15 @@ describe("atomic claim selection mutations", () => {
     expect(result).toMatchObject({ success: true, data: { claim: { countDates: 1, amount: 150, status: "PENDING_LEADER_VERIFY" } } });
     expect(mock.createClaim.mock.calls[0][0].data.leaderVerifications.create).toHaveLength(1);
     expect(mock.transaction).toHaveBeenCalledOnce();
+    expect(mock.enqueue).toHaveBeenCalledWith(tx, "claim1");
+    expect(mock.createClaim.mock.invocationCallOrder[0]).toBeLessThan(mock.enqueue.mock.invocationCallOrder[0]);
   });
 
   it("keeps a new draft with assigned leaders in DRAFT and does not create verifications", async () => {
     expect(await repository.createWithSelection({ ...input, status: "DRAFT" }, "user1", "user1")).toMatchObject({ success: true, data: { claim: { status: "DRAFT" }, verificationsReset: false } });
     expect(mock.createClaim.mock.calls[0][0].data).not.toHaveProperty("leaderVerifications");
     expect(mock.claimant).not.toHaveBeenCalled();
+    expect(mock.enqueue).not.toHaveBeenCalled();
   });
 
   it("replaces signatures and resets a submitted date edit even when the day count is unchanged", async () => {
@@ -58,6 +63,7 @@ describe("atomic claim selection mutations", () => {
     expect(mock.updateClaim.mock.calls[0][0].data.leaderVerifications.create).toHaveLength(1);
     expect(mock.query.mock.invocationCallOrder[0]).toBeLessThan(mock.findClaim.mock.invocationCallOrder[0]);
     expect(mock.deleteVerifications.mock.invocationCallOrder[0]).toBeLessThan(mock.updateClaim.mock.invocationCallOrder[0]);
+    expect(mock.enqueue).toHaveBeenCalledWith(tx, "claim1");
     expect(mock.claimant).not.toHaveBeenCalled();
   });
 
@@ -66,6 +72,7 @@ describe("atomic claim selection mutations", () => {
     expect(result).toMatchObject({ success: true, data: { verificationsReset: false, claim: { status: "WAIT_FOR_COLLECTION", countDates: 1, amount: 150 } } });
     expect(mock.deleteVerifications).not.toHaveBeenCalled();
     expect(mock.updateClaim.mock.calls[0][0].data).not.toHaveProperty("leaderVerifications");
+    expect(mock.enqueue).not.toHaveBeenCalled();
   });
 
   it("restarts confirmation when the work changes even if the dates and amount stay the same", async () => {
@@ -146,5 +153,13 @@ describe("atomic claim selection mutations", () => {
     expect(await repository.cancelEditable("claim1")).toMatchObject({ success: true });
     expect(mock.updateClaim).toHaveBeenCalledWith({ where: { id: "claim1" }, data: { status: "CANCELLED", cancelledAt: expect.any(Date) } });
     expect(mock.deleteVerifications).not.toHaveBeenCalled();
+  });
+
+  it("propagates outbox insertion failure out of the transaction instead of reporting saved success", async () => {
+    mock.enqueue.mockRejectedValueOnce(new Error("outbox unavailable"));
+    await expect(repository.createWithSelection({ ...input, status: "PENDING" }, "user1", "user1"))
+      .rejects.toThrow("outbox unavailable");
+    mock.enqueue.mockRejectedValueOnce(new Error("outbox unavailable"));
+    await expect(repository.updateEditable("claim1", input)).rejects.toThrow("outbox unavailable");
   });
 });
