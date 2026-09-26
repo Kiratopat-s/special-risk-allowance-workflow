@@ -30,9 +30,20 @@ function mount() {
   return render(<ThemeProvider theme={workflowTheme}><EmailHistoryClient /></ThemeProvider>);
 }
 
+async function waitForControlsReady() {
+  // Results and errors can render before the async loading transition finishes.
+  // Wait for the control's actual interactive state, including on error pages
+  // where there is no results table to wait for.
+  return waitFor(() => {
+    const refresh = screen.getByRole<HTMLButtonElement>("button", { name: "รีเฟรช" });
+    expect(refresh.disabled).toBe(false);
+    return refresh;
+  });
+}
+
 async function waitForReady() {
   await screen.findByRole("region", { name: "ประวัติการส่งอีเมล" });
-  await waitFor(() => expect((screen.getByRole("button", { name: "รีเฟรช" }) as HTMLButtonElement).disabled).toBe(false));
+  await waitForControlsReady();
 }
 
 beforeEach(() => {
@@ -104,13 +115,29 @@ it("keeps the row on retry rejection and makes safe history details available", 
   expect(screen.getAllByText("เซิร์ฟเวอร์อีเมลขัดข้องชั่วคราว")).toHaveLength(2);
 });
 
-it("shows fetch errors with a refresh path and does not render raw SMTP errors", async () => {
-  mocks.list.mockRejectedValueOnce(new Error("transport"));
+it.each(["network", "server"] as const)("recovers from a %s error after loading settles and does not render raw SMTP errors", async (failure) => {
+  const user = userEvent.setup();
+  type FetchResult = ReturnType<typeof response> | { success: false; error: string };
+  let failRequest!: () => void;
+  let finishRefresh!: (value: FetchResult) => void;
+  mocks.list
+    .mockImplementationOnce(() => new Promise<FetchResult>((resolve, reject) => {
+      failRequest = () => failure === "network"
+        ? reject(new Error("transport"))
+        : resolve({ success: false, error: "ไม่สามารถโหลดประวัติอีเมลได้" });
+    }))
+    .mockImplementationOnce(() => new Promise<FetchResult>((resolve) => { finishRefresh = resolve; }));
   mount();
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "รีเฟรช" }).disabled).toBe(true);
+  expect(mocks.list).toHaveBeenCalledTimes(1);
+  await act(async () => failRequest());
   expect(await screen.findByRole("alert")).toBeTruthy();
-  mocks.list.mockResolvedValue(response([delivery({ lastErrorCode: "smtp://secret:password@host", attempts: [] })]));
-  await userEvent.click(screen.getByRole("button", { name: "รีเฟรช" }));
-  await screen.findByRole("region", { name: "ประวัติการส่งอีเมล" });
+  await user.click(await waitForControlsReady());
+  expect(mocks.list).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "รีเฟรช" }).disabled).toBe(true);
+  await act(async () => finishRefresh(response([delivery({ lastErrorCode: "smtp://secret:password@host", attempts: [] })])));
+  await waitForReady();
+  expect(screen.queryByRole("alert")).toBeNull();
   expect(screen.queryByText(/secret:password/)).toBeNull();
   expect(screen.getByText("ไม่สามารถดำเนินการได้ กรุณาตรวจสอบการตั้งค่าและผู้รับ")).toBeTruthy();
 });
