@@ -14,6 +14,8 @@ const badgeVariants = {
     "bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:text-emerald-400",
   warning:
     "bg-amber-500/10 text-amber-700 border-amber-500/20 dark:text-amber-400",
+  info:
+    "bg-sky-500/10 text-sky-700 border-sky-500/20 dark:text-sky-300",
   destructive: "bg-destructive/10 text-destructive border-destructive/20",
   outline: "text-foreground border-border",
 } as const;

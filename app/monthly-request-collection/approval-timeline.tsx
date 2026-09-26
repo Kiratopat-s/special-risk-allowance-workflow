@@ -56,9 +56,9 @@ const MRC_STATUS_LABEL: Record<ClaimDocumentStatus, string> = {
 
 export function mrcStatusVariant(
   status: ClaimDocumentStatus,
-): "default" | "secondary" | "destructive" | "outline" {
-  if (status === "APPROVED" || status === "WAIT_FOR_COLLECTION")
-    return "default";
+): "default" | "info" | "secondary" | "destructive" | "outline" {
+  if (status === "WAIT_FOR_COLLECTION") return "info";
+  if (status === "APPROVED") return "default";
   if (status === "REJECTED" || status === "CANCELLED") return "destructive";
   if (status === "PENDING" || status === "PENDING_LEADER_VERIFY")
     return "secondary";

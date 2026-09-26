@@ -17,14 +17,19 @@ export function StatusBadge({ status }: { status: ClaimDocumentStatus }) {
       size="small"
       label={STATUS_LABELS[status] || status}
       color={
-        status === "APPROVED"
-          ? "success"
-          : status === "REJECTED"
-            ? "error"
-            : status === "DRAFT" || status === "CANCELLED"
-              ? "default"
-              : "warning"
+        status === "WAIT_FOR_COLLECTION"
+          ? "info"
+          : status === "APPROVED"
+            ? "success"
+            : status === "REJECTED"
+              ? "error"
+              : status === "DRAFT" || status === "CANCELLED"
+                ? "default"
+                : "warning"
       }
+      className={status === "WAIT_FOR_COLLECTION"
+        ? "bg-sky-500/10 text-sky-700 border-sky-500/20 dark:text-sky-300"
+        : undefined}
       variant="outlined"
       sx={{
         height: "auto",
