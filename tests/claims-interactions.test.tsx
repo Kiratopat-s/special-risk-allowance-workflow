@@ -364,6 +364,20 @@ describe("claim presentation preserves behavior", () => {
     expect(link.getAttribute("href")).toBe("/expense-claim-document/claim-1/print");
     expect(link.getAttribute("target")).toBe("_blank");
   });
+  it("opens a linked order in a new tab while keeping the claim detail open", async () => {
+    mount([claim]);
+    fireEvent.click(screen.getByRole("button", { name: "ดูรายละเอียด claim-1" }));
+    const dialog = screen.getByRole("dialog", { name: "รายละเอียดเอกสาร" });
+    const originalUrl = window.location.href;
+    const link = within(dialog).getByRole("link", { name: "คำสั่งทดสอบ (เปิดในแท็บใหม่)" });
+    expect(link.getAttribute("href")).toBe("/dashboard?tab=off-site-work&offSiteWorkId=work-1");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    await userEvent.click(link);
+    expect(screen.getByRole("dialog", { name: "รายละเอียดเอกสาร" })).toBe(dialog);
+    expect(window.location.href).toBe(originalUrl);
+    expect(mock.push).not.toHaveBeenCalled();
+  });
   it("keeps the working filters in the navigation URL", () => {
     mock.query = new URLSearchParams("tab=expense-claims&page=4&month=2026-09");
     mount();

@@ -65,4 +65,9 @@ describe("read filters and URL state", () => {
         false,
       ),
     ).toBe("tab=expense-claims&status=DRAFT&month=2026-09&page=2"));
+  it("clears the off-site detail when filtering or changing pages", () => {
+    const current = "tab=off-site-work&search=area&page=3&offSiteWorkId=work-1";
+    expect(updateListQuery(current, { search: "next" })).toBe("tab=off-site-work&search=next");
+    expect(updateListQuery(current, { page: 4 }, false)).toBe("tab=off-site-work&search=area&page=4");
+  });
 });

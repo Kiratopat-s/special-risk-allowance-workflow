@@ -33,6 +33,7 @@ export const getVerificationByToken = async () => ({ success: true, data: {
 } });
 export const getMyVerificationClaimDetail = async (claimId: string) => ({ success: true, data: claimId === leaderQueueClaimDetail.id ? leaderQueueClaimDetail : secondLeaderQueueClaimDetail });
 export const listOffSiteWorks = async () => ({ success: true, data: { data: [], pagination: null } });
+export const getOffSiteWork = async () => ({ success: false, error: "ไม่พบคำสั่งตัวอย่าง", code: "OFF_SITE_WORK_NOT_FOUND" });
 export const searchUsersForLeader = async () => ({ success: true, data: [] });
 export const matchOffSiteWorkEmployees = async () => ({ success: true, data: [] });
 export const getRole = async () => ({ success: true, data: { ...alignmentRoles[0], permissions: [alignmentPermissions[0]] } });

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ClaimDatesCalendar } from "./claim-dates-calendar";
 import { claimStatusVariant } from "@/lib/shared/claim-status";
@@ -26,11 +27,12 @@ const STATUS_LABEL: Record<ClaimDocumentStatus, string> = {
 };
 
 /** Presentation only: callers own authorization, loading, document links and actions. */
-export function ClaimDetailContent({ claim, children, highlightedDates, highlightedOffSiteWorkId }: {
+export function ClaimDetailContent({ claim, children, highlightedDates, highlightedOffSiteWorkId, showOffSiteWorkLinks = false }: {
   claim: ClaimDetailData;
   children?: ReactNode;
   highlightedDates?: string[];
   highlightedOffSiteWorkId?: string;
+  showOffSiteWorkLinks?: boolean;
 }) {
   return (
     <div className="space-y-6 text-sm">
@@ -49,7 +51,18 @@ export function ClaimDetailContent({ claim, children, highlightedDates, highligh
         <h3 className="font-medium">คำสั่งที่ใช้ประกอบการเบิก ({claim.expenseClaimOffSiteWorks.length})</h3>
         {claim.expenseClaimOffSiteWorks.length === 0 ? <p className="text-muted-foreground">ไม่มีคำสั่งที่เชื่อมไว้</p> : <ul className="divide-y">{claim.expenseClaimOffSiteWorks.map(({ offSiteWorkId, offSiteWork: work }) => <li key={offSiteWorkId} className="space-y-1 py-3 first:pt-0 last:pb-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="min-w-0 break-words font-medium">{work.innerRefDocumentId || work.id}</p>
+            {showOffSiteWorkLinks ? (
+              <a
+                href={`/dashboard?tab=off-site-work&offSiteWorkId=${encodeURIComponent(offSiteWorkId)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`${work.innerRefDocumentId || work.id} (เปิดในแท็บใหม่)`}
+                className="inline-flex min-w-0 max-w-full items-start gap-1.5 rounded-sm font-medium text-primary underline underline-offset-4 hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <span className="min-w-0 break-words [overflow-wrap:anywhere]">{work.innerRefDocumentId || work.id}</span>
+                <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              </a>
+            ) : <p className="min-w-0 break-words font-medium">{work.innerRefDocumentId || work.id}</p>}
             {offSiteWorkId === highlightedOffSiteWorkId && <Badge variant="outline" className="whitespace-normal">คำสั่งที่คุณกำลังยืนยัน</Badge>}
           </div>
           {work.innerRefDocumentId && <p className="break-all text-xs text-muted-foreground">เลขที่เอกสาร {work.id}</p>}

@@ -1355,7 +1355,7 @@ export function ExpenseClaimDocumentClient({
         </DialogHeader>
         <DialogBody>
           {selected ? (
-            <ClaimDetailContent claim={selected}>
+            <ClaimDetailContent claim={selected} showOffSiteWorkLinks>
               {selected.leaderVerifications &&
               selected.leaderVerifications.length > 0 ? (
                 <LeaderVerificationSection

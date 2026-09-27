@@ -3,7 +3,7 @@
 import { runServerAction } from "@/lib/deployment/client";
 import { useWorkflowTransition as useTransition } from "@/lib/hooks/use-workflow-transition";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PdfImport } from "./pdf-import";
 import { employeeKey, employeeListSchema, mergeEmployees, pendingEmployee, validWorkDate } from "@/lib/domains/off-site-work/employee-list";
 import type { PdfField } from "@/lib/pdf/off-site-work-parser";
@@ -51,6 +51,7 @@ import { Textarea } from "@/components/workflow-ui/textarea";
 import {
   createOffSiteWork,
   deleteOffSiteWork,
+  getOffSiteWork,
   listOffSiteWorks,
   matchOffSiteWorkEmployees,
   updateOffSiteWork,
@@ -72,7 +73,7 @@ interface OffSiteWorkClientProps {
   initialPagination: Pagination | null;
 }
 
-type Mode = "create" | "edit" | "view" | "delete" | null;
+type Mode = "create" | "edit" | "delete" | null;
 type LeaderType = "none" | "internal" | "external";
 
 interface LeaderUser {
@@ -173,6 +174,7 @@ export function OffSiteWorkClient({
 }: OffSiteWorkClientProps) {
   const router = useRouter();
   const query = useSearchParams();
+  const detailId = query.get("offSiteWorkId");
   const { allows, userId } = useScopedPermission("OFF_SITE_WORK");
   const navigateList = (
     changes: Record<string, string | number | undefined>,
@@ -190,6 +192,66 @@ export function OffSiteWorkClient({
   const [selected, setSelected] = useState<OffSiteWorkWithRelations | null>(
     null,
   );
+  const [loadedDetail, setLoadedDetail] = useState<{
+    id: string | null;
+    data: OffSiteWorkWithRelations | null;
+  }>({ id: detailId, data: null });
+  const detailRequest = useRef(0);
+  // Discard the previous navigation's data before rendering, including Back/Forward.
+  if (loadedDetail.id !== detailId) {
+    setLoadedDetail({ id: detailId, data: null });
+  }
+  const detail = loadedDetail.id === detailId ? loadedDetail.data : null;
+  const closeDetail = useCallback(() => {
+    detailRequest.current += 1;
+    setLoadedDetail((current) => ({ ...current, data: null }));
+    const next = new URLSearchParams(window.location.search);
+    next.delete("offSiteWorkId");
+    window.history.replaceState(null, "", `/dashboard?${next}`);
+  }, []);
+  const openDetail = (id: string) => {
+    detailRequest.current += 1;
+    setLoadedDetail((current) => ({ ...current, data: null }));
+    const next = new URLSearchParams(query);
+    next.set("offSiteWorkId", id);
+    next.delete("create");
+    window.history.pushState(null, "", `/dashboard?${next}`);
+  };
+
+  useEffect(() => {
+    if (!detailId) return;
+
+    let cancelled = false;
+    const request = ++detailRequest.current;
+    const isCurrentRequest = () => !cancelled && request === detailRequest.current &&
+      new URLSearchParams(window.location.search).get("offSiteWorkId") === detailId;
+
+    const loadDetail = async () => {
+      try {
+        const result = await runServerAction(() => getOffSiteWork(detailId));
+        if (!isCurrentRequest()) return;
+        if (result === undefined) {
+          closeDetail();
+          return;
+        }
+        if (!result.success) {
+          closeDetail();
+          toast.error("ไม่สามารถเปิดรายละเอียดคำสั่งได้", { description: result.error });
+          return;
+        }
+        setLoadedDetail({ id: detailId, data: result.data });
+      } catch {
+        if (!isCurrentRequest()) return;
+        closeDetail();
+        toast.error("ไม่สามารถเปิดรายละเอียดคำสั่งได้", {
+          description: "โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+        });
+      }
+    };
+
+    void loadDetail();
+    return () => { cancelled = true; };
+  }, [detailId, closeDetail]);
   const [form, setForm] = useState<FormState>({
     id: "",
     innerRefDocumentId: "",
@@ -515,7 +577,7 @@ export function OffSiteWorkClient({
   };
 
   useEffect(() => {
-    if (query.get("create") === "1" && allows("CREATE", userId)) {
+    if (!detailId && query.get("create") === "1" && allows("CREATE", userId)) {
       const frame = requestAnimationFrame(() => {
         openCreate();
         const next = new URLSearchParams(query);
@@ -647,10 +709,7 @@ export function OffSiteWorkClient({
                           variant="ghost"
                           size="icon"
                           aria-label={`ดูรายละเอียดคำสั่ง ${item.id}`}
-                          onClick={() => {
-                            setSelected(item);
-                            setMode("view");
-                          }}
+                          onClick={() => openDetail(item.id)}
                         >
                           <Eye size={16} />
                         </Button>
@@ -1181,70 +1240,70 @@ export function OffSiteWorkClient({
       <Dialog
         busy={isPending}
         presentation="drawer"
-        open={mode === "view"}
-        onClose={() => setMode(null)}
+        open={Boolean(detailId)}
+        onClose={closeDetail}
       >
-        <DialogClose onClose={() => setMode(null)} />
+        <DialogClose onClose={closeDetail} />
         <DialogHeader>
           <DialogTitle>รายละเอียดคำสั่ง</DialogTitle>
-          <DialogDescription>{selected?.id}</DialogDescription>
+          <DialogDescription className="break-all">{detailId}</DialogDescription>
         </DialogHeader>
         <DialogBody>
-          {selected ? (
+          {detail ? (
             <div className="space-y-3 text-sm">
               <div>
                 <p className="text-xs text-muted-foreground">เลขที่เอกสาร</p>
-                <p className="font-medium">{selected.id}</p>
+                <p className="font-medium">{detail.id}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">ช่วงวันที่</p>
                 <p className="font-medium">
-                  {shortDateDisplay(selected.startDate)} -{" "}
-                  {shortDateDisplay(selected.endDate)}
+                  {shortDateDisplay(detail.startDate)} -{" "}
+                  {shortDateDisplay(detail.endDate)}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">สถานที่</p>
-                <p className="font-medium">{selected.location || "-"}</p>
+                <p className="font-medium">{detail.location || "-"}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">วัตถุประสงค์</p>
                 <p className="font-medium whitespace-pre-wrap">
-                  {selected.objective || "-"}
+                  {detail.objective || "-"}
                 </p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">ผู้บันทึก</p>
                 <p className="font-medium">
-                  {selected.postedByUser.firstName}{" "}
-                  {selected.postedByUser.lastName}
+                  {detail.postedByUser.firstName}{" "}
+                  {detail.postedByUser.lastName}
                 </p>
               </div>
-              {selected.leaderFirstName || selected.leaderUser ? (
+              {detail.leaderFirstName || detail.leaderUser ? (
                 <div className="rounded-lg border bg-blue-50 dark:bg-blue-950/30 p-3 space-y-1">
                   <p className="text-xs font-medium text-blue-700 dark:text-blue-300 flex items-center gap-1">
                     <UserCheck className="h-3.5 w-3.5" />
                     หัวหน้า/ผู้ควบคุมงาน
                   </p>
                   <p className="font-medium">
-                    {selected.leaderFirstName} {selected.leaderLastName}
+                    {detail.leaderFirstName} {detail.leaderLastName}
                   </p>
-                  {selected.leaderEmpId ? (
+                  {detail.leaderEmpId ? (
                     <p className="text-xs text-muted-foreground">
-                      รหัส: {selected.leaderEmpId}
+                      รหัส: {detail.leaderEmpId}
                     </p>
                   ) : null}
-                  {selected.leaderPosition ? (
+                  {detail.leaderPosition ? (
                     <p className="text-xs text-muted-foreground">
-                      {selected.leaderPosition}
+                      {detail.leaderPosition}
                     </p>
                   ) : null}
-                  {selected.leaderEmail ? (
+                  {detail.leaderEmail ? (
                     <p className="text-xs text-muted-foreground">
-                      {selected.leaderEmail}
+                      {detail.leaderEmail}
                     </p>
                   ) : null}
-                  {selected.leaderUserId ? (
+                  {detail.leaderUserId ? (
                     <Badge variant="outline" className="text-[10px]">
                       บุคลากรในระบบ
                     </Badge>
@@ -1267,11 +1326,11 @@ export function OffSiteWorkClient({
               <div>
                 <p className="text-xs text-muted-foreground flex items-center gap-1 mb-2">
                   <Users className="h-3.5 w-3.5" />
-                  รายชื่อพนักงาน ({selected.employeeList?.length ?? 0} คน)
+                  รายชื่อพนักงาน ({detail.employeeList?.length ?? 0} คน)
                 </p>
-                {selected.employeeList && selected.employeeList.length > 0 ? (
+                {detail.employeeList && detail.employeeList.length > 0 ? (
                   <ul className="space-y-1.5">
-                    {selected.employeeList.map((emp) => (
+                    {detail.employeeList.map((emp) => (
                       <li
                         key={employeeKey(emp)}
                         className="rounded-lg border bg-muted/40 px-3 py-2 text-sm"
@@ -1298,10 +1357,12 @@ export function OffSiteWorkClient({
                 )}
               </div>
             </div>
-          ) : null}
+          ) : (
+            <p role="status" className="text-sm text-muted-foreground">กำลังโหลดรายละเอียดคำสั่ง…</p>
+          )}
         </DialogBody>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setMode(null)}>
+          <Button variant="outline" onClick={closeDetail}>
             ปิด
           </Button>
         </DialogFooter>

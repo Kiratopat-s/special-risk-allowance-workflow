@@ -75,4 +75,32 @@ describe("shared read-only claim details", () => {
     render(<ClaimDetailContent claim={claim}><p>ข้อมูลการยืนยันสำหรับเจ้าของ</p></ClaimDetailContent>);
     expect(screen.getByText("ข้อมูลการยืนยันสำหรับเจ้าของ")).toBeTruthy();
   });
+  it("links every order to its encoded ID in a new tab when enabled, retaining fallback labels", () => {
+    const secondId = "คำสั่ง 2/2569?section=A&B#1";
+    const detail: ClaimDetailData = {
+      ...claim,
+      expenseClaimOffSiteWorks: [
+        ...claim.expenseClaimOffSiteWorks,
+        {
+          offSiteWorkId: secondId,
+          offSiteWork: { ...claim.expenseClaimOffSiteWorks[0].offSiteWork, id: secondId, innerRefDocumentId: null },
+        },
+      ],
+    };
+    render(<ClaimDetailContent claim={detail} showOffSiteWorkLinks />);
+    const orders = within(screen.getByRole("region", { name: "คำสั่งที่ใช้ประกอบการเบิก" }));
+    expect(orders.getAllByRole("link")).toHaveLength(2);
+    const links = [
+      orders.getByRole("link", { name: "กท. 1/2569 (เปิดในแท็บใหม่)" }),
+      orders.getByRole("link", { name: `${secondId} (เปิดในแท็บใหม่)` }),
+    ];
+    links.forEach((link, index) => {
+      const id = detail.expenseClaimOffSiteWorks[index].offSiteWorkId;
+      expect(link.getAttribute("href")).toBe(`/dashboard?tab=off-site-work&offSiteWorkId=${encodeURIComponent(id)}`);
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+      expect(link.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    });
+    expect(screen.getByText("เลขที่เอกสาร work-1")).toBeTruthy();
+  });
 });

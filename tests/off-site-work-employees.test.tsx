@@ -6,18 +6,27 @@ import { workflowTheme } from "@/components/workflow-ui/theme";
 import { installPickerMedia } from "./helpers/picker-media";
 import type { EmployeeListItem, OffSiteWorkWithRelations } from "@/lib/domains/off-site-work/types";
 
-const mock = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), search: vi.fn(), match: vi.fn(), toast: vi.fn() }));
+const mock = vi.hoisted(() => ({ create: vi.fn(), update: vi.fn(), get: vi.fn(), search: vi.fn(), match: vi.fn(), toast: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { success: mock.toast, error: mock.toast } }));
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
-  useSearchParams: () => new URLSearchParams("tab=off-site-work"),
-}));
+vi.mock("next/navigation", async () => {
+  const { useSyncExternalStore } = await import("react");
+  const router = { push: vi.fn(), refresh: vi.fn() };
+  const subscribe = (listener: () => void) => {
+    window.addEventListener("popstate", listener);
+    return () => window.removeEventListener("popstate", listener);
+  };
+  return {
+    useRouter: () => router,
+    useSearchParams: () => new URLSearchParams(useSyncExternalStore(subscribe, () => window.location.search)),
+  };
+});
 vi.mock("@/lib/hooks/use-scoped-permission", () => ({
   useScopedPermission: () => ({ userId: "me", allows: () => true }),
 }));
 vi.mock("@/app/actions/off-site-work", () => ({
   createOffSiteWork: mock.create,
   updateOffSiteWork: mock.update,
+  getOffSiteWork: mock.get,
   listOffSiteWorks: vi.fn(),
   deleteOffSiteWork: vi.fn(),
   matchOffSiteWorkEmployees: mock.match,
@@ -38,12 +47,21 @@ function mount(items: OffSiteWorkWithRelations[] = []) {
 beforeEach(() => {
   vi.clearAllMocks();
   installPickerMedia(false);
+  window.history.replaceState(null, "", "/dashboard?tab=off-site-work");
+  for (const method of ["pushState", "replaceState"] as const) {
+    const original = window.history[method].bind(window.history);
+    vi.spyOn(window.history, method).mockImplementation((...args) => {
+      original(...args);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+  }
   mock.create.mockResolvedValue({ success: false, error: "fixture failure" });
   mock.update.mockResolvedValue({ success: false, error: "fixture failure" });
   mock.match.mockResolvedValue({ success: true, data: [] });
 });
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -79,9 +97,10 @@ it("shows an unnamed traveler in details and allows adding another number while 
     id: "work-1", startDate: new Date("2026-09-01"), endDate: new Date("2026-09-02"),
     employeeList: [idOnly], postedByUserId: "me", postedByUser: { firstName: "ผู้บันทึก", lastName: "ทดสอบ" },
   } as OffSiteWorkWithRelations;
+  mock.get.mockResolvedValue({ success: true, data: item });
   mount([item]);
   fireEvent.click(screen.getByRole("button", { name: "ดูรายละเอียดคำสั่ง work-1" }));
-  expect(screen.getByText("รอข้อมูลจากบัญชีผู้ใช้")).toBeTruthy();
+  expect(await screen.findByText("รอข้อมูลจากบัญชีผู้ใช้")).toBeTruthy();
   expect(screen.getByText("ยังไม่เชื่อมบัญชี")).toBeTruthy();
   const details = screen.getByRole("dialog");
   fireEvent.click(screen.getByText("ปิด", { selector: "button" }));

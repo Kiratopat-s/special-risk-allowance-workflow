@@ -58,6 +58,7 @@ export function updateListQuery(
   }
   if (resetPage) query.delete("page");
   query.delete("claimId");
+  query.delete("offSiteWorkId");
   query.delete("view");
   query.delete("create");
   return query.toString();
