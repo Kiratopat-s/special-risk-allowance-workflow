@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Shield, Users, Key, Building2, Bell } from "lucide-react";
+import { Shield, Users, Key, Building2, Bell, Mail } from "lucide-react";
 import { Tabs, Tab } from "@mui/material";
 import { usePermissions } from "@/lib/hooks/use-permissions";
 
@@ -12,6 +12,7 @@ const navItems = [
   { href: "/admin/departments", label: "หน่วยงาน", icon: Building2 },
   { href: "/admin/permissions", label: "สิทธิ์การใช้งาน", icon: Key },
   { href: "/admin/notifications", label: "การแจ้งเตือน", icon: Bell },
+  { href: "/admin/email-worker", label: "Email Worker", icon: Mail },
 ];
 
 export function AdminNav() {

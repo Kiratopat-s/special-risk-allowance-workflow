@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import { sendInternalLeaderEmail, validateInternalEmailConfiguration } from "@/lib/email/internal-leader";
 import {
   EmailWorkerConfigurationError,
@@ -32,6 +33,7 @@ export async function runDeliveryLoop(
   processor: DeliveryProcessor,
   signal: AbortSignal,
   onProgress: () => void,
+  onError: () => void = () => {},
 ): Promise<void> {
   while (!signal.aborted) {
     try {
@@ -41,9 +43,30 @@ export async function runDeliveryLoop(
     } catch {
       // No connection strings, email addresses, SMTP responses or tokens in logs.
       console.error("[email-worker] DELIVERY_PROCESSING_FAILED");
+      onError();
     }
     await pause(idleDelayMs, signal);
   }
+}
+
+/** A separate heartbeat remains live while a delivery or queue poll is stalled. */
+export function startWorkerHeartbeat(heartbeat: () => Promise<void>, signal: AbortSignal): () => void {
+  let inFlight = false;
+  const timer = setInterval(() => {
+    if (signal.aborted || inFlight) return;
+    inFlight = true;
+    void heartbeat().catch(() => {
+      console.error("[email-worker] WORKER_MONITOR_WRITE_FAILED");
+    }).finally(() => { inFlight = false; });
+  }, 30_000);
+  timer.unref?.();
+  const stop = () => {
+    clearInterval(timer);
+    signal.removeEventListener("abort", stop);
+  };
+  signal.addEventListener("abort", stop, { once: true });
+  if (signal.aborted) stop();
+  return stop;
 }
 
 async function finishWithin(task: Promise<unknown>, milliseconds: number): Promise<boolean> {
@@ -94,21 +117,34 @@ export async function runEmailWorker(args: string[] = process.argv.slice(2)): Pr
 
   // These are intentionally loaded only after --check-config has returned.
   // The web app singleton installs its own shutdown handlers and must not be used.
-  const [{ PrismaPg }, { Pool }, { PrismaClient }, { createEmailDeliveryWorkerService }] = await Promise.all([
+  const [{ PrismaPg }, { Pool }, { PrismaClient }, { createEmailDeliveryWorkerService }, { createEmailWorkerMonitor }] = await Promise.all([
     import("@prisma/adapter-pg"),
     import("pg"),
     import("@/lib/generated/prisma/client"),
     import("@/lib/domains/email-delivery/worker-service"),
+    import("@/lib/domains/email-delivery/worker-monitor"),
   ]);
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     max: 3,
     connectionTimeoutMillis: 10_000,
   });
-  pool.on("error", () => console.error("[email-worker] DATABASE_CONNECTION_FAILED"));
   const client = new PrismaClient({ adapter: new PrismaPg(pool, { disposeExternalPool: false }) });
+  const workerRunId = randomUUID();
+  const monitor = createEmailWorkerMonitor(client, workerRunId);
+  pool.on("error", () => {
+    console.error("[email-worker] DATABASE_CONNECTION_FAILED");
+    void monitor.failure("DATABASE_CONNECTION_FAILED");
+  });
   const controller = new AbortController();
-  const stop = () => controller.abort();
+  const stop = () => {
+    if (controller.signal.aborted) return;
+    controller.abort();
+    void monitor.stopping();
+  };
+  void monitor.start();
+  // Continue heartbeats during the drain period so a live stopping worker stays observable.
+  const stopHeartbeat = startWorkerHeartbeat(() => monitor.heartbeat(), new AbortController().signal);
   // Readiness requires a successful queue poll, including access to outbox tables.
   let lastProgress = 0;
   const server = createServer((request, response) => {
@@ -131,8 +167,10 @@ export async function runEmailWorker(args: string[] = process.argv.slice(2)): Pr
       () => respond(false),
     );
   });
-  const close = async () => {
+  const close = async (markStopped: boolean) => {
     const closed = new Promise<void>((resolve) => server.close(() => resolve()));
+    // Telemetry shares the existing five-second cleanup budget and cannot extend it.
+    if (markStopped) await finishWithin(monitor.stopped(), 1_000);
     await client.$disconnect();
     await pool.end();
     await closed;
@@ -150,10 +188,18 @@ export async function runEmailWorker(args: string[] = process.argv.slice(2)): Pr
     });
     server.on("error", () => {
       console.error("[email-worker] HEALTH_SERVER_FAILED");
+      void monitor.failure("HEALTH_SERVER_FAILED");
       stop();
     });
-    const processor = createEmailDeliveryWorkerService(client, sendInternalLeaderEmail);
-    const running = runDeliveryLoop(processor, controller.signal, () => { lastProgress = Date.now(); });
+    const processor = createEmailDeliveryWorkerService(client, sendInternalLeaderEmail, {
+      workerRunId,
+      onJobStarted: (id) => monitor.jobStarted(id),
+      onJobFinished: () => monitor.jobFinished(),
+    });
+    const running = runDeliveryLoop(processor, controller.signal, () => {
+      lastProgress = Date.now();
+      void monitor.progress();
+    }, () => { void monitor.failure("DELIVERY_PROCESSING_FAILED"); });
     const stopped = new Promise<void>((resolve) => {
       if (controller.signal.aborted) resolve();
       else controller.signal.addEventListener("abort", () => resolve(), { once: true });
@@ -162,10 +208,17 @@ export async function runEmailWorker(args: string[] = process.argv.slice(2)): Pr
     await Promise.race([running, stopped]);
     stop();
     drained = await finishWithin(running, shutdownGraceMs);
-    if (!drained) console.error("[email-worker] SHUTDOWN_DELIVERY_TIMEOUT");
+    if (!drained) {
+      console.error("[email-worker] SHUTDOWN_DELIVERY_TIMEOUT");
+      void monitor.failure("SHUTDOWN_DELIVERY_TIMEOUT");
+    }
+  } catch (cause) {
+    void monitor.failure("WORKER_RUNTIME_FAILED");
+    throw cause;
   } finally {
     stop();
-    const closed = await finishWithin(close(), 5_000);
+    stopHeartbeat();
+    const closed = await finishWithin(close(drained), 5_000);
     process.removeListener("SIGTERM", stop);
     process.removeListener("SIGINT", stop);
     if (!drained || !closed) {

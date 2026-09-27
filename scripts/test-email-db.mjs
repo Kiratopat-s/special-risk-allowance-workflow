@@ -12,6 +12,7 @@ import { Client } from "pg";
 // inherited from the application, shell, dotenv, or deployment environment.
 const root = resolve(import.meta.dirname, "..");
 const migration = "20260926090000_add_email_delivery_outbox";
+const dashboardMigration = "20260927090000_add_email_worker_dashboard";
 const container = `sraw-email-test-${randomUUID()}`;
 const password = randomBytes(24).toString("hex");
 const temporary = await mkdtemp(join(tmpdir(), "sraw-email-test-"));
@@ -102,6 +103,30 @@ async function seedExistingRequest(url) {
   });
 }
 
+async function seedExistingEmailHistory(url) {
+  await withDatabase(url, async (client) => {
+    await client.query(`INSERT INTO email_deliveries
+      (id, dedupe_key, expense_claim_id, leader_user_id, verification_ids, status, recipient_email,
+       attempt_count, cycle_attempt_count, next_attempt_at, accepted_at, message_id, updated_at)
+      VALUES ('existing-email', 'existing-email-dedupe', 'existing-claim', 'existing-leader',
+        ARRAY['existing-verification'], 'ACCEPTED', 'leader@example.test', 1, 1, NULL,
+        CURRENT_TIMESTAMP, '<existing@example.test>', CURRENT_TIMESTAMP)`);
+    await client.query(`INSERT INTO email_delivery_attempts
+      (id, delivery_id, attempt_number, recipient_email, finished_at, outcome, message_id)
+      VALUES ('existing-attempt', 'existing-email', 1, 'leader@example.test', CURRENT_TIMESTAMP,
+        'ACCEPTED', '<existing@example.test>')`);
+  });
+}
+
+async function emailHistorySnapshot(url) {
+  return withDatabase(url, async (client) => ({
+    deliveries: (await client.query(`SELECT to_jsonb(t) - 'context_snapshot' AS row
+      FROM email_deliveries t ORDER BY id`)).rows,
+    attempts: (await client.query(`SELECT to_jsonb(t) - 'context_snapshot' - 'worker_run_id' AS row
+      FROM email_delivery_attempts t ORDER BY id`)).rows,
+  }));
+}
+
 async function verifySchemaAndBehavior(url) {
   const env = testEnvironment(url);
   await command("bun", ["run", "check:schema"], env);
@@ -143,6 +168,8 @@ try {
     .filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
   const boundary = names.indexOf(migration);
   assert.ok(boundary > 0, "Email delivery migration was not found");
+  const dashboardBoundary = names.indexOf(dashboardMigration);
+  assert.ok(dashboardBoundary > boundary, "Email dashboard migration was not found after outbox migration");
   const baselinePath = join(temporary, "migrations");
   await cp(migrationsPath, baselinePath, { recursive: true });
   for (const name of names.slice(boundary)) await rm(join(baselinePath, name), { recursive: true });
@@ -160,11 +187,27 @@ export default defineConfig({
   await command("bun", ["x", "--no-install", "prisma", "migrate", "deploy", "--config", baselineConfig], upgradeEnv);
   await seedExistingRequest(upgradeUrl);
   const before = await snapshot(upgradeUrl);
-  console.log("Applying email migration, preserving existing records, and checking no backfill.");
-  await command("bun", ["x", "--no-install", "prisma", "migrate", "deploy"], upgradeEnv);
+  console.log("Applying the original outbox migration and checking no request backfill.");
+  for (const name of names.slice(boundary, dashboardBoundary)) {
+    await cp(join(migrationsPath, name), join(baselinePath, name), { recursive: true });
+  }
+  await command("bun", ["x", "--no-install", "prisma", "migrate", "deploy", "--config", baselineConfig], upgradeEnv);
   assert.deepEqual(await snapshot(upgradeUrl), before, "Email migration changed existing workflow data");
   const queued = await withDatabase(upgradeUrl, (client) => client.query('SELECT * FROM "email_deliveries"'));
   assert.deepEqual(queued.rows, [], "Email delivery must start empty without backfilling existing requests");
+  await seedExistingEmailHistory(upgradeUrl);
+  const previousHistory = await emailHistorySnapshot(upgradeUrl);
+  console.log("Applying worker monitoring migration while preserving existing delivery and attempt history.");
+  await command("bun", ["x", "--no-install", "prisma", "migrate", "deploy"], upgradeEnv);
+  assert.deepEqual(await snapshot(upgradeUrl), before, "Dashboard migration changed existing workflow data");
+  assert.deepEqual(await emailHistorySnapshot(upgradeUrl), previousHistory, "Dashboard migration changed existing email history or created jobs");
+  await withDatabase(upgradeUrl, async (client) => {
+    const delivery = await client.query('SELECT context_snapshot FROM email_deliveries WHERE id = $1', ["existing-email"]);
+    const attempt = await client.query('SELECT context_snapshot, worker_run_id FROM email_delivery_attempts WHERE id = $1', ["existing-attempt"]);
+    assert.deepEqual(delivery.rows, [{ context_snapshot: null }], "Existing delivery snapshot must remain absent");
+    assert.deepEqual(attempt.rows, [{ context_snapshot: null, worker_run_id: null }], "Existing attempts must not acquire invented snapshots or worker runs");
+    assert.deepEqual((await client.query('SELECT * FROM email_worker_runs')).rows, [], "Worker runs must not be backfilled");
+  });
   const history = await withDatabase(upgradeUrl, (client) => client.query('SELECT * FROM "_prisma_migrations" ORDER BY migration_name'));
   await command("bun", ["x", "--no-install", "prisma", "migrate", "deploy"], upgradeEnv);
   const repeated = await withDatabase(upgradeUrl, (client) => client.query('SELECT * FROM "_prisma_migrations" ORDER BY migration_name'));
@@ -175,7 +218,7 @@ export default defineConfig({
   const freshUrl = `${baseUrl}email_fresh`;
   await command("bun", ["x", "--no-install", "prisma", "migrate", "deploy"], testEnvironment(freshUrl));
   await verifySchemaAndBehavior(freshUrl);
-  console.log("Email PostgreSQL checks passed: migrations, no backfill, atomic enqueue, concurrency, recovery, eligibility, history and worker restart. SMTP stayed inside a loopback capture fixture; no email was delivered externally.");
+  console.log("Email PostgreSQL checks passed: upgrade history preservation, no snapshot/run backfill, atomic enqueue, concurrency, recovery, eligibility, worker monitoring and restart. SMTP stayed inside a loopback capture fixture; no email was delivered externally.");
 } catch (error) {
   console.error(error);
   process.exitCode = 1;

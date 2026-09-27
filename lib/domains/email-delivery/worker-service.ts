@@ -3,15 +3,36 @@ import type { EmailSendResult, InternalLeaderEmailInput } from "@/lib/email/inte
 import { createEmailDeliveryRepository } from "./repository";
 import { evaluateEmailEligibility } from "./eligibility";
 import { EMAIL_RETRY_DELAYS_MS } from "./types";
+import { createEmailContextSnapshot } from "./snapshots";
+
+export interface EmailDeliveryWorkerOptions {
+  workerRunId?: string;
+  onJobStarted?: (id: string) => Promise<void>;
+  onJobFinished?: () => Promise<void>;
+}
+
+async function observeJob(callback?: () => Promise<void>): Promise<void> {
+  if (!callback) return;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.resolve().then(callback).catch(() => undefined),
+      new Promise<void>((resolve) => { timeout = setTimeout(resolve, 1_000); }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 export function createEmailDeliveryWorkerService(
   client: PrismaClient,
   sendEmail: (input: InternalLeaderEmailInput) => Promise<EmailSendResult>,
+  options: EmailDeliveryWorkerOptions = {},
 ) {
   const repository = createEmailDeliveryRepository(client);
   return {
     async processNext(): Promise<boolean> {
-      const job = await repository.claimNext();
+      const job = await repository.claimNext(undefined, { workerRunId: options.workerRunId });
       if (!job) return false;
       let leaseLost = false;
       let renewing: Promise<void> | undefined;
@@ -24,13 +45,17 @@ export function createEmailDeliveryWorkerService(
       }, 30_000);
       heartbeat.unref?.();
       try {
-        const eligibility = evaluateEmailEligibility(await repository.loadContext(job));
+        await observeJob(options.onJobStarted ? () => options.onJobStarted!(job.id) : undefined);
+        const context = await repository.loadContext(job);
+        const evaluatedAt = new Date();
+        const eligibility = evaluateEmailEligibility(context, evaluatedAt);
         if (leaseLost) return true;
+        const snapshot = createEmailContextSnapshot(context, eligibility, evaluatedAt);
+        if (!await repository.prepareAttempt(job, snapshot) || leaseLost) return true;
         if (eligibility.kind !== "eligible") {
           await repository.complete(job, { status: eligibility.kind === "failed" ? "FAILED" : "SKIPPED", code: eligibility.code });
           return true;
         }
-        if (!await repository.recordRecipient(job, eligibility.content.to) || leaseLost) return true;
         let outcome: EmailSendResult;
         try {
           outcome = await sendEmail({ ...eligibility.content, deliveryId: job.id });
@@ -52,6 +77,7 @@ export function createEmailDeliveryWorkerService(
       } finally {
         clearInterval(heartbeat);
         await renewing;
+        await observeJob(options.onJobFinished);
       }
     },
   };

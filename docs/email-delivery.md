@@ -140,13 +140,52 @@ delivery test.
 
 ## Operations
 
-Super administrators can inspect email delivery history in
-`/admin/notifications` and retry an eligible failed job after its cause is fixed.
-Server-side authorization applies to both history reads and retries. Successful
-or obsolete jobs cannot be resent using this action. Review pending job age,
-failed jobs, and container health after rollout. Error details are sanitized;
+Super administrators can inspect the worker dashboard at `/admin/email-worker`,
+open each job's recipient and attempt history, and retry an eligible failed job
+after its cause is fixed. The email history entry in `/admin/notifications` links
+to this dashboard. Server-side authorization applies to dashboard reads, details
+and retries. Successful or obsolete jobs cannot be resent using this action.
+Review jobs ready to run, delayed retries, failures, expired processing leases,
+oldest ready-job age and SMTP acceptances in the last 24 hours after rollout.
+Error details are sanitized;
 credentials, full SMTP responses, and bearer tokens must not appear in logs or
 the administrator page.
+
+Every worker process generates a new run ID. It registers in PostgreSQL and
+records an independent heartbeat every 30 seconds, successful queue polling,
+the current job, safe runtime error codes and graceful shutdown. These records
+use database time; monitoring failures are best effort and do not change job
+leases or send outcomes. Attempt history links to the worker run that acquired
+the attempt. Email rejections belong to that attempt and do not by themselves
+mean the worker process stopped.
+
+| Dashboard worker state | Meaning |
+| --- | --- |
+| `STARTING` | Registered recently; no successful queue poll observed yet |
+| `IDLE` | Recent heartbeat and queue progress; no current job |
+| `PROCESSING` | Recent signals and a current job |
+| `DEGRADED` | A safe runtime error was recorded after the most recent successful poll |
+| `STALLED` | Heartbeats continue, but queue progress has been absent for more than 90 seconds |
+| `STOPPING` | Graceful shutdown started and the heartbeat has not gone stale |
+| `STOPPED` | Graceful shutdown was recorded |
+| `NO_SIGNAL` | No observed worker run, or its last heartbeat is more than 90 seconds old |
+
+A stale heartbeat cannot distinguish a stopped process from lost database
+connectivity. Configuration validation failures happen before registration and
+cannot appear as a specific database-backed runtime error. If no run appears,
+inspect the deployment preflight and container logs using the troubleshooting
+steps above. The private container health endpoint and dashboard serve different
+purposes: health gates deployment readiness; recorded heartbeats allow the app
+to display worker status without exposing a worker port. Old runs remain visible
+as history and do not establish that a worker is currently running.
+
+New jobs and attempts retain recipient and document context snapshots for later
+inspection, including when the original request or user changes. Historical
+rows predating the dashboard migration keep null snapshots and null worker run
+IDs; the migration does not reconstruct history or enqueue older requests.
+Where current source context is available for an old row, the dashboard labels
+it as current data rather than an original attempt snapshot. SMTP acceptance is
+the success shown here; it is not an inbox receipt or read confirmation.
 
 Transient failures retry after 1 minute, 5 minutes, 15 minutes, 1 hour and 6 hours,
 for at most six send attempts per retry cycle. Permanent rejection, invalid
@@ -177,4 +216,7 @@ SMTP server. A local SMTP capture fixture receives messages without forwarding
 them. The suite checks upgrade/fresh migration behavior, no backfill, atomic
 enqueue, deduplication, concurrent claims, lease recovery, eligibility changes,
 retry outcomes, retained delivery history, and an actual worker crash/restart
-during SMTP delivery. CI runs it before deployment.
+during SMTP delivery. It also checks worker registration, progress, stale signals,
+graceful stopping, recovery after monitoring failure and additive upgrade of
+pre-existing deliveries and attempts without inventing snapshots or worker runs.
+CI runs it before deployment.

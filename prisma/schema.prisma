@@ -727,6 +727,7 @@ model EmailDelivery {
   expenseClaimId      String              @map("expense_claim_id")
   leaderUserId        String              @map("leader_user_id")
   verificationIds     String[]            @map("verification_ids")
+  contextSnapshot     Json?               @map("context_snapshot")
   status              EmailDeliveryStatus @default(PENDING)
   recipientEmail      String?             @map("recipient_email")
   attemptCount        Int                 @default(0) @map("attempt_count")
@@ -746,6 +747,7 @@ model EmailDelivery {
   @@index([expenseClaimId])
   @@index([leaderUserId])
   @@index([createdAt])
+  @@index([acceptedAt])
   @@map("email_deliveries")
 }
 
@@ -761,7 +763,26 @@ model EmailDeliveryAttempt {
   errorCode           String?       @map("error_code")
   messageId           String?       @map("message_id")
   requestedById       String?       @map("requested_by_id")
+  contextSnapshot     Json?         @map("context_snapshot")
+  workerRunId         String?       @map("worker_run_id")
 
   @@index([deliveryId, startedAt])
   @@map("email_delivery_attempts")
+}
+
+// One row per process start, not per heartbeat. Scalar IDs preserve audit history.
+model EmailWorkerRun {
+  id                  String    @id
+  startedAt           DateTime  @default(now()) @map("started_at")
+  lastHeartbeatAt     DateTime  @default(now()) @map("last_heartbeat_at")
+  lastProgressAt      DateTime? @map("last_progress_at")
+  currentDeliveryId   String?   @map("current_delivery_id")
+  lastErrorCode       String?   @map("last_error_code")
+  lastErrorAt         DateTime? @map("last_error_at")
+  stoppingAt          DateTime? @map("stopping_at")
+  stoppedAt           DateTime? @map("stopped_at")
+
+  @@index([lastHeartbeatAt])
+  @@index([startedAt])
+  @@map("email_worker_runs")
 }

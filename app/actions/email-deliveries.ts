@@ -2,7 +2,9 @@
 
 import { auth } from "@/lib/auth";
 import { hasRole } from "@/lib/auth/permissions";
-import { emailDeliveryService } from "@/lib/domains/email-delivery";
+import { emailDeliveryService, emailDashboardService } from "@/lib/domains/email-delivery";
+import type { EmailDashboardFilter, EmailDeliveryListItem, EmailDeliveryDetail, EmailWorkerOverview } from "@/lib/domains/email-delivery/dashboard-types";
+import { validateDashboardFilter, validDeliveryId } from "@/lib/domains/email-delivery/dashboard-validation";
 import type { EmailDeliveryStatus, EmailDeliveryView } from "@/lib/domains/email-delivery/types";
 import type { PaginatedResult, Result } from "@/lib/shared/types";
 
@@ -56,4 +58,27 @@ export async function retryEmailDelivery(id: string): Promise<Result<void>> {
   // The service checks current eligibility and changes FAILED to PENDING atomically.
   // Actor identity comes only from the session, never from client input.
   return emailDeliveryService.retry(id.trim(), authorization.data);
+}
+
+export async function getEmailWorkerOverview(): Promise<Result<EmailWorkerOverview>> {
+  const authorization = await requireEmailAdmin();
+  if (!authorization.success) return authorization;
+  return emailDashboardService.overview();
+}
+
+export async function listEmailWorkerJobs(filters: EmailDashboardFilter = {}): Promise<Result<PaginatedResult<EmailDeliveryListItem>>> {
+  const authorization = await requireEmailAdmin();
+  if (!authorization.success) return authorization;
+  const validated = validateDashboardFilter(filters);
+  if (!validated.success) return validated;
+  return emailDashboardService.list(validated.data);
+}
+
+export async function getEmailWorkerJob(id: string, attemptPage = 1): Promise<Result<EmailDeliveryDetail>> {
+  const authorization = await requireEmailAdmin();
+  if (!authorization.success) return authorization;
+  if (!validDeliveryId(id) || !Number.isSafeInteger(attemptPage) || attemptPage < 1) {
+    return { success: false, error: "ข้อมูลรายการอีเมลไม่ถูกต้อง", code: "VALIDATION_ERROR" };
+  }
+  return emailDashboardService.detail(id.trim(), attemptPage);
 }

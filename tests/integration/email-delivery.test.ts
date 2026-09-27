@@ -7,6 +7,7 @@ import { PrismaClient, type Prisma } from "@/lib/generated/prisma/client";
 import { createEmailDeliveryRepository, enqueueInternalLeaderEmails } from "@/lib/domains/email-delivery/repository";
 import { createEmailDeliveryService } from "@/lib/domains/email-delivery/service";
 import { createEmailDeliveryWorkerService } from "@/lib/domains/email-delivery/worker-service";
+import { createEmailContextSnapshot } from "@/lib/domains/email-delivery/snapshots";
 import type { EmailSendResult } from "@/lib/email/internal-leader";
 
 const url = new URL(process.env.EMAIL_TEST_DATABASE_URL || "http://invalid");
@@ -217,7 +218,9 @@ describe("internal leader email delivery with PostgreSQL", () => {
     expect(recovered).toMatchObject({ id: original.id, attemptCount: 2 });
     if (!recovered) throw new Error("Expected lease recovery");
     expect(recovered.leaseToken).not.toBe(original.leaseToken);
-    expect(await repository.recordRecipient(original, "wrong@example.test")).toBe(false);
+    expect(await repository.prepareAttempt(original,
+      createEmailContextSnapshot(await repository.loadContext(original), { kind: "eligible" }),
+    )).toBe(false);
     expect(await repository.complete(original, { status: "ACCEPTED" })).toBe(false);
     expect(await repository.renewLease(recovered.id, recovered.leaseToken)).toBe(true);
     expect(await repository.complete(recovered, { status: "ACCEPTED", messageId: "<new@example.test>" })).toBe(true);

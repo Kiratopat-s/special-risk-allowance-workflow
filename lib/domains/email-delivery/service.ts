@@ -3,6 +3,7 @@ import { error, success, type PaginatedResult, type Result } from "@/lib/shared/
 import { createEmailDeliveryRepository } from "./repository";
 import { evaluateEmailEligibility } from "./eligibility";
 import { EMAIL_DELIVERY_STATUSES, type EmailDeliveryFilter, type EmailDeliveryView } from "./types";
+import { safeEmailErrorCode } from "./dashboard-validation";
 
 export function createEmailDeliveryService(client: PrismaClient) {
   const repository = createEmailDeliveryRepository(client);
@@ -17,12 +18,12 @@ export function createEmailDeliveryService(client: PrismaClient) {
         const data = await Promise.all(page.data.map(async (row): Promise<EmailDeliveryView> => ({
           id: row.id, expenseClaimId: row.expenseClaimId, leaderUserId: row.leaderUserId,
           recipientEmail: row.recipientEmail, status: row.status, attemptCount: row.attemptCount,
-          createdAt: row.createdAt, acceptedAt: row.acceptedAt, nextAttemptAt: row.nextAttemptAt, lastErrorCode: row.lastErrorCode,
+          createdAt: row.createdAt, acceptedAt: row.acceptedAt, nextAttemptAt: row.nextAttemptAt, lastErrorCode: safeEmailErrorCode(row.lastErrorCode),
           canRetry: row.status === "FAILED" && evaluateEmailEligibility(await repository.loadContext(row)).kind === "eligible",
           attempts: row.attempts.map((attempt) => ({
             id: attempt.id, attemptNumber: attempt.attemptNumber, recipientEmail: attempt.recipientEmail,
             startedAt: attempt.startedAt, finishedAt: attempt.finishedAt, outcome: attempt.outcome,
-            errorCode: attempt.errorCode, requestedById: attempt.requestedById,
+            errorCode: safeEmailErrorCode(attempt.errorCode), requestedById: attempt.requestedById,
           })),
         })));
         return success({ data, pagination: page.pagination });

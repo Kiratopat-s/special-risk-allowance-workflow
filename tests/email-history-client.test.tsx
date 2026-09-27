@@ -142,13 +142,11 @@ it.each(["network", "server"] as const)("recovers from a %s error after loading 
   expect(screen.getByText("ไม่สามารถดำเนินการได้ กรุณาตรวจสอบการตั้งค่าและผู้รับ")).toBeTruthy();
 });
 
-it("loads email history only when selected and preserves the compose form when switching tabs", async () => {
+it("links to the dedicated worker dashboard without loading history in the compose page", () => {
   render(<ThemeProvider theme={workflowTheme}><NotificationsAdminTabs><input aria-label="ข้อความเดิม" defaultValue="ร่างเดิม" /></NotificationsAdminTabs></ThemeProvider>);
   const compose = screen.getByRole("textbox", { name: "ข้อความเดิม" });
   fireEvent.change(compose, { target: { value: "ข้อความที่ยังไม่ส่ง" } });
   expect(mocks.list).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByRole("tab", { name: "ประวัติอีเมล" }));
-  await screen.findByRole("region", { name: "ประวัติการส่งอีเมล" });
-  await userEvent.click(screen.getByRole("tab", { name: "ส่งการแจ้งเตือน" }));
+  expect(screen.getByRole("tab", { name: "ประวัติอีเมล / Email Worker" }).getAttribute("href")).toBe("/admin/email-worker");
   expect((screen.getByRole("textbox", { name: "ข้อความเดิม" }) as HTMLInputElement).value).toBe("ข้อความที่ยังไม่ส่ง");
 });

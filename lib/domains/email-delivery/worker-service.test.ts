@@ -4,7 +4,7 @@ import type { EmailSendResult } from "@/lib/email/internal-leader";
 import { EMAIL_RETRY_DELAYS_MS } from "./types";
 
 const mock = vi.hoisted(() => ({
-  claimNext: vi.fn(), renewLease: vi.fn(), loadContext: vi.fn(), recordRecipient: vi.fn(), complete: vi.fn(),
+  claimNext: vi.fn(), renewLease: vi.fn(), loadContext: vi.fn(), prepareAttempt: vi.fn(), complete: vi.fn(),
 }));
 vi.mock("./repository", () => ({ createEmailDeliveryRepository: () => mock }));
 import { createEmailDeliveryWorkerService } from "./worker-service";
@@ -18,10 +18,11 @@ function context() {
     claim: { status: "PENDING_LEADER_VERIFY", cancelledAt: null, monthlyRequestCollectionId: null,
       expenseMonth: now, claimant: { firstName: "ผู้ยื่น", lastName: "ทดสอบ" },
       expenseClaimOffSiteWorks: [{ offSiteWorkId: "work-1" }, { offSiteWorkId: "work-2" }] },
-    leader: { email: "current@example.test", status: "ACTIVE" },
+    leader: { email: "current@example.test", status: "ACTIVE", firstName: "หัวหน้า", lastName: "ทดสอบ" },
+    verificationIds: ["verify-1", "verify-2"],
     verifications: [
-      { offSiteWorkId: "work-1", verifiedAt: null, expiresAt: new Date("2026-09-27"), offSiteWork: { deletedAt: null, innerRefDocumentId: "REF-1" } },
-      { offSiteWorkId: "work-2", verifiedAt: now, expiresAt: new Date("2026-09-27"), offSiteWork: { deletedAt: null, innerRefDocumentId: "REF-2" } },
+      { id: "verify-1", offSiteWorkId: "work-1", verifiedAt: null, expiresAt: new Date("2026-09-27"), offSiteWork: { deletedAt: null, innerRefDocumentId: "REF-1" } },
+      { id: "verify-2", offSiteWorkId: "work-2", verifiedAt: now, expiresAt: new Date("2026-09-27"), offSiteWork: { deletedAt: null, innerRefDocumentId: "REF-2" } },
     ],
   };
 }
@@ -32,7 +33,7 @@ beforeEach(() => {
   vi.setSystemTime(now);
   mock.claimNext.mockResolvedValue(job);
   mock.loadContext.mockResolvedValue(context());
-  mock.recordRecipient.mockResolvedValue(true);
+  mock.prepareAttempt.mockResolvedValue(true);
   mock.renewLease.mockResolvedValue(true);
   mock.complete.mockResolvedValue(true);
   sendEmail.mockResolvedValue({ kind: "accepted", messageId: "message-1" });
@@ -46,7 +47,12 @@ describe("durable email processing", () => {
       deliveryId: "delivery-1", to: "current@example.test", claimantName: "ผู้ยื่น ทดสอบ", expenseMonth: now,
       orders: [{ reference: "REF-1", expiresAt: new Date("2026-09-27") }],
     });
-    expect(mock.recordRecipient).toHaveBeenCalledWith(job, "current@example.test");
+    expect(mock.prepareAttempt).toHaveBeenCalledWith(job, expect.objectContaining({
+      version: 1, recipientEmail: "current@example.test", leaderName: "หัวหน้า ทดสอบ",
+      eligibility: { kind: "eligible", code: null },
+      orders: [expect.objectContaining({ verificationId: "verify-1", state: "PENDING" }), expect.objectContaining({ verificationId: "verify-2", state: "VERIFIED" })],
+    }));
+    expect(mock.prepareAttempt.mock.invocationCallOrder[0]).toBeLessThan(sendEmail.mock.invocationCallOrder[0]);
     expect(mock.complete).toHaveBeenCalledWith(job, { status: "ACCEPTED", messageId: "message-1" });
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -86,6 +92,7 @@ describe("durable email processing", () => {
     mock.loadContext.mockResolvedValue(data);
     await service.processNext();
     expect(sendEmail).not.toHaveBeenCalled();
+    expect(mock.prepareAttempt).toHaveBeenCalledWith(job, expect.objectContaining({ eligibility: { kind: "skipped", code: expect.any(String) } }));
     expect(mock.complete).toHaveBeenCalledWith(job, expect.objectContaining({ status: "SKIPPED" }));
   });
 
@@ -107,8 +114,8 @@ describe("durable email processing", () => {
     expect(mock.complete).toHaveBeenCalledWith(job, { status: "FAILED", code: "INVALID_RECIPIENT" });
   });
 
-  it("does not send after losing the lease before the recipient is recorded", async () => {
-    mock.recordRecipient.mockResolvedValue(false);
+  it("does not send or complete when attempt preparation loses its lease or was already recorded", async () => {
+    mock.prepareAttempt.mockResolvedValue(false);
     await service.processNext();
     expect(sendEmail).not.toHaveBeenCalled();
     expect(mock.complete).not.toHaveBeenCalled();
@@ -131,6 +138,43 @@ describe("durable email processing", () => {
     mock.claimNext.mockResolvedValue(null);
     expect(await service.processNext()).toBe(false);
     expect(sendEmail).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("associates a claimed attempt with its worker run and reports job lifecycle", async () => {
+    const onJobStarted = vi.fn(async () => {});
+    const onJobFinished = vi.fn(async () => {});
+    const monitored = createEmailDeliveryWorkerService({} as PrismaClient, sendEmail, {
+      workerRunId: "run-1", onJobStarted, onJobFinished,
+    });
+    await monitored.processNext();
+    expect(mock.claimNext).toHaveBeenCalledWith(undefined, { workerRunId: "run-1" });
+    expect(onJobStarted).toHaveBeenCalledExactlyOnceWith(job.id);
+    expect(onJobFinished).toHaveBeenCalledOnce();
+    expect(onJobFinished.mock.invocationCallOrder[0]).toBeGreaterThan(mock.complete.mock.invocationCallOrder[0]);
+  });
+
+  it("ignores failed monitoring callbacks without changing delivery outcome", async () => {
+    const monitored = createEmailDeliveryWorkerService({} as PrismaClient, sendEmail, {
+      onJobStarted: vi.fn().mockRejectedValue(new Error("monitor unavailable")),
+      onJobFinished: vi.fn().mockRejectedValue(new Error("monitor unavailable")),
+    });
+    expect(await monitored.processNext()).toBe(true);
+    expect(sendEmail).toHaveBeenCalledOnce();
+    expect(mock.complete).toHaveBeenCalledWith(job, { status: "ACCEPTED", messageId: "message-1" });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("bounds a stuck monitoring callback and continues sending with lease renewal intact", async () => {
+    const monitored = createEmailDeliveryWorkerService({} as PrismaClient, sendEmail, {
+      onJobStarted: () => new Promise(() => {}),
+      onJobFinished: () => new Promise(() => {}),
+    });
+    const processing = monitored.processNext();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(await processing).toBe(true);
+    expect(sendEmail).toHaveBeenCalledOnce();
+    expect(mock.complete).toHaveBeenCalledWith(job, { status: "ACCEPTED", messageId: "message-1" });
     expect(vi.getTimerCount()).toBe(0);
   });
 });

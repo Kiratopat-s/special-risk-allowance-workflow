@@ -1,31 +1,52 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { Prisma, PrismaClient, EmailDelivery } from "@/lib/generated/prisma/client";
+import { Prisma, type PrismaClient, type EmailDelivery } from "@/lib/generated/prisma/client";
 import { EMAIL_LEASE_MS, EMAIL_RETRY_DELAYS_MS } from "./types";
 import type { EmailDeliveryCompletion, EmailDeliveryFilter, LeasedEmailDelivery } from "./types";
+import { createEmailContextSnapshot, type EmailContextSnapshot } from "./snapshots";
+import { evaluateEmailEligibility } from "./eligibility";
 
 type ContextClient = Pick<Prisma.TransactionClient, "expenseClaim" | "leaderVerification" | "user">;
+
+const claimContextSelect = {
+  id: true, status: true, cancelledAt: true, monthlyRequestCollectionId: true, expenseMonth: true,
+  claimant: { select: { firstName: true, lastName: true } },
+  expenseClaimOffSiteWorks: { select: { offSiteWorkId: true } },
+} satisfies Prisma.ExpenseClaimSelect;
+const leaderContextSelect = { email: true, status: true, firstName: true, lastName: true } satisfies Prisma.UserSelect;
+const verificationContextSelect = {
+  id: true, offSiteWorkId: true, verifiedAt: true, expiresAt: true,
+  offSiteWork: { select: { deletedAt: true, innerRefDocumentId: true } },
+} satisfies Prisma.LeaderVerificationSelect;
 
 /** Call only in the transaction that creates this verification generation. */
 export async function enqueueInternalLeaderEmails(tx: Prisma.TransactionClient, expenseClaimId: string): Promise<void> {
   const records = await tx.leaderVerification.findMany({
     where: { expenseClaimId, leaderUserId: { not: null }, verifiedAt: null },
-    select: { id: true, leaderUserId: true, leaderUser: { select: { email: true } } },
+    select: { ...verificationContextSelect, leaderUserId: true, leaderUser: { select: leaderContextSelect } },
   });
-  const groups = new Map<string, { ids: string[]; email: string | null }>();
+  const groups = new Map<string, { leader: (typeof records)[number]["leaderUser"]; records: typeof records }>();
   for (const record of records) {
     if (!record.leaderUserId) continue;
-    const group = groups.get(record.leaderUserId) ?? { ids: [], email: record.leaderUser?.email ?? null };
-    group.ids.push(record.id);
+    const group = groups.get(record.leaderUserId) ?? { leader: record.leaderUser, records: [] };
+    group.records.push(record);
     groups.set(record.leaderUserId, group);
   }
   if (!groups.size) return;
-  await tx.emailDelivery.createMany({
-    data: [...groups].map(([leaderUserId, group]) => {
-      const verificationIds = group.ids.sort();
+  // All leaders share one claim; fetch it once and reuse the bulk-loaded relations.
+  const claim = await tx.expenseClaim.findUnique({ where: { id: expenseClaimId }, select: claimContextSelect });
+  const capturedAt = new Date();
+  const data = [...groups].map(([leaderUserId, group]) => {
+      const verificationIds = group.records.map((record) => record.id).sort();
       const dedupeKey = createHash("sha256")
         .update(JSON.stringify(["INTERNAL_LEADER_VERIFY", expenseClaimId, leaderUserId, verificationIds])).digest("hex");
-      return { expenseClaimId, leaderUserId, verificationIds, dedupeKey, recipientEmail: group.email };
-    }),
+      const context: EmailContext = { claim, leader: group.leader, verifications: group.records, verificationIds };
+      return {
+        expenseClaimId, leaderUserId, verificationIds, dedupeKey, recipientEmail: context.leader?.email ?? null,
+        contextSnapshot: createEmailContextSnapshot(context, { kind: "queued" }, capturedAt),
+      };
+    });
+  await tx.emailDelivery.createMany({
+    data,
     skipDuplicates: true,
   });
 }
@@ -34,23 +55,16 @@ export async function loadEmailContext(client: ContextClient, delivery: Pick<Ema
   const [claim, leader, verifications] = await Promise.all([
     client.expenseClaim.findUnique({
       where: { id: delivery.expenseClaimId },
-      select: {
-        id: true, status: true, cancelledAt: true, monthlyRequestCollectionId: true, expenseMonth: true,
-        claimant: { select: { firstName: true, lastName: true } },
-        expenseClaimOffSiteWorks: { select: { offSiteWorkId: true } },
-      },
+      select: claimContextSelect,
     }),
-    client.user.findUnique({ where: { id: delivery.leaderUserId }, select: { email: true, status: true } }),
+    client.user.findUnique({ where: { id: delivery.leaderUserId }, select: leaderContextSelect }),
     client.leaderVerification.findMany({
       where: { id: { in: delivery.verificationIds }, expenseClaimId: delivery.expenseClaimId, leaderUserId: delivery.leaderUserId },
-      select: {
-        id: true, offSiteWorkId: true, verifiedAt: true, expiresAt: true,
-        offSiteWork: { select: { deletedAt: true, innerRefDocumentId: true } },
-      },
+      select: verificationContextSelect,
       orderBy: { id: "asc" },
     }),
   ]);
-  return { claim, leader, verifications };
+  return { claim, leader, verifications, verificationIds: [...delivery.verificationIds] };
 }
 
 export type EmailContext = Awaited<ReturnType<typeof loadEmailContext>>;
@@ -59,7 +73,7 @@ export function createEmailDeliveryRepository(client: PrismaClient) {
   return {
     loadContext: (delivery: Pick<EmailDelivery, "expenseClaimId" | "leaderUserId" | "verificationIds">) => loadEmailContext(client, delivery),
 
-    async claimNext(now?: Date): Promise<LeasedEmailDelivery | null> {
+    async claimNext(now?: Date, options: { workerRunId?: string } = {}): Promise<LeasedEmailDelivery | null> {
       // Terminalize abandoned final attempts without making a nonempty queue
       // look idle (and delaying each remaining job by another polling interval).
       while (true) {
@@ -92,6 +106,7 @@ export function createEmailDeliveryRepository(client: PrismaClient) {
           } });
           const attempt = await tx.emailDeliveryAttempt.create({ data: {
             deliveryId: job.id, attemptNumber: job.attemptCount, startedAt: claimedAt,
+            workerRunId: options.workerRunId ?? null,
           } });
           return { ...job, leaseToken, attemptId: attempt.id };
         });
@@ -107,14 +122,25 @@ export function createEmailDeliveryRepository(client: PrismaClient) {
       return result.count === 1;
     },
 
-    async recordRecipient(job: LeasedEmailDelivery, email: string, now = new Date()): Promise<boolean> {
+    async prepareAttempt(job: LeasedEmailDelivery, snapshot: EmailContextSnapshot, now?: Date): Promise<boolean> {
       return client.$transaction(async (tx) => {
-        const result = await tx.emailDelivery.updateMany({
-          where: { id: job.id, status: "PROCESSING", leaseToken: job.leaseToken, leaseExpiresAt: { gt: now } },
-          data: { recipientEmail: email },
+        const rows = await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM email_deliveries WHERE id = ${job.id} FOR UPDATE
+        `;
+        if (!rows.length) return false;
+        // Recheck time and ownership after waiting for the row lock.
+        const owned = await tx.emailDelivery.findFirst({
+          where: { id: job.id, status: "PROCESSING", leaseToken: job.leaseToken, leaseExpiresAt: { gt: now ?? new Date() } },
+          select: { id: true },
         });
-        if (result.count !== 1) return false;
-        await tx.emailDeliveryAttempt.update({ where: { id: job.attemptId }, data: { recipientEmail: email } });
+        if (!owned) return false;
+        const email = snapshot.eligibility.kind === "eligible" ? snapshot.recipientEmail : null;
+        const prepared = await tx.emailDeliveryAttempt.updateMany({
+          where: { id: job.attemptId, deliveryId: job.id, finishedAt: null, contextSnapshot: { equals: Prisma.DbNull } },
+          data: { contextSnapshot: snapshot, ...(email !== null ? { recipientEmail: email } : {}) },
+        });
+        if (prepared.count !== 1) return false;
+        if (email !== null) await tx.emailDelivery.update({ where: { id: job.id }, data: { recipientEmail: email } });
         return true;
       });
     },
@@ -164,8 +190,10 @@ export function createEmailDeliveryRepository(client: PrismaClient) {
         if (!rows.length) return "not_failed";
         const job = await tx.emailDelivery.findUniqueOrThrow({ where: { id } });
         if (job.status !== "FAILED") return "not_failed";
-        if (!isEligible(await loadEmailContext(tx, job))) return "ineligible";
+        const context = await loadEmailContext(tx, job);
         const now = new Date();
+        const eligibility = evaluateEmailEligibility(context, now);
+        if (!isEligible(context) || eligibility.kind !== "eligible") return "ineligible";
         await tx.emailDelivery.update({ where: { id }, data: {
           status: "PENDING", cycleAttemptCount: 0, nextAttemptAt: now,
           leaseToken: null, leaseExpiresAt: null, lastErrorCode: null,
@@ -174,6 +202,7 @@ export function createEmailDeliveryRepository(client: PrismaClient) {
         await tx.emailDeliveryAttempt.create({ data: {
           deliveryId: id, attemptNumber: job.attemptCount, startedAt: now, finishedAt: now,
           outcome: "MANUAL_RETRY", requestedById: actorId,
+          contextSnapshot: createEmailContextSnapshot(context, eligibility, now),
         } });
         return "queued";
       });

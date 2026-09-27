@@ -3,7 +3,8 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import nodemailer from "nodemailer";
 import { EmailWorkerConfigurationError } from "@/lib/email/configuration-error";
-import { runDeliveryLoop, runEmailWorker } from "../scripts/email-worker";
+import { createEmailWorkerMonitor, deriveWorkerState, type EmailWorkerRunTelemetry } from "@/lib/domains/email-delivery/worker-monitor";
+import { runDeliveryLoop, runEmailWorker, startWorkerHeartbeat } from "../scripts/email-worker";
 
 const workerFixtureEnvironment = {
   NODE_ENV: "production",
@@ -47,7 +48,8 @@ describe("email worker delivery loop", () => {
       .mockResolvedValueOnce(true)
       .mockImplementationOnce(async () => { controller.abort(); return false; });
     const progress = vi.fn();
-    const running = runDeliveryLoop({ processNext }, controller.signal, progress);
+    const errors = vi.fn();
+    const running = runDeliveryLoop({ processNext }, controller.signal, progress, errors);
     await Promise.resolve();
     expect(processNext).toHaveBeenCalledTimes(1);
     expect(progress).not.toHaveBeenCalled();
@@ -55,6 +57,7 @@ describe("email worker delivery loop", () => {
     await running;
     expect(processNext).toHaveBeenCalledTimes(3);
     expect(progress).toHaveBeenCalledTimes(3);
+    expect(errors).not.toHaveBeenCalled();
   });
 
   it("waits for the active job after shutdown and does not start another", async () => {
@@ -94,11 +97,13 @@ describe("email worker delivery loop", () => {
       .mockRejectedValueOnce(new Error("postgresql://private-password@database"))
       .mockImplementationOnce(async () => { controller.abort(); return false; });
     const progress = vi.fn();
-    const running = runDeliveryLoop({ processNext }, controller.signal, progress);
+    const errors = vi.fn();
+    const running = runDeliveryLoop({ processNext }, controller.signal, progress, errors);
     await vi.advanceTimersByTimeAsync(14_999);
     expect(processNext).toHaveBeenCalledOnce();
     expect(progress).not.toHaveBeenCalled();
     expect(errorLog).toHaveBeenCalledExactlyOnceWith("[email-worker] DELIVERY_PROCESSING_FAILED");
+    expect(errors).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(1);
     await running;
     expect(progress).toHaveBeenCalledOnce();
@@ -110,6 +115,83 @@ describe("email worker delivery loop", () => {
     const processNext = vi.fn();
     await runDeliveryLoop({ processNext }, controller.signal, vi.fn());
     expect(processNext).not.toHaveBeenCalled();
+  });
+});
+
+describe("email worker telemetry", () => {
+  const measuredAt = new Date("2026-09-27T12:00:00Z");
+  const before = (milliseconds: number) => new Date(measuredAt.getTime() - milliseconds);
+  const run: EmailWorkerRunTelemetry = {
+    startedAt: before(120_000), lastHeartbeatAt: before(10_000), lastProgressAt: before(10_000),
+    currentDeliveryId: null, lastErrorCode: null, lastErrorAt: null, stoppingAt: null, stoppedAt: null,
+  };
+
+  it.each([
+    ["IDLE", {}],
+    ["STARTING", { startedAt: before(10_000), lastProgressAt: null }],
+    ["PROCESSING", { currentDeliveryId: "job" }],
+    ["DEGRADED", { lastErrorCode: "DELIVERY_PROCESSING_FAILED", lastErrorAt: before(1_000) }],
+    ["IDLE", { lastErrorCode: "DELIVERY_PROCESSING_FAILED", lastErrorAt: before(20_000) }],
+    ["STALLED", { lastProgressAt: before(90_001) }],
+    ["STALLED", { lastProgressAt: null }],
+    ["NO_SIGNAL", { lastHeartbeatAt: before(90_001), currentDeliveryId: "job" }],
+    ["NO_SIGNAL", { lastHeartbeatAt: before(90_001), stoppingAt: before(100_000) }],
+    ["STOPPING", { stoppingAt: before(1_000) }],
+    ["STOPPED", { stoppedAt: before(100_000), lastHeartbeatAt: before(120_000) }],
+    ["IDLE", { lastHeartbeatAt: before(90_000), lastProgressAt: before(90_000) }],
+  ])("derives %s from recorded timestamps and lifecycle", (state, changes) => {
+    expect(deriveWorkerState({ ...run, ...changes }, measuredAt)).toBe(state);
+  });
+
+  it("does not invent a worker when no registration was observed", () => {
+    expect(deriveWorkerState(null, measuredAt)).toBe("NO_SIGNAL");
+  });
+
+  it("keeps an independent nonoverlapping heartbeat while processing is blocked", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    let release!: () => void;
+    const heartbeat = vi.fn().mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; })).mockResolvedValue(undefined);
+    startWorkerHeartbeat(heartbeat, controller.signal);
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(heartbeat).toHaveBeenCalledOnce();
+    release();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(heartbeat).toHaveBeenCalledTimes(2);
+    controller.abort();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("serializes lifecycle writes after a slow statement and redacts write failures", async () => {
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    let release!: () => void;
+    const execute = vi.fn().mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }))
+      .mockRejectedValueOnce(new Error("postgresql://private-password@database"))
+      .mockResolvedValue(1);
+    const monitor = createEmailWorkerMonitor({ $executeRaw: execute }, "fixture-run");
+    const started = monitor.start();
+    const job = monitor.jobStarted("fixture-delivery");
+    const finished = monitor.jobFinished();
+    await Promise.resolve();
+    expect(execute).toHaveBeenCalledOnce();
+    release();
+    await Promise.all([started, job, finished]);
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(errorLog).toHaveBeenCalledExactlyOnceWith("[email-worker] WORKER_MONITOR_WRITE_FAILED");
+    expect(execute.mock.calls[0][0].sql).toContain("CURRENT_TIMESTAMP");
+    await expect(monitor.heartbeat()).resolves.toBeUndefined();
+  });
+
+  it("bounds a blocked telemetry backlog without making callers throw", async () => {
+    let release!: () => void;
+    const execute = vi.fn().mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; })).mockResolvedValue(1);
+    const monitor = createEmailWorkerMonitor({ $executeRaw: execute }, "fixture-run");
+    const writes = Array.from({ length: 100 }, () => monitor.heartbeat());
+    await Promise.resolve();
+    expect(execute).toHaveBeenCalledOnce();
+    release();
+    await Promise.all(writes);
+    expect(execute).toHaveBeenCalledTimes(32);
   });
 });
 
