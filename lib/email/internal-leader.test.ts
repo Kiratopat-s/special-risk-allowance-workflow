@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const smtp = vi.hoisted(() => ({ sendMail: vi.fn(), close: vi.fn(), createTransport: vi.fn() }));
 vi.mock("nodemailer", () => ({ default: { createTransport: smtp.createTransport } }));
 import { sendInternalLeaderEmail, validateInternalEmailConfiguration, type InternalLeaderEmailInput } from "./internal-leader";
+import { EmailWorkerConfigurationError } from "./configuration-error";
 
 const input: InternalLeaderEmailInput = {
   to: "leader@example.test",
@@ -105,15 +106,23 @@ describe("internal email configuration validation", () => {
   });
 
   it.each([
-    ["EMAIL_HOST", ""], ["EMAIL_USER", ""], ["EMAIL_PASS", ""],
-    ["EMAIL_PORT", "587suffix"], ["EMAIL_PORT", "65536"], ["EMAIL_PORT", "0"],
-    ["EMAIL_FROM", "noreply@example.test\nBcc: other@example.test"],
-    ["EMAIL_FROM", "not-an-email"], ["EMAIL_FROM", "one@example.test,two@example.test"],
-    ["NEXTAUTH_URL", ""], ["NEXTAUTH_URL", "/relative"],
-    ["NEXTAUTH_URL", "javascript:alert(1)"], ["NEXTAUTH_URL", "https://secret:pass@example.test"],
-  ])("rejects invalid %s without exposing values", async (name, value) => {
+    ["EMAIL_HOST", "", "EMAIL_HOST_REQUIRED"],
+    ["EMAIL_HOST", "smtp.example.test private-host", "EMAIL_HOST_INVALID"],
+    ["EMAIL_USER", "", "EMAIL_USER_REQUIRED"], ["EMAIL_PASS", "", "EMAIL_PASS_REQUIRED"],
+    ["EMAIL_PORT", "587suffix", "EMAIL_PORT_INVALID"], ["EMAIL_PORT", "65536", "EMAIL_PORT_INVALID"], ["EMAIL_PORT", "0", "EMAIL_PORT_INVALID"],
+    ["EMAIL_FROM", "noreply@example.test\nBcc: other@example.test", "EMAIL_FROM_INVALID"],
+    ["EMAIL_FROM", "not-an-email", "EMAIL_FROM_INVALID"], ["EMAIL_FROM", "one@example.test,two@example.test", "EMAIL_FROM_INVALID"],
+    ["NEXTAUTH_URL", "", "NEXTAUTH_URL_REQUIRED"], ["NEXTAUTH_URL", "/relative", "NEXTAUTH_URL_INVALID"],
+    ["NEXTAUTH_URL", "javascript:alert(1)", "NEXTAUTH_URL_INVALID"], ["NEXTAUTH_URL", "https://secret:pass@example.test", "NEXTAUTH_URL_INVALID"],
+    ["NEXTAUTH_URL", "https://example.test?token=secret", "NEXTAUTH_URL_INVALID"],
+    ["NEXTAUTH_URL", "https://example.test#secret", "NEXTAUTH_URL_INVALID"],
+  ])("rejects invalid %s without exposing values", async (name, value, issue) => {
     vi.stubEnv(name, value);
     expect(validateInternalEmailConfiguration).toThrow("EMAIL_CONFIGURATION_INVALID");
+    let failure: unknown;
+    try { validateInternalEmailConfiguration(); } catch (cause) { failure = cause; }
+    expect(failure).toBeInstanceOf(EmailWorkerConfigurationError);
+    expect(failure).toMatchObject({ message: "EMAIL_CONFIGURATION_INVALID", issues: [issue] });
     expect(await sendInternalLeaderEmail(input)).toEqual({ kind: "configuration_error", code: "EMAIL_CONFIGURATION_INVALID" });
     expect(smtp.createTransport).not.toHaveBeenCalled();
   });
@@ -121,7 +130,9 @@ describe("internal email configuration validation", () => {
   it("requires HTTPS in production", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("NEXTAUTH_URL", "http://sraw.example.test");
-    expect(validateInternalEmailConfiguration).toThrow("EMAIL_CONFIGURATION_INVALID");
+    expect(validateInternalEmailConfiguration).toThrow(new EmailWorkerConfigurationError(
+      ["NEXTAUTH_URL_HTTPS_REQUIRED"], "EMAIL_CONFIGURATION_INVALID",
+    ));
   });
 
   it("keeps the existing default sender when EMAIL_FROM is absent", async () => {

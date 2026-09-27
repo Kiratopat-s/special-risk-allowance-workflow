@@ -1,5 +1,10 @@
 import { createServer } from "node:http";
 import { sendInternalLeaderEmail, validateInternalEmailConfiguration } from "@/lib/email/internal-leader";
+import {
+  EmailWorkerConfigurationError,
+  emailWorkerConfigurationMessages,
+  type EmailWorkerConfigurationIssue,
+} from "@/lib/email/configuration-error";
 
 interface DeliveryProcessor {
   processNext(): Promise<boolean>;
@@ -54,14 +59,17 @@ async function finishWithin(task: Promise<unknown>, milliseconds: number): Promi
 }
 
 function validateDatabaseConfiguration(): void {
+  if (!process.env.DATABASE_URL) {
+    throw new EmailWorkerConfigurationError(["DATABASE_URL_REQUIRED"], "DATABASE_CONFIGURATION_INVALID");
+  }
   let url: URL;
   try {
-    url = new URL(process.env.DATABASE_URL ?? "");
+    url = new URL(process.env.DATABASE_URL);
   } catch {
-    throw new Error("DATABASE_CONFIGURATION_INVALID");
+    throw new EmailWorkerConfigurationError(["DATABASE_URL_INVALID"], "DATABASE_CONFIGURATION_INVALID");
   }
   if (!["postgres:", "postgresql:"].includes(url.protocol) || !url.hostname) {
-    throw new Error("DATABASE_CONFIGURATION_INVALID");
+    throw new EmailWorkerConfigurationError(["DATABASE_URL_INVALID"], "DATABASE_CONFIGURATION_INVALID");
   }
 }
 
@@ -69,8 +77,16 @@ export async function runEmailWorker(args: string[] = process.argv.slice(2)): Pr
   if (args.some((argument) => argument !== "--check-config")) {
     throw new Error("WORKER_ARGUMENT_INVALID");
   }
-  validateInternalEmailConfiguration();
-  validateDatabaseConfiguration();
+  const issues: EmailWorkerConfigurationIssue[] = [];
+  for (const validate of [validateInternalEmailConfiguration, validateDatabaseConfiguration]) {
+    try {
+      validate();
+    } catch (cause) {
+      if (!(cause instanceof EmailWorkerConfigurationError)) throw cause;
+      issues.push(...cause.issues);
+    }
+  }
+  if (issues.length) throw new EmailWorkerConfigurationError(issues, "WORKER_CONFIGURATION_INVALID");
   if (args.includes("--check-config")) {
     console.log("[email-worker] Configuration valid; no database or SMTP connection attempted.");
     return;
@@ -161,8 +177,15 @@ export async function runEmailWorker(args: string[] = process.argv.slice(2)): Pr
 }
 
 if ((import.meta as ImportMeta & { main?: boolean }).main) {
-  void runEmailWorker().catch(() => {
-    console.error("[email-worker] WORKER_STARTUP_FAILED; verify local email, URL, database and health-port configuration.");
+  void runEmailWorker().catch((cause: unknown) => {
+    if (cause instanceof EmailWorkerConfigurationError) {
+      console.error("[email-worker] WORKER_CONFIGURATION_INVALID; correct the settings below.");
+      for (const issue of cause.issues) {
+        console.error(`[email-worker] ${issue}: ${emailWorkerConfigurationMessages[issue]}`);
+      }
+    } else {
+      console.error("[email-worker] WORKER_STARTUP_FAILED; verify worker arguments, runtime dependencies and health-port availability.");
+    }
     process.exitCode = 1;
   });
 }

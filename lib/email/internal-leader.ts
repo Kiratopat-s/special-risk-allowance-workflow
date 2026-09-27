@@ -3,6 +3,7 @@ import nodemailer from "nodemailer";
 import addressparser from "nodemailer/lib/addressparser";
 import { z } from "zod";
 import { dateTimeDisplay, monthDisplay } from "@/lib/shared/format";
+import { EmailWorkerConfigurationError, type EmailWorkerConfigurationIssue } from "./configuration-error";
 
 export interface InternalLeaderEmailInput {
   to: string;
@@ -20,32 +21,43 @@ const mailbox = z.email();
 const defaultFrom = "ระบบ SRAW <noreply@pea.co.th>";
 
 function readConfiguration() {
-  const host = process.env.EMAIL_HOST?.trim();
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
+  const host = process.env.EMAIL_HOST?.trim() ?? "";
+  const user = process.env.EMAIL_USER ?? "";
+  const pass = process.env.EMAIL_PASS ?? "";
   const rawPort = process.env.EMAIL_PORT?.trim() || "587";
   const port = Number(rawPort);
   const from = process.env.EMAIL_FROM?.trim() || defaultFrom;
-  const rawUrl = process.env.NEXTAUTH_URL;
-  if (!host || /[\s\r\n]/.test(host) || !user || !pass ||
-    !/^\d+$/.test(rawPort) || !Number.isInteger(port) || port < 1 || port > 65535 ||
-    /[\r\n]/.test(from) || !rawUrl) {
-    throw new Error("EMAIL_CONFIGURATION_INVALID");
+  const rawUrl = process.env.NEXTAUTH_URL ?? "";
+  const issues: EmailWorkerConfigurationIssue[] = [];
+  if (!host) issues.push("EMAIL_HOST_REQUIRED");
+  else if (/\s/.test(host)) issues.push("EMAIL_HOST_INVALID");
+  if (!user) issues.push("EMAIL_USER_REQUIRED");
+  if (!pass) issues.push("EMAIL_PASS_REQUIRED");
+  if (!/^\d+$/.test(rawPort) || !Number.isInteger(port) || port < 1 || port > 65535) {
+    issues.push("EMAIL_PORT_INVALID");
   }
   const senders = addressparser(from, { flatten: true });
-  if (senders.length !== 1 || !mailbox.safeParse(senders[0].address).success) {
-    throw new Error("EMAIL_CONFIGURATION_INVALID");
+  if (/[\r\n]/.test(from) || senders.length !== 1 || !mailbox.safeParse(senders[0].address).success) {
+    issues.push("EMAIL_FROM_INVALID");
   }
-  let appUrl: URL;
-  try {
-    appUrl = new URL(rawUrl);
-  } catch {
-    throw new Error("EMAIL_CONFIGURATION_INVALID");
+  let appUrl: URL | undefined;
+  if (!rawUrl) {
+    issues.push("NEXTAUTH_URL_REQUIRED");
+  } else {
+    try {
+      appUrl = new URL(rawUrl);
+    } catch {
+      // URL parser errors can contain the input, so retain only a fixed code.
+    }
+    if (!appUrl || !["http:", "https:"].includes(appUrl.protocol) || !appUrl.hostname ||
+      appUrl.username || appUrl.password || appUrl.search || appUrl.hash) {
+      issues.push("NEXTAUTH_URL_INVALID");
+    } else if (process.env.NODE_ENV === "production" && appUrl.protocol !== "https:") {
+      issues.push("NEXTAUTH_URL_HTTPS_REQUIRED");
+    }
   }
-  if (!["http:", "https:"].includes(appUrl.protocol) || !appUrl.hostname ||
-    appUrl.username || appUrl.password || appUrl.search || appUrl.hash ||
-    (process.env.NODE_ENV === "production" && appUrl.protocol !== "https:")) {
-    throw new Error("EMAIL_CONFIGURATION_INVALID");
+  if (issues.length || !appUrl) {
+    throw new EmailWorkerConfigurationError(issues, "EMAIL_CONFIGURATION_INVALID");
   }
   return { host, user, pass, port, from, appUrl };
 }

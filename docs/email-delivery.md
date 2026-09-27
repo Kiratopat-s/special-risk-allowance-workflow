@@ -23,7 +23,9 @@ The worker uses the existing `DATABASE_URL`, `NEXTAUTH_URL`, `EMAIL_HOST`,
 `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASS`, and `EMAIL_FROM` environment variables.
 Keep credentials in the deployment secret store. `NEXTAUTH_URL` must be an
 absolute application URL and must point to the correct environment; production
-requires HTTPS. `EMAIL_PORT` defaults to 587, with implicit TLS on port 465.
+requires HTTPS. An absent, empty or whitespace-only `EMAIL_PORT` defaults to 587,
+with implicit TLS on port 465. An absent, empty or whitespace-only `EMAIL_FROM`
+defaults to `ระบบ SRAW <noreply@pea.co.th>`.
 
 ```bash
 bunx prisma generate
@@ -79,6 +81,62 @@ never automatically reverse the database migration or delete queued/history
 records. When reverting to a release predating email delivery, stop the worker
 and restore only the older app; preserve the outbox for a subsequent compatible
 release.
+
+## Troubleshooting configuration preflight
+
+The deployment step **Validate email worker configuration without sending mail**
+checks local configuration only. A failure here does not establish an SMTP
+connection problem, rejected credentials, an unavailable database, or a conflict
+on health port 3101: those connections and the health listener have not started.
+The workflow stops before migrations or service replacement, leaving the existing
+running services in place.
+
+Check the GitHub Environment selected by the deployment: pushes to `main` use
+`uat`; `prod-*` tags use `production`. The reusable deployment job reads the
+following exact settings. A value stored as a Secret is not read by a `vars.*`
+mapping, and a value stored as a Variable is not read by a `secrets.*` mapping.
+
+| Setting | GitHub source used by the workflow | Requirement |
+| --- | --- | --- |
+| `EMAIL_HOST` | Variable: `vars.EMAIL_HOST` | SMTP hostname, required |
+| `EMAIL_PORT` | Variable: `vars.EMAIL_PORT` | Optional; defaults to 587; otherwise an integer from 1 to 65535 |
+| `EMAIL_FROM` | Variable: `vars.EMAIL_FROM` | Optional; otherwise one valid sender mailbox, optionally with a display name |
+| `NEXTAUTH_URL` | Variable: `vars.NEXTAUTH_URL` | Absolute application URL; HTTPS is required in the deployed worker |
+| `EMAIL_USER` | Secret: `secrets.EMAIL_USER` | SMTP username, required |
+| `EMAIL_PASS` | Secret: `secrets.EMAIL_PASS` | SMTP password, required |
+| `DATABASE_URL` | Secret: `secrets.DATABASE_URL` | Valid PostgreSQL connection URL, required |
+
+Both the Docker worker image and Compose set `NODE_ENV=production`. This includes
+the `uat` deployment, so an HTTP `NEXTAUTH_URL` fails preflight there as well.
+Use the public HTTPS application URL for that environment. The older external
+leader email path could silently skip missing SMTP settings; it did not impose
+this worker's startup validation. A previously successful app deployment therefore
+does not establish that all worker settings are present and valid.
+
+The CLI now reports all detected configuration issues using safe field-specific
+codes, without printing their values. For example:
+
+```text
+EMAIL_USER_REQUIRED
+NEXTAUTH_URL_HTTPS_REQUIRED
+DATABASE_URL_INVALID
+```
+
+Correct each reported setting in its mapped GitHub Variable or Secret and rerun
+the deployment. Missing required values use codes such as `EMAIL_HOST_REQUIRED`,
+`EMAIL_USER_REQUIRED`, `EMAIL_PASS_REQUIRED`, `NEXTAUTH_URL_REQUIRED` and
+`DATABASE_URL_REQUIRED`. Malformed host, port, sender or URL settings use
+`EMAIL_HOST_INVALID`, `EMAIL_PORT_INVALID`, `EMAIL_FROM_INVALID`,
+`NEXTAUTH_URL_INVALID` or `DATABASE_URL_INVALID`. Blank optional sender and port
+values use their defaults and do not fail validation by themselves.
+
+An older log containing only `WORKER_STARTUP_FAILED` does not identify which
+setting was missing or invalid. Do not infer a particular missing value from that
+message; use the updated preflight output. For a manually configured environment,
+run `bun run email:worker --check-config`, or the Docker preflight command above.
+A successful check confirms local syntax and required values only. SMTP
+reachability, authentication and actual delivery still require a controlled UAT
+delivery test.
 
 ## Operations
 
