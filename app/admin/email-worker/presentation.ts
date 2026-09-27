@@ -37,7 +37,7 @@ export function safeCode(value: string | null | undefined) {
   return value && /^[A-Z][A-Z0-9_]{0,79}$/.test(value) ? value : null;
 }
 
-export function errorDescription(value: string | null | undefined) {
+export function errorMessage(value: string | null | undefined) {
   const code = safeCode(value);
   if (!code) return value ? "ไม่สามารถแสดงรายละเอียดข้อผิดพลาดนี้ได้" : "—";
   const descriptions: Record<string, string> = {
@@ -60,6 +60,16 @@ export function errorDescription(value: string | null | undefined) {
     TRANSPORT_UNEXPECTED: "ระบบส่งอีเมลขัดข้อง",
     DATABASE_CONNECTION_FAILED: "worker เชื่อมต่อฐานข้อมูลไม่สำเร็จ",
     DELIVERY_PROCESSING_FAILED: "worker ประมวลผลงานไม่สำเร็จ",
+    HEALTH_SERVER_FAILED: "บริการตรวจสถานะ worker ไม่พร้อมใช้งาน",
+    WORKER_RUNTIME_FAILED: "worker พบข้อผิดพลาดระหว่างทำงาน",
+    SHUTDOWN_DELIVERY_TIMEOUT: "งานปัจจุบันไม่เสร็จภายในเวลาที่รอปิด worker",
+    SHUTDOWN_INCOMPLETE: "worker ยังหยุดทำงานไม่สมบูรณ์",
   };
-  return descriptions[code] ? `${descriptions[code]} (${code})` : code;
+  return descriptions[code] ?? "ไม่ทราบรายละเอียดข้อผิดพลาด กรุณาตรวจสอบบันทึกของ worker";
+}
+
+export function errorDescription(value: string | null | undefined) {
+  const code = safeCode(value);
+  const message = errorMessage(value);
+  return code ? `${message} (${code})` : message;
 }

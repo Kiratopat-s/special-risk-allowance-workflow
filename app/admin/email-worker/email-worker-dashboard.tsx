@@ -2,22 +2,21 @@
 
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { Alert, MenuItem, Skeleton, TextField } from "@mui/material";
-import { RefreshCw, Search } from "lucide-react";
+import { RefreshCw, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { getEmailWorkerJob, getEmailWorkerOverview, listEmailWorkerJobs, retryEmailDelivery } from "@/app/actions/email-deliveries";
 import type { EmailDashboardFilter } from "@/lib/domains/email-delivery/dashboard-types";
 import { runServerAction } from "@/lib/deployment/client";
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/workflow-ui/button";
 import { Input } from "@/components/workflow-ui/input";
 import { LoadingButton } from "@/components/workflow-ui/loading-button";
 import { PaginationControls } from "@/components/workflow-ui/pagination-controls";
-import { Table, TableBody, TableCell, TableContainer, TableHead, TableHeader, TableRow } from "@/components/workflow-ui/table";
 import { Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogTitle } from "@/components/workflow-ui/dialog";
 import { WorkerOverview } from "./overview";
 import { JobDetails } from "./job-details";
-import { deliveryLabels, displayMonth, displayTime, errorDescription } from "./presentation";
+import { JobList } from "./job-list";
+import { deliveryLabels, displayTime } from "./presentation";
 import { parseEmailWorkerQuery, patchEmailWorkerQuery } from "./query-state";
 import { useLiveRead } from "./use-live-read";
 
@@ -33,17 +32,21 @@ function Filters({ filters, apply }: { filters: EmailDashboardFilter; apply: (va
   const [search, setSearch] = useState(filters.search || "");
   const [from, setFrom] = useState(filters.from || "");
   const [to, setTo] = useState(filters.to || "");
-  return <form className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_180px_170px_170px_auto]" onSubmit={(event) => {
+  return <form className="grid grid-cols-2 items-end gap-3 xl:grid-cols-[minmax(200px,1fr)_150px_150px_150px_auto_auto]" onSubmit={(event) => {
     event.preventDefault();
     apply({ search: search.trim(), from, to, page: 1 });
   }}>
-    <div className="space-y-1.5"><Label htmlFor="worker-job-search">ค้นหางานอีเมล</Label><Input id="worker-job-search" placeholder="ชื่อ อีเมล รหัสงาน หรือเอกสาร" value={search} onChange={(event) => setSearch(event.target.value)} maxLength={200} /></div>
-    <TextField select label="สถานะงาน" size="small" value={filters.status || ""} onChange={(event) => apply({ status: event.target.value, page: 1 })}>
+    <div className="col-span-2 min-w-0 space-y-1.5 xl:col-span-1"><Label htmlFor="worker-job-search">ค้นหางานอีเมล</Label><Input id="worker-job-search" className="min-h-11" placeholder="ชื่อ อีเมล รหัสงาน หรือเอกสาร" value={search} onChange={(event) => setSearch(event.target.value)} maxLength={200} /></div>
+    <TextField select label="สถานะงาน" size="small" className="col-span-2 xl:col-span-1 [&_.MuiInputBase-root]:min-h-11" value={filters.status || ""} onChange={(event) => apply({ status: event.target.value, page: 1 })}>
       <MenuItem value="">ทุกสถานะ</MenuItem>{Object.entries(deliveryLabels).map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}
     </TextField>
-    <TextField type="date" label="จัดคิวตั้งแต่" value={from} onChange={(event) => setFrom(event.target.value)} size="small" slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: to || undefined } }} />
-    <TextField type="date" label="จัดคิวถึง" value={to} onChange={(event) => setTo(event.target.value)} size="small" slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: from || undefined } }} />
-    <Button type="submit"><Search aria-hidden="true" className="h-4 w-4" />ค้นหา</Button>
+    <TextField type="date" label="จัดคิวตั้งแต่" className="[&_.MuiInputBase-root]:min-h-11" value={from} onChange={(event) => setFrom(event.target.value)} size="small" slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: to || undefined } }} />
+    <TextField type="date" label="จัดคิวถึง" className="[&_.MuiInputBase-root]:min-h-11" value={to} onChange={(event) => setTo(event.target.value)} size="small" slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: from || undefined } }} />
+    <Button type="submit" className="min-h-11"><Search aria-hidden="true" />ค้นหา</Button>
+    <Button variant="ghost" className="min-h-11" onClick={() => {
+      setSearch(""); setFrom(""); setTo("");
+      apply({ search: null, from: null, to: null, status: null, page: 1 });
+    }}><X aria-hidden="true" />ล้างตัวกรอง</Button>
   </form>;
 }
 
@@ -55,6 +58,7 @@ export function EmailWorkerDashboard({ initialQuery = "" }: { initialQuery?: str
   const [revision, setRevision] = useState(0);
   const [accessDenied, setAccessDenied] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [filterReset, setFilterReset] = useState(0);
   const denyAccess = useCallback(() => setAccessDenied(true), []);
   const navigate = useCallback((patch: Record<string, string | number | null | undefined>) => {
     const next = patchEmailWorkerQuery(window.location.search, patch);
@@ -76,6 +80,10 @@ export function EmailWorkerDashboard({ initialQuery = "" }: { initialQuery?: str
   const detailCurrent = detail.dataKey === detailKey;
 
   const refreshAll = () => { overview.refresh(); jobs.refresh(); if (selected.deliveryId) detail.refresh(); };
+  const viewFailed = () => {
+    navigate({ status: "FAILED", search: null, from: null, to: null, page: 1 });
+    setFilterReset((value) => value + 1);
+  };
 
   async function retry() {
     if (retrying || !visibleDetail?.canRetry || visibleDetail.status !== "FAILED") return;
@@ -97,52 +105,35 @@ export function EmailWorkerDashboard({ initialQuery = "" }: { initialQuery?: str
     }
   }
 
-  if (accessDenied) return <Alert severity="error" action={<Button variant="outline" onClick={() => window.location.reload()}>โหลดหน้าใหม่</Button>}>เซสชันหมดอายุหรือไม่มีสิทธิ์ดู Email Worker กรุณาเข้าสู่ระบบด้วยบัญชี super-admin</Alert>;
+  if (accessDenied) return <Alert severity="error" action={<Button variant="outline" className="min-h-11" onClick={() => window.location.reload()}>โหลดหน้าใหม่</Button>}>เซสชันหมดอายุหรือไม่มีสิทธิ์ดู Email Worker กรุณาเข้าสู่ระบบด้วยบัญชี super-admin</Alert>;
 
-  return <div className="space-y-8">
+  return <div className="min-w-0 space-y-4">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="space-y-2">
-        <h1 className="text-xl font-semibold">Email Worker</h1>
-        <p className="max-w-prose text-sm text-muted-foreground">ตรวจสอบคิวอีเมลแจ้งหัวหน้ายืนยันการปฏิบัติงาน สถานะ “SMTP รับแล้ว” ยังไม่ยืนยันว่าเข้ากล่องจดหมายหรืออ่านแล้ว</p>
-        <p className="text-xs text-muted-foreground">รีเฟรชอัตโนมัติทุก 15 วินาทีเมื่อเปิดหน้านี้ · แสดงเวลาไทย</p>
+      <div className="min-w-0 space-y-1">
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1"><h1 className="text-xl font-semibold">Email Worker</h1><p className="text-sm text-muted-foreground">ตรวจสอบงานแจ้งหัวหน้ายืนยันการปฏิบัติงาน</p></div>
+        <p className="text-xs text-muted-foreground">รีเฟรชทุก 15 วินาทีเมื่อเปิดหน้านี้ · เวลาไทย{jobs.loadedAt ? ` · อัปเดตรายการ ${displayTime(jobs.loadedAt)}` : ""}</p>
+        {(overview.error || jobs.error) && <p className="text-xs font-medium text-destructive">โหลดข้อมูลล่าสุดไม่สำเร็จ ข้อมูลที่แสดงอาจเก่า</p>}
       </div>
-      <Button variant="outline" disabled={overview.loading || jobs.loading} onClick={refreshAll}><RefreshCw aria-hidden="true" className="h-4 w-4" />รีเฟรชทั้งหมด</Button>
+      <Button variant="outline" className="min-h-11" disabled={overview.loading || jobs.loading || retrying} onClick={refreshAll}><RefreshCw aria-hidden="true" />รีเฟรชทั้งหมด</Button>
     </div>
 
     {overview.error && <Alert severity="error">โหลดภาพรวมไม่สำเร็จ: {overview.error}{overview.data ? " · กำลังแสดงข้อมูลจากการโหลดครั้งล่าสุด" : ""}</Alert>}
-    {overview.data ? <WorkerOverview overview={overview.data} openJob={openJob} /> : !overview.error && <div aria-label="กำลังโหลดภาพรวม" className="space-y-3"><Skeleton variant="rounded" height={120} /><Skeleton variant="rounded" height={90} /></div>}
+    {overview.data ? <WorkerOverview overview={overview.data} openJob={openJob} onViewFailed={viewFailed} /> : !overview.error && <div aria-label="กำลังโหลดภาพรวม" className="space-y-3"><Skeleton variant="rounded" height={100} /><Skeleton variant="rounded" height={70} /></div>}
 
-    <section aria-labelledby="jobs-heading" className="space-y-4">
-      <div><h2 id="jobs-heading" className="text-lg font-semibold">รายการงานอีเมล</h2><p className="mt-1 text-sm text-muted-foreground">หนึ่งงานต่อเอกสาร หัวหน้า และรอบคำขอยืนยัน · ช่วงวันที่อ้างอิงเวลาจัดคิว</p></div>
-      <Filters key={`${search || ""}|${from || ""}|${to || ""}`} filters={filters} apply={navigate} />
+    <section aria-labelledby="jobs-heading" className="min-w-0 space-y-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1"><h2 id="jobs-heading" className="text-lg font-semibold">รายการงานอีเมล</h2><p className="text-xs text-muted-foreground">ช่วงวันที่อ้างอิงเวลาจัดคิว · อีเมลที่แสดงคืออีเมลล่าสุดที่บันทึกในงาน</p></div>
+      <Filters key={`${search || ""}|${from || ""}|${to || ""}|${filterReset}`} filters={filters} apply={navigate} />
       {jobs.error && <Alert severity="error">โหลดรายการไม่สำเร็จ: {jobs.error}{jobs.data ? " · รายการที่แสดงมาจากการโหลดครั้งล่าสุดและอาจไม่ตรงกับตัวกรองปัจจุบัน" : ""}</Alert>}
-      <p aria-live="polite" className="text-xs text-muted-foreground">{jobs.loading ? "กำลังอัปเดตรายการ…" : jobs.data ? `${jobs.data.pagination.total.toLocaleString("th-TH")} งาน · อัปเดตเมื่อ ${displayTime(jobs.loadedAt)}` : ""}</p>
+      <p aria-live="polite" className="min-h-4 text-xs text-muted-foreground">{jobs.data ? `${jobs.data.pagination.total.toLocaleString("th-TH")} งาน` : ""}{jobs.loading ? " · กำลังอัปเดตรายการ…" : ""}</p>
       {!jobs.data && !jobs.error && <Skeleton aria-label="กำลังโหลดรายการงาน" variant="rounded" height={180} />}
       {jobs.data && <>
-        <p id="worker-jobs-scroll-hint" className="text-xs text-muted-foreground md:hidden">เลื่อนตารางแนวนอนเพื่อดูเวลาและปุ่มรายละเอียด</p>
-        <TableContainer role="region" aria-label="ตารางงานอีเมล" aria-describedby="worker-jobs-scroll-hint" tabIndex={0} aria-busy={jobs.loading} className="rounded-lg border bg-card">
-          <Table className="min-w-[980px]">
-            <TableHead><TableRow><TableHeader>ผู้รับ / เอกสาร</TableHeader><TableHeader>สถานะ / สาเหตุ</TableHeader><TableHeader>ครั้งที่ประมวลผล</TableHeader><TableHeader>เวลา</TableHeader><TableHeader>รายละเอียด</TableHeader></TableRow></TableHead>
-            <TableBody>{jobs.data.data.length === 0 ? <TableRow><TableCell colSpan={5} className="py-10 text-center"><p className="font-medium">ไม่พบงานอีเมล</p><p className="mt-1 text-sm text-muted-foreground">เปลี่ยนตัวกรอง หรือรอเอกสารที่สร้างคำขอยืนยันใหม่</p></TableCell></TableRow> : jobs.data.data.map((job) => <TableRow key={job.id}>
-              <TableCell className="max-w-80 align-top">
-                <p className="break-all font-medium">{job.leaderName || "ไม่พบข้อมูลชื่อหัวหน้า"}</p>
-                <p className="mt-1 break-all text-sm">{job.recipientEmail || "ไม่มีอีเมลที่บันทึกไว้"}</p>
-                <p className="mt-2 text-xs text-muted-foreground">ผู้ยื่น: {job.claimantName || "ไม่พบข้อมูลผู้ยื่น"} · {displayMonth(job.expenseMonth)}</p>
-                <p className="mt-1 break-all text-xs text-muted-foreground">เอกสาร: {job.expenseClaimId}</p>
-                {job.contextSource !== "SNAPSHOT" && <p className="mt-1 text-xs text-muted-foreground">{job.contextSource === "CURRENT" ? "แสดงชื่อและเดือนจากข้อมูลปัจจุบัน งานเดิมไม่มีข้อมูลย้อนหลัง" : "ไม่พบข้อมูลย้อนหลังหรือข้อมูลปัจจุบัน"}</p>}
-              </TableCell>
-              <TableCell className="max-w-64 align-top"><Badge variant={job.status === "FAILED" ? "destructive" : "secondary"}>{deliveryLabels[job.status]}</Badge>{job.lastErrorCode && <p className="mt-2 break-words text-xs text-muted-foreground">{errorDescription(job.lastErrorCode)}</p>}</TableCell>
-              <TableCell className="align-top tabular-nums"><p>{job.attemptCount} <span className="text-xs text-muted-foreground">ทั้งหมด</span></p><p className="mt-1 text-xs text-muted-foreground">รอบนี้ {job.cycleAttemptCount}</p></TableCell>
-              <TableCell className="align-top text-xs"><p>จัดคิว: {displayTime(job.createdAt)}</p><p className="mt-1">อัปเดต: {displayTime(job.updatedAt)}</p>{job.nextAttemptAt && <p className="mt-1">ครั้งถัดไป: {displayTime(job.nextAttemptAt)}</p>}{job.acceptedAt && <p className="mt-1">SMTP รับ: {displayTime(job.acceptedAt)}</p>}</TableCell>
-              <TableCell className="align-top"><Button size="sm" variant="outline" aria-label={`รายละเอียดงาน ${job.id}`} onClick={() => openJob(job.id)}>รายละเอียด</Button><p className="mt-2 max-w-40 break-all text-xs text-muted-foreground">{job.id}</p></TableCell>
-            </TableRow>)}</TableBody>
-          </Table>
-        </TableContainer>
-        <PaginationControls pagination={jobs.data.pagination} onPrevious={() => navigate({ page: jobs.data!.pagination.page - 1 })} onNext={() => navigate({ page: jobs.data!.pagination.page + 1 })} />
+        <JobList jobs={jobs.data.data} loading={jobs.loading} openJob={openJob} />
+        <p className="text-xs text-muted-foreground">“SMTP รับแล้ว” ยังไม่ยืนยันว่าเข้ากล่องจดหมายหรืออ่านแล้ว · จำนวนครั้งรวมการประมวลผลที่ไม่ถึงขั้นส่ง SMTP</p>
+        <div className="[&_button]:min-h-11 [&_button]:min-w-11"><PaginationControls pagination={jobs.data.pagination} onPrevious={() => navigate({ page: jobs.data!.pagination.page - 1 })} onNext={() => navigate({ page: jobs.data!.pagination.page + 1 })} /></div>
       </>}
     </section>
 
-    <Dialog open={selected.deliveryId !== null} onClose={closeJob} presentation="drawer" busy={retrying}>
+    <Dialog open={selected.deliveryId !== null} onClose={closeJob} presentation="drawer" busy={retrying} className="[&_button]:min-h-11 [&_button]:min-w-11">
       <DialogClose onClose={closeJob} />
       <DialogHeader><DialogTitle>รายละเอียดงานอีเมล</DialogTitle><p className="break-all text-xs text-muted-foreground">{selected.deliveryId}</p></DialogHeader>
       <DialogBody>
@@ -151,7 +142,7 @@ export function EmailWorkerDashboard({ initialQuery = "" }: { initialQuery?: str
         {visibleDetail ? <JobDetails job={visibleDetail} loading={detail.loading} setAttemptPage={(attemptPage) => navigate({ attemptPage })} /> : !detail.error && <Skeleton aria-label="กำลังโหลดรายละเอียดงาน" variant="rounded" height={220} />}
       </DialogBody>
       <DialogFooter>
-        <Button variant="outline" disabled={detail.loading || retrying} onClick={detail.refresh}>รีเฟรชรายละเอียด</Button>
+        <Button variant="outline" className="min-h-11" disabled={detail.loading || retrying} onClick={detail.refresh}><RefreshCw aria-hidden="true" />รีเฟรชรายละเอียด</Button>
         {visibleDetail?.status === "FAILED" && visibleDetail.canRetry && <LoadingButton isLoading={retrying} loadingText="กำลังจัดคิว" disabled={!detailCurrent} onClick={() => void retry()}>ลองประมวลผลใหม่</LoadingButton>}
         {visibleDetail?.status === "FAILED" && !visibleDetail.canRetry && <p className="w-full text-xs text-muted-foreground">ลองใหม่ได้เมื่อคำขอยังรอยืนยันและข้อมูลผู้รับพร้อมใช้งาน</p>}
       </DialogFooter>

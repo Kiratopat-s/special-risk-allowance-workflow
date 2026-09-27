@@ -40,7 +40,7 @@ beforeEach(() => {
   mocks.hasRole.mockReturnValue(true);
   mocks.redirect.mockImplementation((path: string) => { throw new Error(`redirect:${path}`); });
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 it("shows global queue counts, worker activity, processing counts and honest SMTP meaning", async () => {
   mocks.overview.mockResolvedValue(ok({ ...emailOverviewFixture, workers: [
@@ -53,9 +53,68 @@ it("shows global queue counts, worker activity, processing counts and honest SMT
   expect(screen.getByText("ครั้งที่ประมวลผล")).toBeTruthy();
   expect(screen.getByText("previous-worker").closest("details")?.open).toBe(false);
   await userEvent.click(screen.getByText("รอบ worker ก่อนหน้า (1)"));
+  const previousRuns = screen.getByRole("region", { name: "รอบ worker ก่อนหน้า" });
+  await userEvent.click(within(previousRuns).getByText("รายละเอียด instance"));
   expect(screen.getByText("previous-worker").closest("details")?.open).toBe(true);
   expect(screen.queryByRole("button", { name: "ลองประมวลผลใหม่" })).toBeNull();
   expect(mocks.detail).not.toHaveBeenCalled();
+});
+
+it("opens all failed jobs by resetting submitted and draft filters through the URL", async () => {
+  window.history.replaceState(null, "", "/admin/email-worker?status=ACCEPTED&page=3&search=old&from=2026-09-01&to=2026-09-27");
+  mount(); await ready();
+  fireEvent.change(screen.getByLabelText("ค้นหางานอีเมล"), { target: { value: "unsent search" } });
+  await userEvent.click(screen.getByRole("button", { name: "ดูงานล้มเหลวทั้งหมด" }));
+  await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith({ page: 1, status: "FAILED", search: undefined, from: undefined, to: undefined }));
+  expect(window.location.search).toBe("?status=FAILED");
+  expect(screen.getByLabelText<HTMLInputElement>("ค้นหางานอีเมล").value).toBe("");
+  expect(screen.getByLabelText<HTMLInputElement>("จัดคิวตั้งแต่").value).toBe("");
+  expect(screen.getByLabelText<HTMLInputElement>("จัดคิวถึง").value).toBe("");
+  expect(mocks.overview).toHaveBeenCalledTimes(1);
+});
+
+it("clears active filters and also resets drafts when the URL already has no filters", async () => {
+  window.history.replaceState(null, "", "/admin/email-worker?status=FAILED&page=2&search=old&from=2026-09-01");
+  mount(); await ready();
+  await userEvent.click(screen.getByRole("button", { name: "ล้างตัวกรอง" }));
+  await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith({ page: 1, status: undefined, search: undefined, from: undefined, to: undefined }));
+  expect(window.location.search).toBe("");
+  fireEvent.change(screen.getByLabelText("ค้นหางานอีเมล"), { target: { value: "draft" } });
+  fireEvent.change(screen.getByLabelText("จัดคิวถึง"), { target: { value: "2026-09-27" } });
+  await userEvent.click(screen.getByRole("button", { name: "ล้างตัวกรอง" }));
+  expect(screen.getByLabelText<HTMLInputElement>("ค้นหางานอีเมล").value).toBe("");
+  expect(screen.getByLabelText<HTMLInputElement>("จัดคิวถึง").value).toBe("");
+});
+
+it("preserves unfinished search and dates when refreshing the displayed jobs", async () => {
+  mount(); await ready();
+  fireEvent.change(screen.getByLabelText("ค้นหางานอีเมล"), { target: { value: "กำลังค้นหาหัวหน้า" } });
+  fireEvent.change(screen.getByLabelText("จัดคิวตั้งแต่"), { target: { value: "2026-09-01" } });
+  await userEvent.click(screen.getByRole("button", { name: "รีเฟรชทั้งหมด" }));
+  await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2));
+  expect(screen.getByLabelText<HTMLInputElement>("ค้นหางานอีเมล").value).toBe("กำลังค้นหาหัวหน้า");
+  expect(screen.getByLabelText<HTMLInputElement>("จัดคิวตั้งแต่").value).toBe("2026-09-01");
+  expect(mocks.list).toHaveBeenLastCalledWith(expect.objectContaining({ search: undefined, from: undefined }));
+});
+
+it("shows actionable mobile rows and copies the full job ID rather than its abbreviation", async () => {
+  vi.stubGlobal("matchMedia", vi.fn((query: string) => ({ matches: false, media: query, onchange: null,
+    addListener: vi.fn(), removeListener: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: vi.fn(),
+  })));
+  const user = userEvent.setup();
+  const copy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+  const id = "delivery-with-a-long-identifier-0123456789abcdef";
+  mocks.list.mockResolvedValue(ok(emailPageFixture([emailJobFixture({ id })])));
+  mocks.detail.mockResolvedValue(ok(emailDetailFixture({ id })));
+  mount();
+  const mobile = await screen.findByRole("region", { name: "รายการงานอีเมลบนมือถือ" });
+  expect(screen.queryByRole("table")).toBeNull();
+  expect(within(mobile).getByText("historical@example.test")).toBeTruthy();
+  await user.click(within(mobile).getByRole("button", { name: "คัดลอกรหัสงาน" }));
+  expect(copy).toHaveBeenCalledExactlyOnceWith(id);
+  await user.click(within(mobile).getByRole("button", { name: `รายละเอียดงาน ${id}` }));
+  await screen.findByRole("dialog", { name: "รายละเอียดงานอีเมล" });
+  await waitFor(() => expect(mocks.detail).toHaveBeenCalledWith(id, 1));
 });
 
 it("persists search, dates and pagination and restores filters with browser history", async () => {
@@ -108,6 +167,7 @@ it("loads drawer details lazily, distinguishes historical/current recipients and
   await userEvent.click(within(dialog).getByText("เปิดข้อมูลผู้รับและใบสั่งปัจจุบัน"));
   expect(within(dialog).getByText("current@example.test").closest("details")?.open).toBe(true);
   expect(within(dialog).getByText("ข้อมูลที่บันทึกเมื่อเข้าคิว")).toBeTruthy();
+  expect(within(dialog).getByRole("heading", { name: /ประวัติการประมวลผลและจัดคิว/ }).compareDocumentPosition(within(dialog).getByText("ข้อมูลที่บันทึกเมื่อเข้าคิว")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(within(dialog).getByText("ผู้รับที่ใช้ในครั้งนี้: historical@example.test")).toBeTruthy();
   expect(new URLSearchParams(window.location.search).get("deliveryId")).toBe("delivery-fixture");
   const retryRequest = deferred<Result<void>>();
@@ -125,6 +185,32 @@ it("loads drawer details lazily, distinguishes historical/current recipients and
   expect(new URLSearchParams(window.location.search).has("deliveryId")).toBe(false);
 });
 
+it("does not turn a recovered worker's historical error into a current problem", async () => {
+  mocks.overview.mockResolvedValue(ok({ ...emailOverviewFixture, failedCount: 0, workers: [{
+    ...emailOverviewFixture.workers[0], state: "IDLE", currentDeliveryId: null, lastErrorCode: "DATABASE_CONNECTION_FAILED",
+  }] }));
+  mount(); await ready();
+  expect(screen.queryByText(/worker ที่มีปัญหา/)).toBeNull();
+  expect(screen.getByText("พร้อมรับงาน")).toBeTruthy();
+  const oldError = screen.getByText(/worker เชื่อมต่อฐานข้อมูลไม่สำเร็จ/);
+  expect(oldError.closest("details")?.open).toBe(false);
+});
+
+it("labels manual requeue events separately from processing attempts", async () => {
+  const job = emailDetailFixture();
+  mocks.detail.mockResolvedValue(ok(emailDetailFixture({ status: "PENDING", cycleAttemptCount: 0, canRetry: false, attempts: emailPageFixture([
+    { ...job.attempts.data[0], id: "manual-event", attemptNumber: 0, outcome: "MANUAL_RETRY", requestedById: "admin", requestedByName: "ผู้ดูแลระบบ", errorCode: null },
+    ...job.attempts.data,
+  ]) })));
+  window.history.replaceState(null, "", "/admin/email-worker?deliveryId=delivery-fixture");
+  mount();
+  const dialog = await screen.findByRole("dialog", { name: "รายละเอียดงานอีเมล" });
+  await within(dialog).findByText("ผู้ดูแลจัดคิวใหม่");
+  expect(within(dialog).getByText("อีเมลที่บันทึกขณะจัดคิวใหม่: historical@example.test")).toBeTruthy();
+  expect(within(dialog).queryByText("ประมวลผลครั้งที่ 0")).toBeNull();
+  expect(within(dialog).getByText("ประมวลผลครั้งที่ 6")).toBeTruthy();
+});
+
 it("restores deep-linked attempt pages and labels missing legacy snapshots", async () => {
   window.history.replaceState(null, "", "/admin/email-worker?deliveryId=delivery-fixture&attemptPage=2");
   mocks.detail.mockResolvedValue(ok(emailDetailFixture({ contextSnapshot: null, attempts: emailPageFixture([], 2, 26) })));
@@ -133,6 +219,7 @@ it("restores deep-linked attempt pages and labels missing legacy snapshots", asy
   await within(dialog).findByText(/งานเดิมนี้ไม่มีข้อมูลย้อนหลัง/);
   expect(mocks.detail).toHaveBeenCalledWith("delivery-fixture", 2);
   await userEvent.click(within(dialog).getByRole("button", { name: "Previous page" }));
+  expect(document.activeElement).toBe(within(dialog).getByRole("heading", { name: /ประวัติการประมวลผลและจัดคิว/ }));
   await waitFor(() => expect(mocks.detail).toHaveBeenLastCalledWith("delivery-fixture", 1));
   expect(new URLSearchParams(window.location.search).has("attemptPage")).toBe(false);
 });
