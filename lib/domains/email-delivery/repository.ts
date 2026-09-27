@@ -52,18 +52,18 @@ export async function enqueueInternalLeaderEmails(tx: Prisma.TransactionClient, 
 }
 
 export async function loadEmailContext(client: ContextClient, delivery: Pick<EmailDelivery, "expenseClaimId" | "leaderUserId" | "verificationIds">) {
-  const [claim, leader, verifications] = await Promise.all([
-    client.expenseClaim.findUnique({
-      where: { id: delivery.expenseClaimId },
-      select: claimContextSelect,
-    }),
-    client.user.findUnique({ where: { id: delivery.leaderUserId }, select: leaderContextSelect }),
-    client.leaderVerification.findMany({
-      where: { id: { in: delivery.verificationIds }, expenseClaimId: delivery.expenseClaimId, leaderUserId: delivery.leaderUserId },
-      select: verificationContextSelect,
-      orderBy: { id: "asc" },
-    }),
-  ]);
+  // This helper also receives transaction clients, which share one PostgreSQL
+  // connection and must finish each query before issuing the next one.
+  const claim = await client.expenseClaim.findUnique({
+    where: { id: delivery.expenseClaimId },
+    select: claimContextSelect,
+  });
+  const leader = await client.user.findUnique({ where: { id: delivery.leaderUserId }, select: leaderContextSelect });
+  const verifications = await client.leaderVerification.findMany({
+    where: { id: { in: delivery.verificationIds }, expenseClaimId: delivery.expenseClaimId, leaderUserId: delivery.leaderUserId },
+    select: verificationContextSelect,
+    orderBy: { id: "asc" },
+  });
   return { claim, leader, verifications, verificationIds: [...delivery.verificationIds] };
 }
 

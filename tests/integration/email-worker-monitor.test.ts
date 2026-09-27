@@ -32,11 +32,14 @@ afterAll(async () => { await prisma.$disconnect(); });
 
 describe("worker monitoring with PostgreSQL", () => {
   it("registers, records progress and jobs, and stops without changing delivery data", async () => {
-    const { id, monitor } = fixtureMonitor();
+    // Registration retains monitor construction time, including time spent waiting
+    // for the database. Measure the lower bound before constructing the monitor.
     const before = await measuredAt();
+    const { id, monitor } = fixtureMonitor();
     await monitor.start();
     let run = await prisma.emailWorkerRun.findUniqueOrThrow({ where: { id } });
-    expect(run.startedAt.getTime()).toBeGreaterThanOrEqual(before.getTime() - 100);
+    expect(run.startedAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect(run.startedAt.getTime()).toBeLessThanOrEqual(run.lastHeartbeatAt.getTime());
     expect(deriveWorkerState(run, await measuredAt())).toBe("STARTING");
     const startedAt = run.startedAt;
     await monitor.progress();
@@ -90,14 +93,20 @@ describe("worker monitoring with PostgreSQL", () => {
   it("recovers missing registration after a failed write and keeps the original run start", async () => {
     const id = randomUUID();
     ownedRunIds.push(id);
+    const monotonicClock = vi.spyOn(performance, "now").mockReturnValue(1_000);
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     const execute = vi.fn().mockRejectedValueOnce(new Error("private-database-response"))
       .mockImplementation((query) => prisma.$executeRaw(query));
     const monitor = createEmailWorkerMonitor({ $executeRaw: execute }, id);
     await expect(monitor.start()).resolves.toBeUndefined();
     expect(await prisma.emailWorkerRun.findUnique({ where: { id } })).toBeNull();
+    // Simulate a long registration outage without relying on sleeps or CI speed.
+    monotonicClock.mockReturnValue(181_000);
     await monitor.heartbeat();
     const registered = await prisma.emailWorkerRun.findUniqueOrThrow({ where: { id } });
+    expect(registered.lastHeartbeatAt.getTime() - registered.startedAt.getTime()).toBe(180_000);
+    expect(deriveWorkerState(registered, registered.lastHeartbeatAt)).toBe("STALLED");
+    monotonicClock.mockReturnValue(241_000);
     await monitor.start();
     const restarted = await prisma.emailWorkerRun.findUniqueOrThrow({ where: { id } });
     expect(restarted.startedAt).toEqual(registered.startedAt);

@@ -61,12 +61,11 @@ export function createEmailDashboardRepository(client: PrismaClient) {
         const rows = await tx.emailDelivery.findMany({
           where: { id: { in: ids.map((row) => row.id) } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         });
-        const [claims, leaders] = await Promise.all([
-          tx.expenseClaim.findMany({ where: { id: { in: rows.map((row) => row.expenseClaimId) } },
-            select: { id: true, expenseMonth: true, claimant: { select: { firstName: true, lastName: true } } } }),
-          tx.user.findMany({ where: { id: { in: rows.map((row) => row.leaderUserId) } },
-            select: { id: true, firstName: true, lastName: true } }),
-        ]);
+        // Interactive transactions use one connection; do not overlap its queries.
+        const claims = await tx.expenseClaim.findMany({ where: { id: { in: rows.map((row) => row.expenseClaimId) } },
+          select: { id: true, expenseMonth: true, claimant: { select: { firstName: true, lastName: true } } } });
+        const leaders = await tx.user.findMany({ where: { id: { in: rows.map((row) => row.leaderUserId) } },
+          select: { id: true, firstName: true, lastName: true } });
         return { rows, claims, leaders, pagination: pages };
       }, { isolationLevel: "RepeatableRead" });
     },
@@ -78,12 +77,10 @@ export function createEmailDashboardRepository(client: PrismaClient) {
         const pages = pagination(await tx.emailDeliveryAttempt.count({ where: { deliveryId: id } }), attemptPage);
         const attempts = await tx.emailDeliveryAttempt.findMany({ where: { deliveryId: id },
           orderBy: [{ startedAt: "desc" }, { id: "desc" }], skip: (pages.page - 1) * pageSize, take: pageSize });
-        const [context, actors, clock] = await Promise.all([
-          loadEmailContext(tx, row),
-          tx.user.findMany({ where: { id: { in: attempts.flatMap((attempt) => attempt.requestedById ? [attempt.requestedById] : []) } },
-            select: { id: true, firstName: true, lastName: true } }),
-          tx.$queryRaw<{ now: Date }[]>`SELECT CURRENT_TIMESTAMP AS now`,
-        ]);
+        const context = await loadEmailContext(tx, row);
+        const actors = await tx.user.findMany({ where: { id: { in: attempts.flatMap((attempt) => attempt.requestedById ? [attempt.requestedById] : []) } },
+          select: { id: true, firstName: true, lastName: true } });
+        const clock = await tx.$queryRaw<{ now: Date }[]>`SELECT CURRENT_TIMESTAMP AS now`;
         return { row, context, actors, attempts, pagination: pages, measuredAt: clock[0].now };
       }, { isolationLevel: "RepeatableRead" });
     },
@@ -105,11 +102,9 @@ export function createEmailDashboardRepository(client: PrismaClient) {
           min(next_attempt_at) FILTER (WHERE status IN ('PENDING', 'RETRY_WAIT') AND next_attempt_at <= ${measuredAt}) AS "oldestReadyAt"
           FROM email_deliveries`;
         const fresh = { stoppedAt: null, lastHeartbeatAt: { gte: new Date(measuredAt.getTime() - 90_000) } };
-        const [active, recent, activeWorkerCount] = await Promise.all([
-          tx.emailWorkerRun.findMany({ where: fresh, orderBy: [{ startedAt: "desc" }, { id: "desc" }] }),
-          tx.emailWorkerRun.findMany({ orderBy: [{ startedAt: "desc" }, { id: "desc" }], take: 20 }),
-          tx.emailWorkerRun.count({ where: fresh }),
-        ]);
+        const active = await tx.emailWorkerRun.findMany({ where: fresh, orderBy: [{ startedAt: "desc" }, { id: "desc" }] });
+        const recent = await tx.emailWorkerRun.findMany({ orderBy: [{ startedAt: "desc" }, { id: "desc" }], take: 20 });
+        const activeWorkerCount = await tx.emailWorkerRun.count({ where: fresh });
         const workers = [...new Map([...active, ...recent].map((worker) => [worker.id, worker])).values()]
           .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime() || b.id.localeCompare(a.id));
         return { ...totals, measuredAt, activeWorkerCount, workers };
