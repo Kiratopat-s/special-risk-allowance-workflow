@@ -73,6 +73,11 @@ function escapeHtml(value: string): string {
   })[character]!);
 }
 
+/** SMTP typings declare string recipients; some transports and older typings yield { address } objects. */
+function recipientEmail(recipient: string | { address?: string }): string {
+  return typeof recipient === "string" ? recipient : recipient.address ?? "";
+}
+
 function classifyFailure(cause: unknown): EmailSendResult {
   const details = cause && typeof cause === "object"
     ? cause as { code?: unknown; responseCode?: unknown } : {};
@@ -169,7 +174,7 @@ export async function sendInternalLeaderEmail(input: InternalLeaderEmailInput): 
       disableUrlAccess: true,
     });
     const accepted = Array.isArray(info.accepted) && info.accepted.some((recipient) =>
-      (typeof recipient === "string" ? recipient : recipient.address).toLowerCase() === to.toLowerCase());
+      recipientEmail(recipient).toLowerCase() === to.toLowerCase());
     return accepted
       ? { kind: "accepted", messageId }
       : { kind: "permanent_error", code: "SMTP_RECIPIENT_NOT_ACCEPTED" };
