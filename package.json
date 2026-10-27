@@ -2,7 +2,7 @@
   "name": "special-risk-allowance-workflow",
   "version": "0.1.1",
   "private": true,
-  "packageManager": "bun@1.4.0",
+  "packageManager": "bun@1.4.4",
   "scripts": {
     "dev": "bun run prepare:pdf && next dev",
     "devh": "bun run prepare:pdf && next dev --experimental-https -H local.sraw.space",

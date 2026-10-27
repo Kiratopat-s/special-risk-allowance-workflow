@@ -30,7 +30,7 @@ Run `bun run test` for parser, reader, review interaction, authorization, and do
 - Tailwind CSS v4 and shadcn-style UI primitives
 - Auth.js v5 with Keycloak
 - Prisma 7 with PostgreSQL and `@prisma/adapter-pg`
-- Bun 1.4.0 for dependency management and scripts
+- Bun 1.4.4 for dependency management and scripts
 - Node.js 24 LTS for Vitest and jsdom
 - Nodemailer for email and Web Push API for browser notifications
 
@@ -91,7 +91,7 @@ The seed script creates these system roles:
 
 ## Requirements
 
-- Bun `1.4.0`, matching `packageManager` in `package.json`
+- Bun `1.4.4`, matching `packageManager` in `package.json`
 - Node.js 24 LTS (`24.15.0` or newer) on `PATH` for the test toolchain
 - PostgreSQL
 - A Keycloak realm and client for Auth.js
