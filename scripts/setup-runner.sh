@@ -4,7 +4,7 @@ set -euo pipefail
 # GitHub Actions Self-Hosted Runner Setup for SRAW
 # Run this once on the Ubuntu server that hosts the application.
 
-RUNNER_VERSION="2.321.0"
+RUNNER_VERSION="2.338.2"
 RUNNER_ARCH="linux-x64"
 RUNNER_DIR="$HOME/actions-runner"
 
