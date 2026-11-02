@@ -8,6 +8,7 @@ export interface LeaderVerificationEntity {
     id: string;
     expenseClaimId: string;
     offSiteWorkId: string;
+    offSiteWorkRowId: string;
     leaderUserId: string | null;
     leaderEmail: string | null;
     token: string;
@@ -67,6 +68,7 @@ export interface LeaderVerificationQueueItem {
     id: string;
     expenseClaimId: string;
     offSiteWorkId: string;
+    offSiteWorkRowId: string;
     expiresAt: Date;
     verifiedAt: Date | null;
     createdAt: Date;
@@ -103,6 +105,7 @@ export type TokenVerificationView = {
 export interface CreateLeaderVerificationInput {
     expenseClaimId: string;
     offSiteWorkId: string;
+    offSiteWorkRowId: string;
     leaderUserId?: string | null;
     leaderEmail?: string | null;
     expiresAt: Date;

@@ -108,7 +108,7 @@ export const offSiteWorkRepository = {
    * Update an existing off-site work record
    */
   async update(
-    id: string,
+    rowId: string,
     data: UpdateOffSiteWorkInput
   ): Promise<OffSiteWorkEntity> {
     // Strip null bytes (0x00) from all string fields — PostgreSQL rejects them
@@ -159,7 +159,7 @@ export const offSiteWorkRepository = {
     }
 
     return prisma.offSiteWork.update({
-      where: { id },
+      where: { rowId },
       data: updateData,
     }) as Promise<OffSiteWorkEntity>;
   },
@@ -167,9 +167,9 @@ export const offSiteWorkRepository = {
   /**
    * Soft-delete an off-site work record
    */
-  async softDelete(id: string): Promise<OffSiteWorkEntity> {
+  async softDelete(rowId: string): Promise<OffSiteWorkEntity> {
     const result = await prisma.offSiteWork.update({
-      where: { id },
+      where: { rowId },
       data: { deletedAt: new Date() },
     });
     return result as OffSiteWorkEntity;
@@ -178,9 +178,9 @@ export const offSiteWorkRepository = {
   /**
    * Restore a soft-deleted off-site work record
    */
-  async restore(id: string): Promise<OffSiteWorkEntity> {
+  async restore(rowId: string): Promise<OffSiteWorkEntity> {
     const result = await prisma.offSiteWork.update({
-      where: { id },
+      where: { rowId },
       data: { deletedAt: null },
     });
     return result as OffSiteWorkEntity;
@@ -280,9 +280,9 @@ export const offSiteWorkRepository = {
   /**
    * Check if off-site work has linked expense claims
    */
-  async hasExpenseClaims(id: string): Promise<boolean> {
+  async hasExpenseClaims(rowId: string): Promise<boolean> {
     const count = await prisma.expenseClaimOffSiteWork.count({
-      where: { offSiteWorkId: id },
+      where: { offSiteWorkRowId: rowId },
     });
     return count > 0;
   },

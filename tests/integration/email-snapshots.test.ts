@@ -27,14 +27,14 @@ async function request() {
     expenseMonth: new Date("2026-09-01"), claimantPositionAtSubmission: "พนักงาน", status: "PENDING_LEADER_VERIFY",
   } });
   for (const index of [1, 2]) {
-    await prisma.offSiteWork.create({ data: {
+    const work = await prisma.offSiteWork.create({ data: {
       id: `snapshot-work-${index}`, innerRefDocumentId: `ORIGINAL-${index}`, startDate: new Date("2026-09-01"),
       endDate: new Date("2026-09-02"), postedByUserId: "snapshot-claimant", leaderUserId: "snapshot-leader",
     } });
-    await prisma.expenseClaimOffSiteWork.create({ data: { expenseClaimId: "snapshot-claim", offSiteWorkId: `snapshot-work-${index}` } });
+    await prisma.expenseClaimOffSiteWork.create({ data: { expenseClaimId: "snapshot-claim", offSiteWorkId: `snapshot-work-${index}`, offSiteWorkRowId: work.rowId } });
     await prisma.leaderVerification.create({ data: {
       id: `snapshot-verification-${index}`, expenseClaimId: "snapshot-claim", offSiteWorkId: `snapshot-work-${index}`,
-      leaderUserId: "snapshot-leader", expiresAt: new Date(Date.now() + 86400000),
+      offSiteWorkRowId: work.rowId, leaderUserId: "snapshot-leader", expiresAt: new Date(Date.now() + 86400000),
     } });
   }
   await prisma.$transaction((tx) => enqueueInternalLeaderEmails(tx, "snapshot-claim"));
@@ -54,7 +54,7 @@ describe("historical email context in PostgreSQL", () => {
     expect(queued).toMatchObject({ claimantName: "ผู้ยื่น เดิม", leaderName: "หัวหน้า เดิม", recipientEmail: "old-leader@example.test", eligibility: { kind: "queued" } });
     await prisma.user.update({ where: { id: "snapshot-leader" }, data: { firstName: "หัวหน้าใหม่", email: "new-leader@example.test" } });
     await prisma.user.update({ where: { id: "snapshot-claimant" }, data: { firstName: "ผู้ยื่นใหม่" } });
-    await prisma.offSiteWork.update({ where: { id: "snapshot-work-1" }, data: { innerRefDocumentId: "UPDATED-1" } });
+    await prisma.offSiteWork.updateMany({ where: { id: "snapshot-work-1" }, data: { innerRefDocumentId: "UPDATED-1" } });
     // An identical enqueue does not overwrite historical context or add a job.
     await prisma.$transaction((tx) => enqueueInternalLeaderEmails(tx, "snapshot-claim"));
     expect(await prisma.emailDelivery.count()).toBe(1);
@@ -100,11 +100,12 @@ describe("historical email context in PostgreSQL", () => {
   it("captures skipped observations without treating replacements or missing sources as historical data", async () => {
     const job = await request();
     await prisma.leaderVerification.delete({ where: { id: "snapshot-verification-1" } });
+    const replacementWork = await prisma.offSiteWork.findFirstOrThrow({ where: { id: "snapshot-work-1" } });
     await prisma.leaderVerification.create({ data: {
       id: "replacement-verification", expenseClaimId: "snapshot-claim", offSiteWorkId: "snapshot-work-1",
-      leaderUserId: "snapshot-leader", expiresAt: new Date(Date.now() + 86400000),
+      offSiteWorkRowId: replacementWork.rowId, leaderUserId: "snapshot-leader", expiresAt: new Date(Date.now() + 86400000),
     } });
-    await prisma.offSiteWork.update({ where: { id: "snapshot-work-2" }, data: { deletedAt: new Date() } });
+    await prisma.offSiteWork.updateMany({ where: { id: "snapshot-work-2" }, data: { deletedAt: new Date() } });
     const send = vi.fn().mockResolvedValue(accepted);
     await createEmailDeliveryWorkerService(prisma, send).processNext();
     expect(send).not.toHaveBeenCalled();

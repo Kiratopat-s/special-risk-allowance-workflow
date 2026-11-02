@@ -35,13 +35,13 @@ export function parseSnapshot(value: unknown): EmailContextSnapshot | null {
 
 /** The same observations drive both historical metadata and send eligibility. */
 export function observeSnapshotOrders(context: EmailContext, now = new Date()): EmailContextSnapshot["orders"] {
-  const linked = new Set(context.claim?.expenseClaimOffSiteWorks.map((link) => link.offSiteWorkId) ?? []);
+  const linked = new Set(context.claim?.expenseClaimOffSiteWorks.map((link) => link.offSiteWorkRowId) ?? []);
   const records = new Map(context.verifications.map((record) => [record.id, record]));
   return [...new Set(context.verificationIds)].map((verificationId) => {
     const record = records.get(verificationId);
     if (!record) return { verificationId, offSiteWorkId: null, reference: null, expiresAt: null, state: "MISSING" };
     const state = record.offSiteWork.deletedAt ? "DELETED"
-      : !linked.has(record.offSiteWorkId) ? "UNLINKED"
+      : !linked.has(record.offSiteWorkRowId) ? "UNLINKED"
       : record.verifiedAt ? "VERIFIED"
       : record.expiresAt <= now ? "EXPIRED" : "PENDING";
     return {

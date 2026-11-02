@@ -175,7 +175,7 @@ export const offSiteWorkService = {
       location: existing.location,
     };
 
-    const record = await offSiteWorkRepository.update(id, data);
+    const record = await offSiteWorkRepository.update(existing.rowId, data);
 
     // Log update
     await actionLogService.log({
@@ -207,7 +207,7 @@ export const offSiteWorkService = {
     }
 
     // Check for linked expense claims
-    const hasExpenseClaims = await offSiteWorkRepository.hasExpenseClaims(id);
+    const hasExpenseClaims = await offSiteWorkRepository.hasExpenseClaims(existing.rowId);
     if (hasExpenseClaims) {
       return error(
         "Cannot delete off-site work with linked expense claims",
@@ -215,7 +215,7 @@ export const offSiteWorkService = {
       );
     }
 
-    await offSiteWorkRepository.softDelete(id);
+    await offSiteWorkRepository.softDelete(existing.rowId);
 
     // Log soft-delete
     await actionLogService.log({

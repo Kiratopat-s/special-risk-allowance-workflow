@@ -33,7 +33,7 @@ beforeEach(() => {
   mock.query.mockResolvedValue([work]);
   mock.findClaim.mockResolvedValue({ ...claim });
   mock.findLinks.mockResolvedValue([{ offSiteWorkId: "work1" }]);
-  mock.findWorks.mockResolvedValue([{ id: "work1", leaderUserId: "leader1", leaderEmail: null }]);
+  mock.findWorks.mockResolvedValue([{ id: "work1", rowId: "row-work1", leaderUserId: "leader1", leaderEmail: null }]);
   mock.updateClaim.mockImplementation(({ data }) => Promise.resolve({ ...claim, ...data }));
   mock.createClaim.mockImplementation(({ data }) => Promise.resolve({ ...claim, ...data }));
   mock.claimant.mockResolvedValue({ department: { id: "dept1", name: "Department", shortName: "D" } });
@@ -77,14 +77,14 @@ describe("atomic claim selection mutations", () => {
 
   it("restarts confirmation when the work changes even if the dates and amount stay the same", async () => {
     mock.query.mockResolvedValue([{ ...work, id: "work2" }]);
-    mock.findWorks.mockResolvedValue([{ id: "work2", leaderUserId: "leader2", leaderEmail: null }]);
+    mock.findWorks.mockResolvedValue([{ id: "work2", rowId: "row-work2", leaderUserId: "leader2", leaderEmail: null }]);
     expect(await repository.updateEditable("claim1", { selectedDates: ["2026-09-01"], offSiteWorkIds: ["work2"] }))
       .toMatchObject({ success: true, data: { verificationsReset: true, claim: { status: "PENDING_LEADER_VERIFY" } } });
     expect(mock.updateClaim.mock.calls[0][0].data.leaderVerifications.create[0]).toMatchObject({ offSiteWorkId: "work2", leaderUserId: "leader2" });
   });
 
   it("rejects a leader removed during validation before invalidating the prior signatures", async () => {
-    mock.findWorks.mockResolvedValue([{ id: "work1", leaderUserId: null, leaderEmail: null }]);
+    mock.findWorks.mockResolvedValue([{ id: "work1", rowId: "row-work1", leaderUserId: null, leaderEmail: null }]);
     expect(await repository.updateEditable("claim1", { selectedDates: ["2026-09-02"] }))
       .toMatchObject({ code: "OSW_MISSING_LEADER" });
     expect(mock.updateClaim).not.toHaveBeenCalled();

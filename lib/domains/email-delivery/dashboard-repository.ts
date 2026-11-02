@@ -39,7 +39,7 @@ function conditions(filter: EmailDashboardFilter) {
         AND (concat_ws(' ', u.first_name, u.last_name) ILIKE ${match} OR u.email ILIKE ${match}))
       OR EXISTS (SELECT 1 FROM expense_claims c JOIN users u ON u.id = c.user_id
         WHERE c.id = d.expense_claim_id AND concat_ws(' ', u.first_name, u.last_name) ILIKE ${match})
-      OR EXISTS (SELECT 1 FROM leader_verifications v JOIN off_site_works w ON w.id = v.off_site_work_id
+      OR EXISTS (SELECT 1 FROM leader_verifications v JOIN off_site_works w ON w.row_id = v.off_site_work_row_id
         WHERE v.id = ANY(d.verification_ids) AND v.expense_claim_id = d.expense_claim_id
           AND v.leader_user_id = d.leader_user_id AND w.inner_ref_document_id ILIKE ${match})
     )`);

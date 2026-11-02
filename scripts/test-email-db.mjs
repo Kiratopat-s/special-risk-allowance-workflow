@@ -79,8 +79,10 @@ function testEnvironment(url) {
 async function snapshot(url) {
   return withDatabase(url, async (client) => {
     const result = {};
+    // row_id / off_site_work_row_id arrive with a later migration and are backfilled,
+    // so the preservation check compares the pre-existing fields only.
     for (const table of ["users", "expense_claims", "off_site_works", "expense_claim_off_site_work", "leader_verifications"]) {
-      result[table] = (await client.query(`SELECT to_jsonb(t) AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`)).rows;
+      result[table] = (await client.query(`SELECT to_jsonb(t) - 'row_id' - 'off_site_work_row_id' AS row FROM "${table}" t ORDER BY to_jsonb(t)::text`)).rows;
     }
     return result;
   });
@@ -94,6 +96,7 @@ async function seedExistingRequest(url) {
     await client.query(`INSERT INTO expense_claims
       (id, expense_month, user_id, claimant_position_at_submission, created_by_id, status)
       VALUES ('existing-claim', '2026-09-01', 'existing-claimant', 'Staff', 'existing-claimant', 'PENDING_LEADER_VERIFY')`);
+    // Seed runs against the pre-row-identity schema; the upgrade backfills row ids.
     await client.query(`INSERT INTO off_site_works (id, start_date, end_date, posted_by_user_id, leader_user_id)
       VALUES ('existing-work', '2026-09-01', '2026-09-02', 'existing-claimant', 'existing-leader')`);
     await client.query(`INSERT INTO expense_claim_off_site_work (expense_claim_id, off_site_work_id)

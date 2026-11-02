@@ -47,9 +47,9 @@ describe("analytics SQL on PostgreSQL", () => {
     await claims.create({ ...claimInput, status: "CANCELLED", amount: "999" }, "actor", "actor");
     await claims.create({ ...claimInput, status: "PENDING", amount: "0.40" }, "unassigned", "actor");
     for (const id of ["work1", "work2"]) {
-      await prisma.offSiteWork.create({ data: { id, startDate: new Date("2026-09-01"), endDate: new Date("2026-09-02"), postedByUserId: "actor" } });
-      await prisma.expenseClaimOffSiteWork.create({ data: { expenseClaimId: pending.id, offSiteWorkId: id } });
-      await prisma.leaderVerification.create({ data: { expenseClaimId: pending.id, offSiteWorkId: id, expiresAt: new Date("2026-10-01") } });
+      const work = await prisma.offSiteWork.create({ data: { id, startDate: new Date("2026-09-01"), endDate: new Date("2026-09-02"), postedByUserId: "actor" } });
+      await prisma.expenseClaimOffSiteWork.create({ data: { expenseClaimId: pending.id, offSiteWorkId: id, offSiteWorkRowId: work.rowId } });
+      await prisma.leaderVerification.create({ data: { expenseClaimId: pending.id, offSiteWorkId: id, offSiteWorkRowId: work.rowId, expiresAt: new Date("2026-10-01") } });
     }
     const result = await groups();
     const summary = result.find((group) => group.kind === "total")!;

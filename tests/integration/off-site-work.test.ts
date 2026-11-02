@@ -37,13 +37,13 @@ describe.sequential("PDF traveler account lifecycle", () => {
     const before = await offSiteWorkService.getById("id-only");
     if (!before.success) throw Error(before.error);
     expect(before.data.employeeList).toEqual([idOnly, unmatched]);
-    expect((await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "id-only-edited" } })).employeeList).toEqual([idOnly]);
+    expect((await prisma.offSiteWork.findFirstOrThrow({ where: { deletedAt: null, id: "id-only-edited" } })).employeeList).toEqual([idOnly]);
 
     const signup = await userService.syncFromKeycloak({ id: "id-only-account", keycloakId: "id-only-account", email: "id-only@example.test", firstName: "ชื่อจากบัญชี", lastName: "นามสกุลจากบัญชี", employeeId: "000001", position: "ตำแหน่งจากบัญชี", department: "ฝ่ายจากบัญชี", departmentShort: "ฝบ." });
     if (!signup.success) throw Error(signup.error);
     const linked = { ...idOnly, userId: signup.data.id, firstName: signup.data.firstName, lastName: signup.data.lastName, position: "ตำแหน่งจากบัญชี", departmentId: signup.data.departmentId, departmentName: "ฝบ." };
-    expect((await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "id-only" } })).employeeList).toEqual([linked, unmatched]);
-    expect((await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "id-only-edited" } })).employeeList).toEqual([
+    expect((await prisma.offSiteWork.findFirstOrThrow({ where: { deletedAt: null, id: "id-only" } })).employeeList).toEqual([linked, unmatched]);
+    expect((await prisma.offSiteWork.findFirstOrThrow({ where: { deletedAt: null, id: "id-only-edited" } })).employeeList).toEqual([
       linked,
     ]);
     expect(await offSiteWorkEmployeeService.linkForUser(signup.data.id)).toMatchObject({ success: true, data: 0 });
@@ -63,7 +63,7 @@ describe.sequential("PDF traveler account lifecycle", () => {
     const idOnly = { ...person, employeeId: "000003", firstName: "", lastName: "" };
     expect((await offSiteWorkService.create({ id: "late-number", ...base, employeeList: [idOnly] }, "author")).success).toBe(true);
     expect((await userService.syncFromKeycloak({ ...profile, employeeId: "000003" })).success).toBe(true);
-    expect((await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "late-number" } })).employeeList).toEqual([
+    expect((await prisma.offSiteWork.findFirstOrThrow({ where: { deletedAt: null, id: "late-number" } })).employeeList).toEqual([
       { ...pending("000003"), userId: signup.data.id, firstName: profile.firstName, lastName: profile.lastName },
     ]);
   });
@@ -86,7 +86,7 @@ describe.sequential("PDF traveler account lifecycle", () => {
     await prisma.user.create({ data: { id: "inactive", keycloakId: "inactive", email: "inactive@example.test", firstName: "พักใช้", lastName: "ทดสอบ", employeeId: "100002", status: "INACTIVE" } });
     expect(await offSiteWorkEmployeeService.linkForUser("inactive")).toMatchObject({ success: true, data: 0 });
     expect(await offSiteWorkEmployeeService.linkForUser("author")).toMatchObject({ success: true, data: 0 });
-    const item = await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "TZ26010001" } });
+    const item = await prisma.offSiteWork.findFirstOrThrow({ where: { deletedAt: null, id: "TZ26010001" } });
     expect((item.employeeList as unknown as EmployeeListItem[])[1].userId).toBeNull();
   });
 
@@ -106,7 +106,7 @@ describe.sequential("PDF traveler account lifecycle", () => {
       expect((await first).success).toBe(true);
       expect((await second).success).toBe(true);
     } finally { await client.end(); }
-    const saved = await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "concurrent" } });
+    const saved = await prisma.offSiteWork.findFirstOrThrow({ where: { deletedAt: null, id: "concurrent" } });
     expect(saved.objective).toBe("แก้ไขพร้อมกัน");
     expect(saved.employeeList).toEqual(["100003", "100004"].map((employeeId) => ({
       ...pending(employeeId), userId: employeeId, firstName: "พร้อมกัน", lastName: "ทดสอบ",
@@ -122,9 +122,39 @@ describe.sequential("PDF traveler account lifecycle", () => {
     const options = await expenseClaimDocumentService.listEligibleOffSiteWorksForUser(user.id, new Date("2026-09-01"));
     if (!options.success) throw Error(options.error);
     expect(options.data.map((item) => item.id)).toContain("retry-match");
-    await prisma.offSiteWork.update({ where: { id: "retry-match" }, data: { employeeList: [{ ...person, userId: "author" }] } });
+    await prisma.offSiteWork.updateMany({ where: { id: "retry-match" }, data: { employeeList: [{ ...person, userId: "author" }] } });
     await offSiteWorkEmployeeService.linkForUser(user.id);
-    const saved = await prisma.offSiteWork.findUniqueOrThrow({ where: { id: "retry-match" } });
+    const saved = await prisma.offSiteWork.findFirstOrThrow({ where: { deletedAt: null, id: "retry-match" } });
     expect((saved.employeeList as unknown as EmployeeListItem[])[0].userId).toBe("author");
+  });
+});
+
+describe.sequential("document number reuse after soft delete", () => {
+  it("creates a new row when the number exists only on a soft-deleted record", async () => {
+    const first = await offSiteWorkService.create({ id: "TZ-REUSE", ...base }, "author");
+    if (!first.success) throw Error(first.error);
+    expect((await offSiteWorkService.delete("TZ-REUSE", "author")).success).toBe(true);
+
+    const second = await offSiteWorkService.create({ id: "TZ-REUSE", ...base, objective: "ฉบับใหม่" }, "author");
+    if (!second.success) throw Error(second.error);
+    expect(second.data.rowId).not.toBe(first.data.rowId);
+
+    // Both rows keep the number: the deleted row is history, the new row is live.
+    expect(await prisma.offSiteWork.count({ where: { id: "TZ-REUSE" } })).toBe(2);
+    const kept = await prisma.offSiteWork.findFirstOrThrow({ where: { rowId: first.data.rowId } });
+    expect(kept.deletedAt).not.toBeNull();
+    expect(kept.objective).toBeNull();
+
+    // Document-number lookups resolve the new live row.
+    const viaService = await offSiteWorkService.getById("TZ-REUSE");
+    if (!viaService.success) throw Error(viaService.error);
+    expect(viaService.data.rowId).toBe(second.data.rowId);
+    expect(viaService.data.objective).toBe("ฉบับใหม่");
+  });
+
+  it("still rejects a number held by a live record", async () => {
+    expect(await offSiteWorkService.create({ id: "TZ-REUSE", ...base }, "author"))
+      .toMatchObject({ success: false, code: "DUPLICATE_ID" });
+    expect(await prisma.offSiteWork.count({ where: { id: "TZ-REUSE" } })).toBe(2);
   });
 });

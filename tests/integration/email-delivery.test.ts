@@ -35,14 +35,14 @@ async function createRequest(
   const verificationIds: string[] = [];
   for (let index = 0; index < workCount; index++) {
     const workId = `${claimId}-work-${index}`;
-    await db.offSiteWork.create({ data: {
+    const work = await db.offSiteWork.create({ data: {
       id: workId, innerRefDocumentId: `TZ2609-${index}`, startDate: new Date("2026-09-01"),
       endDate: new Date("2026-09-02"), postedByUserId: "claimant",
       leaderUserId: external ? null : leaderId, leaderEmail: "copied-external@example.test",
     } });
-    await db.expenseClaimOffSiteWork.create({ data: { expenseClaimId: claimId, offSiteWorkId: workId } });
+    await db.expenseClaimOffSiteWork.create({ data: { expenseClaimId: claimId, offSiteWorkId: workId, offSiteWorkRowId: work.rowId } });
     const verification = await db.leaderVerification.create({ data: {
-      expenseClaimId: claimId, offSiteWorkId: workId, leaderUserId: external ? null : leaderId,
+      expenseClaimId: claimId, offSiteWorkId: workId, offSiteWorkRowId: work.rowId, leaderUserId: external ? null : leaderId,
       leaderEmail: "external@example.test", expiresAt: new Date(Date.now() + 86400000),
     } });
     verificationIds.push(verification.id);
@@ -167,9 +167,9 @@ describe("internal leader email delivery with PostgreSQL", () => {
   it("separates two internal leaders in one claim and excludes its external leader", async () => {
     await createRequest({ workCount: 3 });
     await prisma.user.create({ data: userData("second-leader") });
-    await prisma.offSiteWork.update({ where: { id: "claim-work-1" }, data: { leaderUserId: "second-leader" } });
+    await prisma.offSiteWork.updateMany({ where: { id: "claim-work-1" }, data: { leaderUserId: "second-leader" } });
     await prisma.leaderVerification.updateMany({ where: { offSiteWorkId: "claim-work-1" }, data: { leaderUserId: "second-leader" } });
-    await prisma.offSiteWork.update({ where: { id: "claim-work-2" }, data: { leaderUserId: null, leaderEmail: "external@example.test" } });
+    await prisma.offSiteWork.updateMany({ where: { id: "claim-work-2" }, data: { leaderUserId: null, leaderEmail: "external@example.test" } });
     await prisma.leaderVerification.updateMany({ where: { offSiteWorkId: "claim-work-2" }, data: { leaderUserId: null, leaderEmail: "external@example.test" } });
     await enqueue();
     expect(await prisma.emailDelivery.count()).toBe(2);
@@ -324,8 +324,9 @@ describe("internal leader email delivery with PostgreSQL", () => {
         await prisma.expenseClaimOffSiteWork.deleteMany();
       } else {
         await prisma.leaderVerification.deleteMany();
+        const work = await prisma.offSiteWork.findFirstOrThrow({ where: { id: "claim-work-0" } });
         await prisma.leaderVerification.create({ data: {
-          expenseClaimId: "claim", offSiteWorkId: "claim-work-0", leaderUserId: "leader",
+          expenseClaimId: "claim", offSiteWorkId: "claim-work-0", offSiteWorkRowId: work.rowId, leaderUserId: "leader",
           expiresAt: new Date(Date.now() + 86400000),
         } });
       }

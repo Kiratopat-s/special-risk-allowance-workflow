@@ -10,11 +10,11 @@ type ContextClient = Pick<Prisma.TransactionClient, "expenseClaim" | "leaderVeri
 const claimContextSelect = {
   id: true, status: true, cancelledAt: true, monthlyRequestCollectionId: true, expenseMonth: true,
   claimant: { select: { firstName: true, lastName: true } },
-  expenseClaimOffSiteWorks: { select: { offSiteWorkId: true } },
+  expenseClaimOffSiteWorks: { select: { offSiteWorkId: true, offSiteWorkRowId: true } },
 } satisfies Prisma.ExpenseClaimSelect;
 const leaderContextSelect = { email: true, status: true, firstName: true, lastName: true } satisfies Prisma.UserSelect;
 const verificationContextSelect = {
-  id: true, offSiteWorkId: true, verifiedAt: true, expiresAt: true,
+  id: true, offSiteWorkId: true, offSiteWorkRowId: true, verifiedAt: true, expiresAt: true,
   offSiteWork: { select: { deletedAt: true, innerRefDocumentId: true } },
 } satisfies Prisma.LeaderVerificationSelect;
 

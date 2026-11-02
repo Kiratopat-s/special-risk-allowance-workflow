@@ -43,6 +43,7 @@ import { OffSiteWorkClient } from "@/app/off-site-work/off-site-work-client";
 
 function item(id: string): OffSiteWorkWithRelations {
   return {
+    rowId: `row-${id}`,
     id,
     innerRefDocumentId: null,
     startDate: new Date("2026-09-01"),

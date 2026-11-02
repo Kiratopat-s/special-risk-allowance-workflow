@@ -6,7 +6,7 @@ import { evaluateEmailEligibility } from "./eligibility";
 const now = new Date("2026-09-27T00:00:00Z");
 function record(id = "verify-1"): EmailContext["verifications"][number] {
   return {
-    id, offSiteWorkId: `work-${id}`, verifiedAt: null, expiresAt: new Date("2026-09-28T00:00:00Z"),
+    id, offSiteWorkId: `work-${id}`, offSiteWorkRowId: `row-${id}`, verifiedAt: null, expiresAt: new Date("2026-09-28T00:00:00Z"),
     offSiteWork: { deletedAt: null, innerRefDocumentId: `REF-${id}` },
   };
 }
@@ -16,7 +16,7 @@ function context(): EmailContext {
     claim: {
       id: "claim-1", status: "PENDING_LEADER_VERIFY", cancelledAt: null, monthlyRequestCollectionId: null,
       expenseMonth: new Date("2026-09-01T00:00:00Z"), claimant: { firstName: "ผู้ยื่น", lastName: "เดิม" },
-      expenseClaimOffSiteWorks: [{ offSiteWorkId: "work-verify-1" }],
+      expenseClaimOffSiteWorks: [{ offSiteWorkId: "work-verify-1", offSiteWorkRowId: "row-verify-1" }],
     },
     leader: { firstName: "หัวหน้า", lastName: "เดิม", email: "leader@example.test", status: "ACTIVE" },
     verifications: [record()],
@@ -47,7 +47,8 @@ describe("email context snapshots", () => {
     const deleted = { ...record("deleted"), offSiteWork: { deletedAt: now, innerRefDocumentId: "DELETED-REF" } };
     source.verificationIds = ["pending", "verified", "expired", "unlinked", "deleted", "missing"];
     source.verifications = [pending, verified, expired, unlinked, deleted, record("replacement")];
-    source.claim!.expenseClaimOffSiteWorks = [pending, verified, expired, deleted].map(({ offSiteWorkId }) => ({ offSiteWorkId }));
+    source.claim!.expenseClaimOffSiteWorks = [pending, verified, expired, deleted]
+      .map(({ offSiteWorkId, offSiteWorkRowId }) => ({ offSiteWorkId, offSiteWorkRowId }));
     expect(observeSnapshotOrders(source, now).map(({ verificationId, state }) => ({ verificationId, state }))).toEqual([
       { verificationId: "pending", state: "PENDING" }, { verificationId: "verified", state: "VERIFIED" },
       { verificationId: "expired", state: "EXPIRED" }, { verificationId: "unlinked", state: "UNLINKED" },

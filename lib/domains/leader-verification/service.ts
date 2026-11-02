@@ -80,6 +80,7 @@ export const leaderVerificationService = {
                 where: { id: { in: offSiteWorkIds }, deletedAt: null },
                 select: {
                     id: true,
+                    rowId: true,
                     innerRefDocumentId: true,
                     leaderUserId: true,
                     leaderEmail: true,
@@ -104,6 +105,7 @@ export const leaderVerificationService = {
             records.push({
                 expenseClaimId,
                 offSiteWorkId: osw.id,
+                offSiteWorkRowId: osw.rowId,
                 leaderUserId: osw.leaderUserId ?? null,
                 leaderEmail: osw.leaderEmail ?? null,
                 expiresAt: makeExpiresAt(),
@@ -130,8 +132,8 @@ export const leaderVerificationService = {
             if (!created.length) return;
             const [osws, claim] = await Promise.all([
                 prisma.offSiteWork.findMany({
-                    where: { id: { in: created.map((record) => record.offSiteWorkId) }, deletedAt: null },
-                    select: { id: true, innerRefDocumentId: true },
+                    where: { rowId: { in: created.map((record) => record.offSiteWorkRowId) }, deletedAt: null },
+                    select: { id: true, rowId: true, innerRefDocumentId: true },
                 }),
                 prisma.expenseClaim.findUnique({
                     where: { id: expenseClaimId },
@@ -318,7 +320,7 @@ async function checkAllDone(expenseClaimId: string): Promise<boolean> {
 
 function dispatchVerificationNotifications(
     created: LeaderVerificationEntity[],
-    osws: { id: string; innerRefDocumentId: string | null }[],
+    osws: { id: string; rowId: string; innerRefDocumentId: string | null }[],
     claimantName?: string,
 ): void {
         // Fire-and-forget: notify internal leaders
@@ -346,7 +348,7 @@ function dispatchVerificationNotifications(
         // Fire-and-forget: send email to external leaders
         for (const record of created) {
             if (record.leaderEmail && !record.leaderUserId) {
-                const osw = osws.find((o) => o.id === record.offSiteWorkId);
+                const osw = osws.find((o) => o.rowId === record.offSiteWorkRowId);
                 sendLeaderVerifyEmail({
                     to: record.leaderEmail,
                     token: record.token,

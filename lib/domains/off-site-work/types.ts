@@ -24,6 +24,7 @@ export interface EmployeeListItem {
  * Core OffSiteWork entity interface
  */
 export interface OffSiteWorkEntity {
+  rowId: string;
   id: string;
   innerRefDocumentId: string | null;
   startDate: Date;

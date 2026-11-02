@@ -8,6 +8,7 @@ function source(overrides: Partial<ClaimPrintSource> = {}): ClaimPrintSource {
     claimant: { firstName: "ชื่อ", lastName: "สกุล", employeeId: "123" },
     claimantPositionAtSubmission: "ตำแหน่ง ณ ยื่น", selectedDates: ["2026-07-01"], countDates: new Prisma.Decimal(1), remark: "หมายเหตุเดิม",
     expenseClaimOffSiteWorks: [{ offSiteWork: {
+      rowId: "row-TZ001",
       id: "TZ001", innerRefDocumentId: "REF001", startDate: new Date("2026-06-26Z"), endDate: new Date("2026-07-03Z"),
       location: "สถานที่", leaderFirstName: "หัวหน้า", leaderLastName: "หนึ่ง", leaderPosition: "ตำแหน่งหัวหน้า", leaderUser: { department: { shortName: "กอง", name: "กองทดสอบ" } },
     } }],
@@ -44,10 +45,10 @@ describe("claim print data", () => {
     expect(doc.warnings.some((w) => w.includes("ไม่มีวันที่"))).toBe(true);
   });
   it("only uses a verified signature for the exact claim and order pair", () => {
-    const record = { expenseClaimId: "claim-a", offSiteWorkId: "TZ001", verifiedAt: new Date(), signatureData: Buffer.from("recorded-png") };
+    const record = { expenseClaimId: "claim-a", offSiteWorkId: "TZ001", offSiteWorkRowId: "row-TZ001", verifiedAt: new Date(), signatureData: Buffer.from("recorded-png") };
     const current = source({ leaderVerifications: [record] });
     expect(toClaimPrintDocument(current).orders[0].signatureUrl).toBe("data:image/png;base64,cmVjb3JkZWQtcG5n");
-    for (const change of [{ expenseClaimId: "other" }, { offSiteWorkId: "other" }, { verifiedAt: null }, { signatureData: null }]) {
+    for (const change of [{ expenseClaimId: "other" }, { offSiteWorkRowId: "row-other" }, { verifiedAt: null }, { signatureData: null }]) {
       expect(toClaimPrintDocument(source({ leaderVerifications: [{ ...record, ...change }] })).orders[0].signatureUrl).toBeNull();
     }
     expect(JSON.stringify(claimPrintSelect)).not.toContain('"signatures"');

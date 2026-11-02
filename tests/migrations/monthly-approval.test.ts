@@ -81,13 +81,13 @@ if (phase === "before") {
   }
   async function linkWork(claimId: string, suffix: string, verified: boolean) {
     const offSiteWorkId = `${claimId}-work-${suffix}`;
-    await prisma.offSiteWork.create({ data: {
+    const work = await prisma.offSiteWork.create({ data: {
       id: offSiteWorkId, postedByUserId: collector, leaderUserId: actor,
       startDate: new Date("2026-09-01"), endDate: new Date("2026-09-02"),
-      expenseClaimOffSiteWorks: { create: { expenseClaimId: claimId } },
+      expenseClaimOffSiteWorks: { create: { expenseClaimId: claimId, offSiteWorkId } },
     } });
     if (verified) await prisma.leaderVerification.create({ data: {
-      expenseClaimId: claimId, offSiteWorkId, leaderUserId: actor,
+      expenseClaimId: claimId, offSiteWorkId, offSiteWorkRowId: work.rowId, leaderUserId: actor,
       expiresAt: new Date(Date.now() + 86_400_000), verifiedAt: new Date(),
     } });
     return offSiteWorkId;
@@ -229,8 +229,9 @@ if (phase === "before") {
       await linkWork(id, "verified", true);
       const unverifiedWorkId = await linkWork(id, "unverified", false);
       await expectPending(); // One linked work has no verification record.
+      const unverifiedWork = await prisma.offSiteWork.findFirstOrThrow({ where: { id: unverifiedWorkId } });
       const verification = await prisma.leaderVerification.create({ data: {
-        expenseClaimId: id, offSiteWorkId: unverifiedWorkId, leaderUserId: actor,
+        expenseClaimId: id, offSiteWorkId: unverifiedWorkId, offSiteWorkRowId: unverifiedWork.rowId, leaderUserId: actor,
         expiresAt: new Date(Date.now() + 86_400_000),
       } });
       await expectPending(); // An existing request still needs a leader's confirmation.

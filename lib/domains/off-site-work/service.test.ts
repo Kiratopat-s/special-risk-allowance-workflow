@@ -126,6 +126,7 @@ describe("offSiteWorkService", () => {
   describe("update", () => {
     it("updates record successfully", async () => {
       const existing = {
+        rowId: "row-osw1",
         id: "osw1",
         startDate: new Date("2024-01-01"),
         endDate: new Date("2024-01-05"),
@@ -140,6 +141,7 @@ describe("offSiteWorkService", () => {
       const result = await offSiteWorkService.update("osw1", { objective: "new" }, "actor1");
 
       expect(result.success).toBe(true);
+      expect(repo.update).toHaveBeenCalledWith("row-osw1", { objective: "new" });
     });
 
     it("returns error when not found", async () => {
@@ -172,7 +174,7 @@ describe("offSiteWorkService", () => {
 
   describe("delete", () => {
     it("soft-deletes when no linked expense claims", async () => {
-      repo.findById.mockResolvedValue({ id: "osw1", objective: "test", location: "test" });
+      repo.findById.mockResolvedValue({ rowId: "row-osw1", id: "osw1", objective: "test", location: "test" });
       repo.hasExpenseClaims.mockResolvedValue(false);
       repo.softDelete.mockResolvedValue({});
       mockLogService.log.mockResolvedValue({});
@@ -180,11 +182,12 @@ describe("offSiteWorkService", () => {
       const result = await offSiteWorkService.delete("osw1", "actor1");
 
       expect(result.success).toBe(true);
-      expect(repo.softDelete).toHaveBeenCalledWith("osw1");
+      expect(repo.hasExpenseClaims).toHaveBeenCalledWith("row-osw1");
+      expect(repo.softDelete).toHaveBeenCalledWith("row-osw1");
     });
 
     it("rejects when has linked expense claims", async () => {
-      repo.findById.mockResolvedValue({ id: "osw1" });
+      repo.findById.mockResolvedValue({ rowId: "row-osw1", id: "osw1" });
       repo.hasExpenseClaims.mockResolvedValue(true);
 
       const result = await offSiteWorkService.delete("osw1", "actor1");

@@ -69,13 +69,14 @@ const queueSelect = {
     id: true,
     expenseClaimId: true,
     offSiteWorkId: true,
+    offSiteWorkRowId: true,
     expiresAt: true,
     verifiedAt: true,
     createdAt: true,
     expenseClaim: {
         select: {
             ...leaderClaimSelect,
-            expenseClaimOffSiteWorks: { select: { offSiteWorkId: true } },
+            expenseClaimOffSiteWorks: { select: { offSiteWorkId: true, offSiteWorkRowId: true } },
         },
     },
     offSiteWork: { select: offSiteWorkSelect },
@@ -88,6 +89,7 @@ const claimDetailSelect = {
         where: { offSiteWork: { deletedAt: null } },
         select: {
             offSiteWorkId: true,
+            offSiteWorkRowId: true,
             offSiteWork: {
                 select: {
                     id: true,
@@ -108,6 +110,7 @@ type LeaderClaimSource = Prisma.ExpenseClaimGetPayload<{ select: typeof leaderCl
 const tokenReviewSelect = {
     id: true,
     offSiteWorkId: true,
+    offSiteWorkRowId: true,
     expiresAt: true,
     verifiedAt: true,
     expenseClaim: {
@@ -160,11 +163,11 @@ export const leaderVerificationRepository = {
                 !["PENDING", "PENDING_LEADER_VERIFY"].includes(claim.status)) return false;
             // A prior all-done read may refer to signatures invalidated by an edit.
             const [records, links] = await Promise.all([
-                tx.leaderVerification.findMany({ where: { expenseClaimId }, select: { offSiteWorkId: true, verifiedAt: true } }),
-                tx.expenseClaimOffSiteWork.findMany({ where: { expenseClaimId }, select: { offSiteWorkId: true } }),
+                tx.leaderVerification.findMany({ where: { expenseClaimId }, select: { offSiteWorkRowId: true, verifiedAt: true } }),
+                tx.expenseClaimOffSiteWork.findMany({ where: { expenseClaimId }, select: { offSiteWorkRowId: true } }),
             ]);
             if (!links.length || links.some((link) => !records.some((record) =>
-                record.offSiteWorkId === link.offSiteWorkId && record.verifiedAt !== null))) return false;
+                record.offSiteWorkRowId === link.offSiteWorkRowId && record.verifiedAt !== null))) return false;
             await tx.expenseClaim.update({ where: { id: expenseClaimId }, data: { status: "WAIT_FOR_COLLECTION" } });
             return true;
         });
@@ -175,6 +178,7 @@ export const leaderVerificationRepository = {
             data: {
                 expenseClaimId: data.expenseClaimId,
                 offSiteWorkId: data.offSiteWorkId,
+                offSiteWorkRowId: data.offSiteWorkRowId,
                 leaderUserId: data.leaderUserId ?? null,
                 leaderEmail: data.leaderEmail ?? null,
                 expiresAt: data.expiresAt,
@@ -187,6 +191,7 @@ export const leaderVerificationRepository = {
             data: records.map((r) => ({
                 expenseClaimId: r.expenseClaimId,
                 offSiteWorkId: r.offSiteWorkId,
+                offSiteWorkRowId: r.offSiteWorkRowId,
                 leaderUserId: r.leaderUserId ?? null,
                 leaderEmail: r.leaderEmail ?? null,
                 expiresAt: r.expiresAt,
@@ -217,7 +222,7 @@ export const leaderVerificationRepository = {
             select: tokenReviewSelect,
         });
         if (!record || !record.expenseClaim.expenseClaimOffSiteWorks.some(
-            (link) => link.offSiteWorkId === record.offSiteWorkId,
+            (link) => link.offSiteWorkRowId === record.offSiteWorkRowId,
         )) return null;
 
         const claim = record.expenseClaim;
@@ -287,11 +292,12 @@ export const leaderVerificationRepository = {
 
         // A stale verification must not restore access after its order is unlinked.
         return records.filter((record) => record.expenseClaim.expenseClaimOffSiteWorks.some(
-            (link) => link.offSiteWorkId === record.offSiteWorkId,
+            (link) => link.offSiteWorkRowId === record.offSiteWorkRowId,
         )).map((record) => ({
             id: record.id,
             expenseClaimId: record.expenseClaimId,
             offSiteWorkId: record.offSiteWorkId,
+            offSiteWorkRowId: record.offSiteWorkRowId,
             expiresAt: record.expiresAt,
             verifiedAt: record.verifiedAt,
             createdAt: record.createdAt,

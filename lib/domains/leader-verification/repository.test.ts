@@ -20,10 +20,10 @@ const claim = {
   selectedDates: ["2026-09-01", "2026-09-03"],
   countDates: new Prisma.Decimal(2), amount: new Prisma.Decimal("300.50"),
   claimant: { id: "employee", firstName: "ชื่อ", lastName: "สกุล", employeeId: "000001" },
-  expenseClaimOffSiteWorks: [{ offSiteWorkId: "order/1", offSiteWork: work }],
+  expenseClaimOffSiteWorks: [{ offSiteWorkId: "order/1", offSiteWorkRowId: "row-order/1", offSiteWork: work }],
 };
 const record = {
-  id: "verification1", expenseClaimId: "claim1", offSiteWorkId: "order/1",
+  id: "verification1", expenseClaimId: "claim1", offSiteWorkId: "order/1", offSiteWorkRowId: "row-order/1",
   expiresAt: new Date("2026-09-30"), verifiedAt: null, createdAt: new Date("2026-09-01"),
   expenseClaim: claim,
   offSiteWork: { ...work, leaderFirstName: "หัวหน้า", leaderLastName: "ชุด", leaderPosition: null, leaderEmpId: null },
@@ -54,7 +54,7 @@ describe("assigned leader queue reads", () => {
   it("drops stale verifications when that order is no longer linked to the claim", async () => {
     mock.pending.mockResolvedValue([
       record,
-      { ...record, id: "stale", offSiteWorkId: "unlinked-order" },
+      { ...record, id: "stale", offSiteWorkId: "unlinked-order", offSiteWorkRowId: "row-unlinked-order" },
     ]);
     expect((await leaderVerificationRepository.findPendingByLeaderUserId("leader1")).map((item) => item.id))
       .toEqual(["verification1"]);
@@ -82,8 +82,8 @@ describe("public token review reads", () => {
         ...claim, remark: "ตรวจทาน", userId: "private-user", createdById: "private-creator",
         leaderVerifications: [{ token: "another-secret" }],
         expenseClaimOffSiteWorks: [
-          { offSiteWorkId: work.id, offSiteWork: { ...work, leaderEmail: "other@example.com" } },
-          { offSiteWorkId: secondWork.id, offSiteWork: secondWork },
+          { offSiteWorkId: work.id, offSiteWorkRowId: "row-order/1", offSiteWork: { ...work, leaderEmail: "other@example.com" } },
+          { offSiteWorkId: secondWork.id, offSiteWorkRowId: "row-order/2", offSiteWork: secondWork },
         ],
       },
     });
@@ -135,7 +135,7 @@ describe("public token review reads", () => {
   });
 
   it("rejects an old verification whose target order is no longer in the claim", async () => {
-    mock.tokenReview.mockResolvedValue({ ...record, offSiteWorkId: "unlinked-order" });
+    mock.tokenReview.mockResolvedValue({ ...record, offSiteWorkId: "unlinked-order", offSiteWorkRowId: "row-unlinked-order" });
     expect(await leaderVerificationRepository.findReviewByToken("old-token")).toBeNull();
   });
 

@@ -21,8 +21,8 @@ beforeEach(() => {
   mock.claim.mockResolvedValue(claim);
   mock.lookup.mockResolvedValue({ expenseClaimId: "claim1" });
   mock.current.mockResolvedValue({ id: "original", expiresAt: new Date(Date.now() + 10000), verifiedAt: null });
-  mock.links.mockResolvedValue([{ offSiteWorkId: "work1" }]);
-  mock.records.mockResolvedValue([{ offSiteWorkId: "work1", verifiedAt: new Date() }]);
+  mock.links.mockResolvedValue([{ offSiteWorkId: "work1", offSiteWorkRowId: "row-work1" }]);
+  mock.records.mockResolvedValue([{ offSiteWorkId: "work1", offSiteWorkRowId: "row-work1", verifiedAt: new Date() }]);
 });
 
 describe("signatures serialize with claim edits", () => {
@@ -40,13 +40,16 @@ describe("signatures serialize with claim edits", () => {
   });
 
   it("does not mark new unverified date selections ready from an obsolete all-done result", async () => {
-    mock.records.mockResolvedValue([{ offSiteWorkId: "work1", verifiedAt: null }]);
+    mock.records.mockResolvedValue([{ offSiteWorkId: "work1", offSiteWorkRowId: "row-work1", verifiedAt: null }]);
     expect(await repository.markReadyForCollection("claim1")).toBe(false);
     expect(mock.updateClaim).not.toHaveBeenCalled();
   });
 
   it("requires signatures for every currently linked work before marking ready", async () => {
-    mock.links.mockResolvedValue([{ offSiteWorkId: "work1" }, { offSiteWorkId: "new-work" }]);
+    mock.links.mockResolvedValue([
+      { offSiteWorkId: "work1", offSiteWorkRowId: "row-work1" },
+      { offSiteWorkId: "new-work", offSiteWorkRowId: "row-new-work" },
+    ]);
     expect(await repository.markReadyForCollection("claim1")).toBe(false);
     expect(mock.updateClaim).not.toHaveBeenCalled();
   });

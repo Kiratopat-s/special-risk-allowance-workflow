@@ -96,15 +96,33 @@ async function prepareSelection(
 async function verificationInputs(tx: Prisma.TransactionClient, offSiteWorkIds: string[]) {
     const works = await tx.offSiteWork.findMany({
         where: { id: { in: offSiteWorkIds }, deletedAt: null },
-        select: { id: true, leaderUserId: true, leaderEmail: true },
+        select: { id: true, rowId: true, leaderUserId: true, leaderEmail: true },
     });
     if (works.length !== offSiteWorkIds.length || works.some((work) => !work.leaderUserId && !work.leaderEmail)) {
         return error("กรุณากำหนดหัวหน้าให้ครบทุกใบสั่งปฏิบัติงานก่อนส่งเอกสาร", "OSW_MISSING_LEADER");
     }
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     return success(works.map((work) => ({
-        offSiteWorkId: work.id, leaderUserId: work.leaderUserId, leaderEmail: work.leaderEmail, expiresAt,
+        offSiteWorkId: work.id, offSiteWorkRowId: work.rowId,
+        leaderUserId: work.leaderUserId, leaderEmail: work.leaderEmail, expiresAt,
     })));
+}
+
+/** Resolve selected document numbers to their live rows for claim-work link writes. */
+async function resolveLinkRows(
+    client: Pick<Prisma.TransactionClient, "offSiteWork">,
+    offSiteWorkIds: string[]
+): Promise<Result<Array<{ offSiteWorkId: string; offSiteWorkRowId: string }>>> {
+    const unique = [...new Set(offSiteWorkIds)];
+    const works = await client.offSiteWork.findMany({
+        where: { id: { in: unique }, deletedAt: null },
+        select: { id: true, rowId: true },
+    });
+    const byId = new Map(works.map((work) => [work.id, work.rowId]));
+    if (unique.some((id) => !byId.has(id))) {
+        return error("ไม่พบคำสั่งปฏิบัติงานที่เลือก กรุณาลองใหม่", "OSW_NOT_FOUND");
+    }
+    return success(unique.map((offSiteWorkId) => ({ offSiteWorkId, offSiteWorkRowId: byId.get(offSiteWorkId) as string })));
 }
 
 function hasWorkflowFields(data: UpdateExpenseClaimDocumentInput): boolean {
@@ -142,20 +160,22 @@ async function saveEditableSelection(
         const resetVerifications = submitterId !== undefined || changed;
         const nextStatus = submitterId !== undefined || (submitted && changed)
             ? "PENDING_LEADER_VERIFY" : existing.status;
+        const { offSiteWorkIds, ...dateFields } = selection.data;
         const records = submitted && resetVerifications
-            ? await verificationInputs(tx, selection.data.offSiteWorkIds) : success([]);
+            ? await verificationInputs(tx, offSiteWorkIds) : success([]);
         if (!records.success) return records;
+        const linkRows = changed ? await resolveLinkRows(tx, offSiteWorkIds) : success([]);
+        if (!linkRows.success) return linkRows;
         const snapshot = needsDepartmentSnapshot(existing, nextStatus)
             ? await captureSubmissionDepartment(tx, existing.userId) : {};
         if (resetVerifications) await tx.leaderVerification.deleteMany({ where: { expenseClaimId: id } });
-        const { offSiteWorkIds, ...dateFields } = selection.data;
         const claim = await tx.expenseClaim.update({
             where: { id }, data: {
                 ...dateFields, ...snapshot, status: nextStatus,
                 claimantPositionAtSubmission: position,
                 ...(data.remark !== undefined ? { remark: data.remark } : {}),
                 ...(changed ? { expenseClaimOffSiteWorks: {
-                    deleteMany: {}, create: offSiteWorkIds.map((offSiteWorkId) => ({ offSiteWorkId })),
+                    deleteMany: {}, create: linkRows.data,
                 } } : {}),
                 ...(records.data.length ? { leaderVerifications: { create: records.data } } : {}),
             },
@@ -184,15 +204,17 @@ export const expenseClaimDocumentRepository = {
             const submitted = status !== "DRAFT";
             const selection = await prepareSelection(tx, userId, data, submitted);
             if (!selection.success) return selection;
-            const records = submitted ? await verificationInputs(tx, selection.data.offSiteWorkIds) : success([]);
-            if (!records.success) return records;
-            const snapshot = submitted ? await captureSubmissionDepartment(tx, userId) : {};
             const { offSiteWorkIds, ...dateFields } = selection.data;
+            const records = submitted ? await verificationInputs(tx, offSiteWorkIds) : success([]);
+            if (!records.success) return records;
+            const linkRows = await resolveLinkRows(tx, offSiteWorkIds);
+            if (!linkRows.success) return linkRows;
+            const snapshot = submitted ? await captureSubmissionDepartment(tx, userId) : {};
             const claim = await tx.expenseClaim.create({ data: {
                 ...dateFields, ...snapshot, userId, createdById,
                 claimantPositionAtSubmission: data.claimantPositionAtSubmission,
                 remark: data.remark, status: submitted ? "PENDING_LEADER_VERIFY" : "DRAFT",
-                expenseClaimOffSiteWorks: { create: offSiteWorkIds.map((offSiteWorkId) => ({ offSiteWorkId })) },
+                expenseClaimOffSiteWorks: { create: linkRows.data },
                 ...(records.data.length ? { leaderVerifications: { create: records.data } } : {}),
             } });
             if (submitted) await enqueueInternalLeaderEmails(tx, claim.id);
@@ -270,7 +292,7 @@ export const expenseClaimDocumentRepository = {
 					SELECT 1
 					FROM expense_claim_off_site_work ecosw
 					JOIN expense_claims ec ON ec.id = ecosw.expense_claim_id
-					WHERE ecosw.off_site_work_id = osw.id
+					WHERE ecosw.off_site_work_row_id = osw.row_id
 						AND ec.user_id = ${userId}
 						AND ec.status = 'APPROVED'
 						AND ec.cancelled_at IS NULL
@@ -375,6 +397,11 @@ export const expenseClaimDocumentRepository = {
         // Strip null bytes (0x00) from all string fields — PostgreSQL rejects them
         data = sanitizeStrings(data);
 
+        const linkRows = data.offSiteWorkIds?.length
+            ? await resolveLinkRows(prisma, data.offSiteWorkIds)
+            : success([]);
+        if (!linkRows.success) throw new Error(linkRows.error);
+
         const createData = {
             expenseMonth: new Date(data.expenseMonth),
             userId,
@@ -387,12 +414,10 @@ export const expenseClaimDocumentRepository = {
             status: data.status,
             monthlyRequestCollectionId: data.monthlyRequestCollectionId,
             collectedAt: data.collectedAt ? new Date(data.collectedAt) : undefined,
-            ...(data.offSiteWorkIds && data.offSiteWorkIds.length > 0
+            ...(linkRows.data.length > 0
                 ? {
                     expenseClaimOffSiteWorks: {
-                        create: data.offSiteWorkIds.map((offSiteWorkId) => ({
-                            offSiteWorkId,
-                        })),
+                        create: linkRows.data,
                     },
                 }
                 : {}),
@@ -451,12 +476,11 @@ export const expenseClaimDocumentRepository = {
                 : null;
         }
         if (data.offSiteWorkIds !== undefined) {
+            const linkRows = await resolveLinkRows(prisma, data.offSiteWorkIds);
+            if (!linkRows.success) throw new Error(linkRows.error);
             updateData.expenseClaimOffSiteWorks = {
                 deleteMany: {},
-                create:
-                    data.offSiteWorkIds.length > 0
-                        ? data.offSiteWorkIds.map((offSiteWorkId) => ({ offSiteWorkId }))
-                        : [],
+                create: linkRows.data,
             };
         }
 

@@ -16,6 +16,7 @@ export const claimPrintSelect = {
     select: {
       offSiteWork: {
         select: {
+          rowId: true,
           id: true,
           innerRefDocumentId: true,
           startDate: true,
@@ -30,7 +31,7 @@ export const claimPrintSelect = {
     },
   },
   leaderVerifications: {
-    select: { expenseClaimId: true, offSiteWorkId: true, verifiedAt: true, signatureData: true },
+    select: { expenseClaimId: true, offSiteWorkId: true, offSiteWorkRowId: true, verifiedAt: true, signatureData: true },
   },
 } satisfies Prisma.ExpenseClaimSelect;
 
@@ -78,7 +79,7 @@ export function toClaimPrintDocument(source: ClaimPrintSource): ClaimPrintDocume
     const department = work.leaderUser?.department;
     const leaderDepartment = department?.shortName || department?.name || "";
     const verification = source.leaderVerifications.find(
-      (record) => record.expenseClaimId === source.id && record.offSiteWorkId === work.id,
+      (record) => record.expenseClaimId === source.id && record.offSiteWorkRowId === work.rowId,
     );
     const bytes = verification?.verifiedAt ? verification.signatureData : null;
     if (!work.location) warnings.push(`${work.id}: ไม่มีสถานที่ปฏิบัติงาน`);
