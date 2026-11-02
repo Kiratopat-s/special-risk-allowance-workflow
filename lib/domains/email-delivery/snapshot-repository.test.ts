@@ -73,9 +73,9 @@ describe("fenced attempt snapshot preparation", () => {
 describe("bulk enqueue snapshot capture", () => {
   it("shares one claim read across leaders while keeping grouped originals and deterministic dedupe", async () => {
     const records = [
-      { id: "verification-b", offSiteWorkId: "work-b", leaderUserId: "leader-a" },
-      { id: "verification-a", offSiteWorkId: "work-a", leaderUserId: "leader-a" },
-      { id: "verification-c", offSiteWorkId: "work-c", leaderUserId: "leader-b" },
+      { id: "verification-b", offSiteWorkId: "work-b", offSiteWorkRowId: "row-work-b", leaderUserId: "leader-a" },
+      { id: "verification-a", offSiteWorkId: "work-a", offSiteWorkRowId: "row-work-a", leaderUserId: "leader-a" },
+      { id: "verification-c", offSiteWorkId: "work-c", offSiteWorkRowId: "row-work-c", leaderUserId: "leader-b" },
     ].map((record) => ({
       ...record, verifiedAt: null, expiresAt: new Date("2026-09-28T00:00:00Z"),
       leaderUser: { firstName: "หัวหน้า", lastName: record.leaderUserId, email: `${record.leaderUserId}@example.test`, status: "ACTIVE" },
@@ -86,7 +86,7 @@ describe("bulk enqueue snapshot capture", () => {
       expenseClaim: { findUnique: vi.fn().mockResolvedValue({
         id: "claim", status: "PENDING_LEADER_VERIFY", cancelledAt: null, monthlyRequestCollectionId: null,
         expenseMonth: new Date("2026-09-01"), claimant: { firstName: "ผู้ยื่น", lastName: "ร่วม" },
-        expenseClaimOffSiteWorks: records.map(({ offSiteWorkId }) => ({ offSiteWorkId })),
+        expenseClaimOffSiteWorks: records.map(({ offSiteWorkId, offSiteWorkRowId }) => ({ offSiteWorkId, offSiteWorkRowId })),
       }) },
       emailDelivery: { createMany: vi.fn() },
       user: { findUnique: vi.fn() },

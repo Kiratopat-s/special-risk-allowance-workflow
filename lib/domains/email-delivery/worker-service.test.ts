@@ -17,12 +17,15 @@ function context() {
   return {
     claim: { status: "PENDING_LEADER_VERIFY", cancelledAt: null, monthlyRequestCollectionId: null,
       expenseMonth: now, claimant: { firstName: "ผู้ยื่น", lastName: "ทดสอบ" },
-      expenseClaimOffSiteWorks: [{ offSiteWorkId: "work-1" }, { offSiteWorkId: "work-2" }] },
+      expenseClaimOffSiteWorks: [
+        { offSiteWorkId: "work-1", offSiteWorkRowId: "row-work-1" },
+        { offSiteWorkId: "work-2", offSiteWorkRowId: "row-work-2" },
+      ] },
     leader: { email: "current@example.test", status: "ACTIVE", firstName: "หัวหน้า", lastName: "ทดสอบ" },
     verificationIds: ["verify-1", "verify-2"],
     verifications: [
-      { id: "verify-1", offSiteWorkId: "work-1", verifiedAt: null, expiresAt: new Date("2026-09-27"), offSiteWork: { deletedAt: null, innerRefDocumentId: "REF-1" } },
-      { id: "verify-2", offSiteWorkId: "work-2", verifiedAt: now, expiresAt: new Date("2026-09-27"), offSiteWork: { deletedAt: null, innerRefDocumentId: "REF-2" } },
+      { id: "verify-1", offSiteWorkId: "work-1", offSiteWorkRowId: "row-work-1", verifiedAt: null, expiresAt: new Date("2026-09-27"), offSiteWork: { deletedAt: null, innerRefDocumentId: "REF-1" } },
+      { id: "verify-2", offSiteWorkId: "work-2", offSiteWorkRowId: "row-work-2", verifiedAt: now, expiresAt: new Date("2026-09-27"), offSiteWork: { deletedAt: null, innerRefDocumentId: "REF-2" } },
     ],
   };
 }

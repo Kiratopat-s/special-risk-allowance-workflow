@@ -1,6 +1,6 @@
 ---
 feature: off-site-work-id-reuse
-status: in-progress
+status: delivered
 updated: 2026-11-02
 source: off-site-work-id-reuse
 ---
@@ -8,6 +8,25 @@ source: off-site-work-id-reuse
 # Off-site work: allow reusing document IDs of soft-deleted records
 
 ## Report
+
+**What was built** — Soft-deleted off-site work records no longer block reusing
+their document numbers. `off_site_works` gained a surrogate `row_id` primary key
+and a partial unique index over live rows only, so creating with a number held
+only by deleted rows inserts a new row (deleted rows stay as history) while live
+duplicates still return `DUPLICATE_ID`. Claim-work links and leader verifications
+reference the row identity via `off_site_work_row_id` for exact matching and keep
+`off_site_work_id` as an immutable document-number snapshot, so URLs
+(`?offSiteWorkId=`), UI labels, queue ordering, compound lookups, and email
+snapshot JSON are unchanged. One order-sensitive migration backfills existing
+rows and repoints the foreign keys.
+
+**Verification** — `bun run lint` (0 problems); `bun run build` (pass);
+`bun run test` (945/945); `bun run test:off-site-work-db` (8/8, including the
+soft-delete → recreate regression); `bun run test:migrations` (17/17, upgrade
+data preservation, `check:schema` clean on upgrade and fresh installs);
+`bun run test:email-db` (42/42); `bun run test:department-db` (4/4);
+`node scripts/test-department-snapshot-db.mjs` (12/12); `tsc --noEmit` clean.
+Independent review confirmed all acceptance criteria with no critical findings.
 
 ## [S1] Problem
 
@@ -94,16 +113,17 @@ deleted record. A live duplicate still alerts `DUPLICATE_ID`.
 One migration, order-sensitive:
 
 1. Add `off_site_works.row_id` (TEXT), backfill one uuid per existing row,
-   `NOT NULL`, replace PK `off_site_works_pkey(id)` with PK(`row_id`).
+   `NOT NULL`.
 2. Add `off_site_work_row_id` to both link tables; backfill by joining today's
-   1:1 `off_site_work_id = off_site_works.id`; `NOT NULL`; add the new FKs and
-   indexes.
+   1:1 `off_site_work_id = off_site_works.id`; `NOT NULL`.
 3. Drop the old FKs `expense_claim_off_site_work_off_site_work_id_fkey` and
-   `leader_verifications_off_site_work_id_fkey` (they reference
-   `off_site_works(id)`, which stops being unique). New FKs must exist before
-   the old PK is dropped.
-4. Create `off_site_works_id_idx` and the partial unique
-   `off_site_works_id_live_key`.
+   `leader_verifications_off_site_work_id_fkey` — they reference
+   `off_site_works(id)` and must go before the PK swap.
+4. Replace PK `off_site_works_pkey(id)` with PK(`row_id`).
+5. Create the new FKs to `off_site_works(row_id)` (only possible once `row_id`
+   is unique), `expense_claim_off_site_work_off_site_work_row_id_idx`,
+   `leader_verifications_off_site_work_row_id_idx`, `off_site_works_id_idx`,
+   and the partial unique `off_site_works_id_live_key`.
 
 Email snapshot JSON keeps storing document numbers under `orders[].offSiteWorkId`;
 historical snapshots and their dashboard search stay valid.
@@ -117,10 +137,23 @@ historical snapshots and their dashboard search stay valid.
 
 ## Tasks
 
-- [ ] T1: Prisma schema + migration for row identity and repointed FKs — acceptance: `bunx prisma generate` succeeds; the migration applies on a database at the previous migration head with data preserved; `bun run check:schema` exits 0 (covers: S2.1, S2.2, S2.6)
-- [ ] T2: Off-site-work domain — create/update/soft-delete/restore on `row_id`, live-only duplicate handling — acceptance: unit tests show create with a soft-deleted number succeeds as a new row and live duplicates return `DUPLICATE_ID` (covers: S2.3, S2.4, S2.5) (depends: T1)
-- [ ] T3: Link writes and row-exact reads in expense-claim-document, leader-verification, email-delivery — acceptance: link creation sets `offSiteWorkRowId` with the document-number snapshot; counts, joins and snapshot state are row-exact; payloads still expose `offSiteWorkId` as the document number (covers: S2.2) (depends: T1)
-- [ ] T4: Regression tests — acceptance: `tests/integration/off-site-work.test.ts` proves soft-delete → create same number → both rows exist and lookups return the new live row while live duplicates still reject; suites pass (covers: S2.3, S2.4) (depends: T2, T3)
-- [ ] T5: Verification — acceptance: `bun run lint`, `bun run test`, `bun run build`, `bun run test:migrations`, `bun run test:off-site-work-db` all pass (depends: T4)
+- [x] T1: Prisma schema + migration for row identity and repointed FKs — acceptance: `bunx prisma generate` succeeds; the migration applies on a database at the previous migration head with data preserved; `bun run check:schema` exits 0 (covers: S2.1, S2.2, S2.6)
+- [x] T2: Off-site-work domain — create/update/soft-delete/restore on `row_id`, live-only duplicate handling — acceptance: unit tests show create with a soft-deleted number succeeds as a new row and live duplicates return `DUPLICATE_ID` (covers: S2.3, S2.4, S2.5) (depends: T1)
+- [x] T3: Link writes and row-exact reads in expense-claim-document, leader-verification, email-delivery — acceptance: link creation sets `offSiteWorkRowId` with the document-number snapshot; counts, joins and snapshot state are row-exact; payloads still expose `offSiteWorkId` as the document number (covers: S2.2) (depends: T1)
+- [x] T4: Regression tests — acceptance: `tests/integration/off-site-work.test.ts` proves soft-delete → create same number → both rows exist and lookups return the new live row while live duplicates still reject; suites pass (covers: S2.3, S2.4) (depends: T2, T3)
+- [x] T5: Verification — acceptance: `bun run lint`, `bun run test`, `bun run build`, `bun run test:migrations`, `bun run test:off-site-work-db` all pass (depends: T4)
 
 ## Journey log
+
+- Prisma introspection silently ignores what its schema model cannot express:
+  the live-only partial unique index produces no `check:schema` drift (verified
+  on PostgreSQL 17), so raw SQL migrations must carry such indexes. A
+  `dbgenerated` column default round-trips only with Postgres' own parenthesized
+  spelling (`(gen_random_uuid())::text`); the simpler `@default(uuid(7))` was kept.
+- Upgrade harness seeds must target the pre-migration schema (no `row_id`
+  columns); the migration's backfill is then exercised on that seeded data, and
+  row-identity columns must be excluded from row-equality snapshots.
+- `vi.fn()`-mocked Prisma payloads are not typechecked against selects, so stale
+  fields (e.g. missing `offSiteWorkRowId`) compile silently and make row-exact
+  joins look correct (`undefined === undefined`); fixtures need the fields to
+  discriminate.
