@@ -213,7 +213,8 @@ model UserActionLog {
 }
 
 model OffSiteWork {
-  id                    String      @id
+  rowId                 String      @id @default(uuid(7)) @map("row_id")
+  id                    String
   innerRefDocumentId    String?     @map("inner_ref_document_id")
   startDate             DateTime    @map("start_date")
   endDate               DateTime    @map("end_date")
@@ -242,6 +243,7 @@ model OffSiteWork {
   leaderVerifications   LeaderVerification[]
   
   @@map("off_site_works")
+  @@index([id])
   @@index([postedByUserId])
   @@index([originalFileId])
   @@index([startDate])
@@ -334,15 +336,17 @@ model ExpenseClaim {
 }
 
 model ExpenseClaimOffSiteWork {
-  expenseClaimId String @map("expense_claim_id")
-  offSiteWorkId  String @map("off_site_work_id")
+  expenseClaimId   String @map("expense_claim_id")
+  offSiteWorkId    String @map("off_site_work_id")
+  offSiteWorkRowId String @map("off_site_work_row_id")
 
   expenseClaim   ExpenseClaim @relation(fields: [expenseClaimId], references: [id], onDelete: Cascade)
-  offSiteWork    OffSiteWork  @relation(fields: [offSiteWorkId], references: [id], onDelete: Cascade)
+  offSiteWork    OffSiteWork  @relation(fields: [offSiteWorkRowId], references: [rowId], onDelete: Cascade)
 
   @@id([expenseClaimId, offSiteWorkId])
   @@map("expense_claim_off_site_work")
   @@index([offSiteWorkId])
+  @@index([offSiteWorkRowId])
 }
 
 /// Monthly approval stage. Only HPA_CHECK is used by the application.
@@ -683,7 +687,8 @@ model LeaderVerification {
 
   // The specific OSW this verification covers
   offSiteWorkId   String         @map("off_site_work_id")
-  offSiteWork     OffSiteWork    @relation(fields: [offSiteWorkId], references: [id], onDelete: Cascade)
+  offSiteWorkRowId String        @map("off_site_work_row_id")
+  offSiteWork     OffSiteWork    @relation(fields: [offSiteWorkRowId], references: [rowId], onDelete: Cascade)
 
   // Internal leader (system user)
   leaderUserId    String?        @map("leader_user_id")
@@ -704,6 +709,7 @@ model LeaderVerification {
   @@map("leader_verifications")
   @@index([expenseClaimId])
   @@index([offSiteWorkId])
+  @@index([offSiteWorkRowId])
   @@index([leaderUserId])
   @@index([token])
   @@index([verifiedAt])
