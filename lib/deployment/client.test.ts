@@ -6,7 +6,7 @@ beforeEach(async () => {
   vi.stubEnv("NEXT_PUBLIC_DEPLOYMENT_VERSION", "build-a");
   client = await import("./client");
 });
-afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 it("allows current actions, notices a new build, and never dispatches stale calls", async () => {
   const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ version: "build-a" })).mockResolvedValueOnce(Response.json({ version: "build-b" }));
@@ -64,7 +64,35 @@ it("reports an unknown action immediately and never replays it", async () => {
 });
 
 it("preserves ordinary errors", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ version: "build-a" })));
   const error = new Error("permission denied");
   await expect(client.runServerAction(async () => { throw error; })).rejects.toBe(error);
   expect(client.isDeploymentOutdated()).toBe(false);
+});
+
+it("absorbs action failures once a new deployment is live", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ version: "build-b" })));
+  const action = vi.fn().mockRejectedValue(new Error("Failed to fetch"));
+  expect(await client.runServerAction(action)).toBeUndefined();
+  expect(client.isDeploymentOutdated()).toBe(true);
+  expect(action).toHaveBeenCalledTimes(1);
+});
+
+it("times out a hung action instead of leaving callers pending forever", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ version: "build-a" })));
+  const call = client.runServerAction(() => new Promise<never>(() => {}));
+  const assertion = expect(call).rejects.toThrow(/timed out/i);
+  await vi.advanceTimersByTimeAsync(client.ACTION_TIMEOUT_MS);
+  await assertion;
+  expect(client.isDeploymentOutdated()).toBe(false);
+});
+
+it("turns a hung action into the refresh banner when the deployment swapped", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ version: "build-b" })));
+  const call = client.runServerAction(() => new Promise<never>(() => {}));
+  await vi.advanceTimersByTimeAsync(client.ACTION_TIMEOUT_MS);
+  expect(await call).toBeUndefined();
+  expect(client.isDeploymentOutdated()).toBe(true);
 });

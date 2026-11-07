@@ -29,6 +29,7 @@ import {
   CalendarDays,
   ClipboardList,
   Eye,
+  FileSpreadsheet,
   Plus,
   Printer,
   Send,
@@ -728,6 +729,24 @@ export function MrcClient({
                           </Button>
                         )}
 
+                        {item.status === "APPROVED" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            asChild
+                            title="ดาวน์โหลด Excel สรุปรายเดือน"
+                            aria-label={`ดาวน์โหลด Excel สรุปรายเดือน ${item.id}`}
+                          >
+                            <a
+                              href={`/api/monthly-request-collection/${item.id}/export`}
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <FileSpreadsheet className="h-4 w-4" />
+                            </a>
+                          </Button>
+                        )}
+
                         {canManage && item.status === "DRAFT" && (
                           <>
                             <Button
@@ -1016,6 +1035,14 @@ export function MrcClient({
               <a href={`/monthly-request-collection/${selected.id}/claims/print`} target="_blank" rel="noreferrer">
                 <ClipboardList className="h-4 w-4" />
                 ดูตัวอย่างใบคำขอทั้งชุด
+              </a>
+            </Button>
+          )}
+          {selected?.status === "APPROVED" && (
+            <Button asChild variant="outline">
+              <a href={`/api/monthly-request-collection/${selected.id}/export`}>
+                <FileSpreadsheet className="h-4 w-4" />
+                ดาวน์โหลด Excel สรุปรายเดือน
               </a>
             </Button>
           )}

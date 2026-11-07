@@ -61,14 +61,21 @@ it.each(["DRAFT", "APPROVED"] as const)("keeps the packet preview separate from 
     collector: { id: "me", firstName: "ผู้", lastName: "ทดสอบ", employeeId: "000001" },
   };
   render(<ThemeProvider theme={workflowTheme}><MrcClient initialItems={[collection]} initialPagination={null} canManage canHpa={false} /></ThemeProvider>);
+  if (status === "APPROVED") {
+    expect(screen.getByRole("link", { name: "ดาวน์โหลด Excel สรุปรายเดือน mrc-1" }).getAttribute("href")).toBe("/api/monthly-request-collection/mrc-1/export");
+  } else {
+    expect(screen.queryByRole("link", { name: "ดาวน์โหลด Excel สรุปรายเดือน mrc-1" })).toBeNull();
+  }
   fireEvent.click(screen.getByRole("button", { name: "ดูรายละเอียด mrc-1" }));
   const link = await screen.findByRole("link", { name: "ดูตัวอย่างใบคำขอทั้งชุด" });
   expect(link.getAttribute("href")).toBe("/monthly-request-collection/mrc-1/claims/print");
   expect(link.getAttribute("target")).toBe("_blank");
   if (status === "APPROVED") {
     expect(screen.getByRole("link", { name: "พิมพ์สรุปรายเดือน" }).getAttribute("href")).toBe("/monthly-request-collection/mrc-1/print");
+    expect(screen.getByRole("link", { name: "ดาวน์โหลด Excel สรุปรายเดือน" }).getAttribute("href")).toBe("/api/monthly-request-collection/mrc-1/export");
   } else {
     expect(screen.queryByRole("link", { name: "พิมพ์สรุปรายเดือน" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "ดาวน์โหลด Excel สรุปรายเดือน" })).toBeNull();
   }
 });
 it("toggles a collection row checkbox once per click or Space without also toggling its row", async () => {

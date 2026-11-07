@@ -49,16 +49,36 @@ function isUnrecognizedAction(error: unknown): boolean {
     /^Server Action ".+" was not found on the server\./.test(error.message);
 }
 
+/** Safety net: a request left half-open by a deployment swap must not freeze a form forever. */
+export const ACTION_TIMEOUT_MS = 60_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Server Action timed out")), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
 /** Undefined means stop this flow without resetting input or replaying the action. */
 export async function runServerAction<T>(action: () => Promise<T>): Promise<T | undefined> {
   // A focus/visibility check may already be discovering a newer deployment.
   if (versionCheck) await versionCheck;
   if (outdated) return undefined;
   try {
-    return await action();
+    return await withTimeout(action(), ACTION_TIMEOUT_MS);
   } catch (error) {
-    if (!isUnrecognizedAction(error)) throw error;
-    markOutdated();
-    return undefined;
+    if (isUnrecognizedAction(error)) {
+      markOutdated();
+      return undefined;
+    }
+    // A deployment swap can surface as a dropped connection or a hung request
+    // instead of UnrecognizedActionError. Confirm via the version endpoint
+    // before handing the error to the caller.
+    await checkDeploymentVersion();
+    if (outdated) return undefined;
+    throw error;
   }
 }
