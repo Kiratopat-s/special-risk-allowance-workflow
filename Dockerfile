@@ -50,6 +50,9 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+# Distroless puts node at /nodejs/bin/node outside PATH (only the entrypoint finds
+# it). Expose it by name so exec-form commands like the compose healthcheck work.
+ENV PATH=/nodejs/bin:$PATH
 
 # In distroless:nonroot, uid:gid 65532:65532 is pre-configured
 COPY --from=builder --chown=nonroot:nonroot /app/public ./public
