@@ -1,5 +1,8 @@
 # syntax=docker/dockerfile:1
 
+# -----------------------------------------------------------------------------
+# Base & Build Stages (Bun toolchain)
+# -----------------------------------------------------------------------------
 FROM oven/bun:1.4.4 AS base
 
 WORKDIR /app
@@ -20,7 +23,9 @@ RUN DEPLOYMENT_VERSION="$(bun scripts/deployment-version.mjs)" \
     && bunx prisma generate \
     && bun run build
 
-# Source and generated Prisma client are shared by the ops jobs and email worker.
+# -----------------------------------------------------------------------------
+# Ops & Worker Targets (Bun)
+# -----------------------------------------------------------------------------
 FROM dependencies AS migrator
 
 COPY . .
@@ -35,7 +40,10 @@ USER bun
 
 CMD ["bun", "scripts/email-worker.ts"]
 
-FROM node:22.23.4-bookworm-slim AS runner
+# -----------------------------------------------------------------------------
+# Production Runner: Zero-CVE Hardened Target
+# -----------------------------------------------------------------------------
+FROM gcr.io/distroless/nodejs24-debian12:nonroot AS runner
 
 WORKDIR /app
 ENV NODE_ENV=production
@@ -43,15 +51,15 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-RUN groupadd --system --gid 1001 nodejs \
-    && useradd --system --uid 1001 --gid nodejs nextjs
+# In distroless:nonroot, uid:gid 65532:65532 is pre-configured
+COPY --from=builder --chown=nonroot:nonroot /app/public ./public
+COPY --from=builder --chown=nonroot:nonroot /app/.next/standalone ./
+COPY --from=builder --chown=nonroot:nonroot /app/.next/static ./.next/static
 
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-USER nextjs
+# nonroot is the default user in this tag, explicitly set for clarity
+USER nonroot
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+# Next.js standalone entry point via node
+CMD ["server.js"]
